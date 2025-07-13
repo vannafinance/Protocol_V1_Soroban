@@ -3,10 +3,14 @@ use crate::events::{
     LendingDepositEvent, LendingTokenBurnEvent, LendingTokenMintEvent, LendingWithdrawEvent,
 };
 use crate::types::{DataKey, PoolDataKey, TokenDataKey};
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol, Vec, U256};
+use soroban_sdk::{
+    contract, contractimpl, panic_with_error, token, Address, Env, Symbol, Vec, U256,
+};
 
 #[contract]
 pub struct LiquidityPoolXLM;
+
+const XLM_CONTRACT_ID: [u8; 32] = [0; 32];
 
 #[contractimpl]
 impl LiquidityPoolXLM {
@@ -29,11 +33,34 @@ impl LiquidityPoolXLM {
 
     pub fn deposit_xlm(env: Env, lender: Address, amount: U256) {
         lender.require_auth();
+        if amount <= U256::from_u128(&env, 0) {
+            panic!("Deposit amount must be positive");
+        }
         // Check if pool is initialised
         Self::is_xlm_pool_initialised(&env, Symbol::new(&env, "XLM"));
 
         // Update lender list
         Self::add_lender_to_list_xlm(&env, &lender);
+
+        let amount_u128: u128 = amount
+            .to_u128()
+            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+        // Get the XLM token contract (Stellar Asset Contract for native lumen)
+        // The XLM contract address is typically all zeros in Soroban
+        let xlm_token = token::Client::new(&env, &env.current_contract_address());
+
+        let user_balance = xlm_token.balance(&lender) as u128;
+
+        if user_balance < amount_u128 {
+            panic_with_error!(&env, LendingError::InsufficientBalance);
+        }
+
+        // Transfer XLM from user to this contract
+        xlm_token.transfer(
+            &lender,                         // from
+            &env.current_contract_address(), // to
+            &(amount_u128 as i128),
+        );
 
         let key = PoolDataKey::LenderBalance(lender.clone(), Symbol::new(&env, "XLM"));
         // Adding amount to Lenders balance, first check current balance, if no balance start with 0
@@ -96,6 +123,17 @@ impl LiquidityPoolXLM {
         if current_balance < amount {
             panic_with_error!(&env, LendingError::InsufficientBalance);
         }
+        let xlm_token = token::Client::new(&env, &env.current_contract_address());
+
+        let amount_u128: u128 = amount
+            .to_u128()
+            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+
+        xlm_token.transfer(
+            &env.current_contract_address(), // from
+            &lender,                         // to
+            &(amount_u128 as i128),
+        );
 
         // First deduct amount from Lenders balance
         let new_balance = current_balance.sub(&amount);

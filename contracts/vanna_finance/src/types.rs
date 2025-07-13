@@ -26,7 +26,6 @@ pub enum PoolDataKey {
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[contracttype]
 pub enum TokenDataKey {
-    MintedUsers(Symbol),
     TotalTokensMinted(Symbol),
     TotalTokensBurnt(Symbol),
     CurrentTokenBalance(Symbol),
