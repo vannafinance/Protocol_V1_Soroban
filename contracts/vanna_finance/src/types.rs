@@ -21,4 +21,5 @@ pub enum PoolDataKey {
     LenderBalance(Address, Symbol), // Lender balance for a specific user address, asset symbol
     Lenders(Symbol),                // List of all lenders for particular asset symbol
     Pool(Symbol),                   // Liquidity pool for each asset symbol
+    Token(Address, Symbol),
 }
