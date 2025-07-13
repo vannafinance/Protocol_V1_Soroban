@@ -4,7 +4,7 @@ use crate::events::{
 };
 use crate::types::{DataKey, PoolDataKey, TokenDataKey};
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, token, Address, Env, Symbol, Vec, U256,
+    contract, contractimpl, panic_with_error, token, Address, Bytes, BytesN, Env, Symbol, Vec, U256,
 };
 
 #[contract]
@@ -47,7 +47,10 @@ impl LiquidityPoolXLM {
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
         // Get the XLM token contract (Stellar Asset Contract for native lumen)
         // The XLM contract address is typically all zeros in Soroban
-        let xlm_token = token::Client::new(&env, &env.current_contract_address());
+        let xlm_token = token::Client::new(
+            &env,
+            &Address::from_string_bytes(&Bytes::from_array(&env, &XLM_CONTRACT_ID)),
+        );
 
         let user_balance = xlm_token.balance(&lender) as u128;
 
@@ -123,7 +126,10 @@ impl LiquidityPoolXLM {
         if current_balance < amount {
             panic_with_error!(&env, LendingError::InsufficientBalance);
         }
-        let xlm_token = token::Client::new(&env, &env.current_contract_address());
+        let xlm_token = token::Client::new(
+            &env,
+            &Address::from_string_bytes(&Bytes::from_array(&env, &XLM_CONTRACT_ID)),
+        );
 
         let amount_u128: u128 = amount
             .to_u128()
