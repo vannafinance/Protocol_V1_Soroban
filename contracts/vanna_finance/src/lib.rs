@@ -21,6 +21,7 @@ impl Contract {
 }
 
 mod errors;
+mod events;
 mod lending_protocol;
 mod tests;
 mod types;
