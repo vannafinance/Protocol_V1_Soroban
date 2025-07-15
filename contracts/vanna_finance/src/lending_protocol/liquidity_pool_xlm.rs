@@ -1,16 +1,18 @@
+use core::panic;
+
 use crate::errors::{LendingError, LendingTokenError};
 use crate::events::{
     LendingDepositEvent, LendingTokenBurnEvent, LendingTokenMintEvent, LendingWithdrawEvent,
 };
 use crate::types::{DataKey, PoolDataKey, TokenDataKey};
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, token, Address, Bytes, BytesN, Env, Symbol, Vec, U256,
+    contract, contractimpl, panic_with_error, token, Address, Bytes, Env, Symbol, Vec, U256,
 };
 
 #[contract]
 pub struct LiquidityPoolXLM;
 
-const XLM_CONTRACT_ID: [u8; 32] = [0; 32];
+pub const XLM_CONTRACT_ID: [u8; 32] = [0; 32];
 
 #[contractimpl]
 impl LiquidityPoolXLM {
@@ -39,18 +41,19 @@ impl LiquidityPoolXLM {
         // Check if pool is initialised
         Self::is_xlm_pool_initialised(&env, Symbol::new(&env, "XLM"));
 
-        // Update lender list
-        Self::add_lender_to_list_xlm(&env, &lender);
-
         let amount_u128: u128 = amount
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
         // Get the XLM token contract (Stellar Asset Contract for native lumen)
         // The XLM contract address is typically all zeros in Soroban
-        let xlm_token = token::Client::new(
-            &env,
-            &Address::from_string_bytes(&Bytes::from_array(&env, &XLM_CONTRACT_ID)),
-        );
+        // let xlm_token = token::Client::new(
+        //     &env,
+        //     &Address::from_string_bytes(&Bytes::from_array(&env, &XLM_CONTRACT_ID)),
+        // );
+
+        let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
+
+        let xlm_token = Self::get_xlm_token_client(&env, admin);
 
         let user_balance = xlm_token.balance(&lender) as u128;
 
@@ -64,6 +67,9 @@ impl LiquidityPoolXLM {
             &env.current_contract_address(), // to
             &(amount_u128 as i128),
         );
+
+        // Update lender list
+        Self::add_lender_to_list_xlm(&env, &lender);
 
         let key = PoolDataKey::LenderBalance(lender.clone(), Symbol::new(&env, "XLM"));
         // Adding amount to Lenders balance, first check current balance, if no balance start with 0
@@ -93,6 +99,10 @@ impl LiquidityPoolXLM {
             .persistent()
             .get(&TokenDataKey::TokenValue(Symbol::new(&env, "vXLM")))
             .unwrap();
+        // Making sure token_value is not zero before dividing
+        if token_value == U256::from_u128(&env, 0) {
+            panic_with_error!(&env, LendingTokenError::InvalidTokenValue);
+        }
         let tokens_to_be_minted = amount.div(&token_value);
 
         // Now Mint the vXLM tokens that were created for the lender
@@ -117,6 +127,7 @@ impl LiquidityPoolXLM {
 
         // Check if lender has registered
         if !env.storage().persistent().has(&key) {
+            panic!("Lender not registered");
             panic_with_error!(&env, LendingError::LenderNotRegistered);
         }
 
@@ -126,10 +137,13 @@ impl LiquidityPoolXLM {
         if current_balance < amount {
             panic_with_error!(&env, LendingError::InsufficientBalance);
         }
-        let xlm_token = token::Client::new(
-            &env,
-            &Address::from_string_bytes(&Bytes::from_array(&env, &XLM_CONTRACT_ID)),
-        );
+        // let xlm_token = token::Client::new(
+        //     &env,
+        //     &Address::from_string_bytes(&Bytes::from_array(&env, &XLM_CONTRACT_ID)),
+        // );
+        let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
+
+        let xlm_token = Self::get_xlm_token_client(&env, admin);
 
         let amount_u128: u128 = amount
             .to_u128()
@@ -169,6 +183,10 @@ impl LiquidityPoolXLM {
             .persistent()
             .get(&TokenDataKey::TokenValue(Symbol::new(&env, "vXLM")))
             .unwrap();
+        // Making sure token_value is not zero before dividing
+        if token_value == U256::from_u128(&env, 0) {
+            panic_with_error!(&env, LendingTokenError::InvalidTokenValue);
+        }
         let tokens_to_be_burnt = amount.div(&token_value);
 
         Self::burn_vxlm_tokens(&env, lender.clone(), tokens_to_be_burnt, token_value);
@@ -332,5 +350,22 @@ impl LiquidityPoolXLM {
             panic_with_error!(&env, LendingError::PoolNotInitialized);
         }
         true
+    }
+
+    #[cfg(test)]
+    fn get_xlm_token_client(env: &Env, admin: Address) -> token::Client {
+        // Create a mock stellar asset contract that behaves like XLM
+        // let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(env);
+        let mock_xlm_id = env.register_stellar_asset_contract_v2(admin);
+        token::Client::new(env, &mock_xlm_id.address())
+    }
+
+    #[cfg(not(test))]
+    fn get_xlm_token_client(env: &Env, admin: Address) -> token::Client {
+        // In production, use the real XLM contract
+        token::Client::new(
+            env,
+            &Address::from_string_bytes(&Bytes::from_array(env, &XLM_CONTRACT_ID)),
+        )
     }
 }

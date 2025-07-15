@@ -26,4 +26,5 @@ pub enum LendingTokenError {
     TokenBalanceNotInitialised = 1,
     Unauthorized = 2,
     InsufficientTokenBalance = 3,
+    InvalidTokenValue = 4,
 }
