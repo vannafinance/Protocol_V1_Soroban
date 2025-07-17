@@ -2,6 +2,13 @@ use soroban_sdk::contracterror;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug)]
+pub enum ContractError {
+    ContractNotDeployedError = 1,
+    AdminNotSetError = 2,
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug)]
 pub enum LendingError {
     NotInitialized = 1,
     Unauthorized = 2,

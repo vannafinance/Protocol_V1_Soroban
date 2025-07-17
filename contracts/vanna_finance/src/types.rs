@@ -31,4 +31,7 @@ pub enum TokenDataKey {
     CurrentTokenBalance(Symbol),
     TokenBalance(Address, Symbol),
     TokenValue(Symbol),
+    TokenClientAddress,
+    NativeTokenClientAddress,
+    TokenIssuerAddress,
 }

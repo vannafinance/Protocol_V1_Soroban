@@ -1,10 +1,12 @@
+use core::panic;
+
 use crate::errors::{LendingError, LendingTokenError};
 use crate::events::{
     LendingDepositEvent, LendingTokenBurnEvent, LendingTokenMintEvent, LendingWithdrawEvent,
 };
 use crate::types::{DataKey, PoolDataKey, TokenDataKey};
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, token, Address, Bytes, Env, Symbol, Vec, U256,
+    contract, contractimpl, panic_with_error, token, Address, Env, Symbol, Vec, U256,
 };
 
 const EURC_TESTNET_CONTRACT_ID: &str = "GDUK7UG5ZKVFKE6J4VHVD3H6N5XKDJ5X3Z6X3Z6X3Z6X3Z6X3Z6X3Z6X";
@@ -13,7 +15,7 @@ const EURC_TESTNET_CONTRACT_ID: &str = "GDUK7UG5ZKVFKE6J4VHVD3H6N5XKDJ5X3Z6X3Z6X
 #[contract]
 pub struct LiquidityPoolEURC;
 
-const EURC_CONTRACT_ID: [u8; 32] = [0; 32];
+pub const EURC_CONTRACT_ID: [u8; 32] = [0; 32];
 
 #[contractimpl]
 impl LiquidityPoolEURC {
@@ -29,9 +31,25 @@ impl LiquidityPoolEURC {
             .expect("Admin not set");
 
         admin.require_auth();
+        let native_token = env.register_stellar_asset_contract_v2(admin.clone());
+        let veurc_token = env.register_stellar_asset_contract_v2(admin.clone());
         env.storage()
             .persistent()
-            .set(&PoolDataKey::Pool(Symbol::new(&env, "EURC")), &0); // Store the EURC this contract handles
+            .set(&TokenDataKey::TokenClientAddress, &veurc_token.address());
+
+        env.storage().persistent().set(
+            &TokenDataKey::NativeTokenClientAddress,
+            &native_token.address(),
+        );
+
+        env.storage()
+            .persistent()
+            .set(&TokenDataKey::TokenIssuerAddress, &admin.clone());
+
+        env.storage().persistent().set(
+            &PoolDataKey::Pool(Symbol::new(&env, "EURC")),
+            &U256::from_u128(&env, 0),
+        ); // Store the EURC this contract handles
     }
 
     pub fn deposit_eurc(env: Env, lender: Address, amount: U256) {
@@ -45,10 +63,17 @@ impl LiquidityPoolEURC {
         let amount_u128: u128 = amount
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
-        // Get the EURC token contract (Stellar Asset Contract for native lumen)
-        // The EURC contract address is typically all zeros in Soroban
-        let eurc_token =
-            token::Client::new(&env, &Address::from_str(&env, &EURC_TESTNET_CONTRACT_ID));
+
+        let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
+
+        let native_token_address: Address = env
+            .storage()
+            .persistent()
+            .get(&TokenDataKey::NativeTokenClientAddress)
+            .unwrap();
+        let eurc_token = token::Client::new(&env, &native_token_address);
+
+        // let eurc_token: token::TokenClient<'_> = Self::get_eurc_token_client(&env, admin);
 
         let user_balance = eurc_token.balance(&lender) as u128;
 
@@ -67,12 +92,14 @@ impl LiquidityPoolEURC {
         Self::add_lender_to_list_eurc(&env, &lender);
 
         let key = PoolDataKey::LenderBalance(lender.clone(), Symbol::new(&env, "EURC"));
+
         // Adding amount to Lenders balance, first check current balance, if no balance start with 0
         let current_balance: U256 = env
             .storage()
             .persistent()
             .get(&key)
             .unwrap_or(U256::from_u128(&env, 0)); // Use U256::from_u128 or U256::zero to initialize U256
+
         let new_balance = current_balance.add(&amount);
 
         env.storage().persistent().set(&key, &new_balance);
@@ -83,6 +110,7 @@ impl LiquidityPoolEURC {
             .persistent()
             .get(&PoolDataKey::Pool(Symbol::new(&env, "EURC")))
             .unwrap_or(U256::from_u128(&env, 0));
+
         let new_pool = current_pool.add(&amount);
 
         env.storage()
@@ -94,6 +122,13 @@ impl LiquidityPoolEURC {
             .persistent()
             .get(&TokenDataKey::TokenValue(Symbol::new(&env, "vEURC")))
             .unwrap();
+
+        // Making sure token_value is not zero before dividing
+        if token_value == U256::from_u128(&env, 0) {
+            // panic!("InvalidTokenValue");
+            panic_with_error!(&env, LendingTokenError::InvalidTokenValue);
+        }
+
         let tokens_to_be_minted = amount.div(&token_value);
 
         // Now Mint the vEURC tokens that were created for the lender
@@ -118,6 +153,7 @@ impl LiquidityPoolEURC {
 
         // Check if lender has registered
         if !env.storage().persistent().has(&key) {
+            // panic!("Lender not registered");
             panic_with_error!(&env, LendingError::LenderNotRegistered);
         }
 
@@ -125,12 +161,17 @@ impl LiquidityPoolEURC {
         let current_balance: U256 = env.storage().persistent().get(&key).unwrap();
 
         if current_balance < amount {
+            // panic!("InsufficientBalance");
             panic_with_error!(&env, LendingError::InsufficientBalance);
         }
-        let eurc_token = token::Client::new(
-            &env,
-            &Address::from_string_bytes(&Bytes::from_array(&env, &EURC_CONTRACT_ID)),
-        );
+        let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
+
+        let native_token_address: Address = env
+            .storage()
+            .persistent()
+            .get(&TokenDataKey::NativeTokenClientAddress)
+            .unwrap();
+        let eurc_token = token::Client::new(&env, &native_token_address);
 
         let amount_u128: u128 = amount
             .to_u128()
@@ -156,6 +197,7 @@ impl LiquidityPoolEURC {
         if current_pool_balance < amount {
             panic_with_error!(&env, LendingError::InsufficientPoolBalance);
         }
+
         env.storage()
             .persistent()
             .set(&pool_key, &(current_pool_balance.sub(&amount)));
@@ -170,6 +212,12 @@ impl LiquidityPoolEURC {
             .persistent()
             .get(&TokenDataKey::TokenValue(Symbol::new(&env, "vEURC")))
             .unwrap();
+
+        // Making sure token_value is not zero before dividing
+        if token_value == U256::from_u128(&env, 0) {
+            panic_with_error!(&env, LendingTokenError::InvalidTokenValue);
+        }
+
         let tokens_to_be_burnt = amount.div(&token_value);
 
         Self::burn_veurc_tokens(&env, lender.clone(), tokens_to_be_burnt, token_value);
@@ -187,8 +235,6 @@ impl LiquidityPoolEURC {
     }
 
     fn mint_veurc_tokens(env: &Env, lender: Address, tokens_to_mint: U256, token_value: U256) {
-        // WORK IN PROGRESS
-
         let key = TokenDataKey::TokenBalance(lender.clone(), Symbol::new(&env, "vEURC"));
 
         // Check if user has balance initialised, else initialise key for user
@@ -197,6 +243,27 @@ impl LiquidityPoolEURC {
                 .persistent()
                 .set(&key, &U256::from_u128(&env, 0));
         }
+
+        let tokens_to_mint_u128: u128 = tokens_to_mint
+            .to_u128()
+            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+
+        let token_address: Address = env
+            .storage()
+            .persistent()
+            .get(&TokenDataKey::TokenClientAddress)
+            .unwrap();
+
+        let token_sac = token::StellarAssetClient::new(&env, &token_address);
+
+        let issuer: Address = env
+            .storage()
+            .persistent()
+            .get(&TokenDataKey::TokenIssuerAddress)
+            .unwrap();
+        issuer.require_auth();
+        // mint tokens to his address.
+        token_sac.mint(&lender, &(tokens_to_mint_u128 as i128)); // Mint tokens to recipient
 
         let current_veurc_balance: U256 = env.storage().persistent().get(&key).unwrap();
         let new_veurc_balance = current_veurc_balance.add(&tokens_to_mint);
@@ -243,6 +310,31 @@ impl LiquidityPoolEURC {
 
         let new_veurc_balance = current_veurc_balance.sub(&tokens_to_burn);
         env.storage().persistent().set(&key, &new_veurc_balance);
+
+        let tokens_to_burn_u128: u128 = tokens_to_burn
+            .to_u128()
+            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+
+        let token_address: Address = env
+            .storage()
+            .persistent()
+            .get(&TokenDataKey::TokenClientAddress)
+            .unwrap();
+
+        let token_sac = token::TokenClient::new(&env, &token_address);
+
+        let issuer: Address = env
+            .storage()
+            .persistent()
+            .get(&TokenDataKey::TokenIssuerAddress)
+            .unwrap();
+        issuer.require_auth();
+        // burn tokens from his address.
+        token_sac.transfer(
+            &lender,
+            &env.current_contract_address(),
+            &(tokens_to_burn_u128 as i128),
+        );
 
         let current_total_token_balance = Self::get_current_total_veurc_balance(env);
         let new_total_token_balance = current_total_token_balance.sub(&tokens_to_burn);
@@ -330,8 +422,27 @@ impl LiquidityPoolEURC {
 
     pub fn is_eurc_pool_initialised(env: &Env, asset: Symbol) -> bool {
         if !env.storage().persistent().has(&PoolDataKey::Pool(asset)) {
+            // panic!("Pool not initialised");
             panic_with_error!(&env, LendingError::PoolNotInitialized);
         }
         true
     }
+
+    // #[cfg(test)]
+    // fn get_eurc_token_client(env: &Env, admin: Address) -> token::Client {
+    //     // Create a mock stellar asset contract that behaves like EURC
+    //     // let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(env);
+    //     let mock_eurc_id = env.register_stellar_asset_contract_v2(admin);
+    //     token::Client::new(env, &mock_eurc_id.address())
+    // }
+
+    // #[cfg(not(test))]
+    // fn get_eurc_token_client(env: &Env, admin: Address) -> token::Client {
+    //     // In production, use the real EURC contract
+    //     token::Client::new(
+    //         env,
+    //         &Address::from_string_bytes(&Bytes::from_array(env, &EURC_CONTRACT_ID)),
+    //     )
+    //     // &Address::from_string_bytes(&Bytes::from_array(env, &EURC_CONTRACT_ID)),
+    // }
 }
