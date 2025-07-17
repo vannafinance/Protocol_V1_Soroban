@@ -122,8 +122,8 @@ impl LiquidityPoolXLM {
 
         // Making sure token_value is not zero before dividing
         if token_value == U256::from_u128(&env, 0) {
-            // panic!("InvalidTokenValue");
-            panic_with_error!(&env, LendingTokenError::InvalidTokenValue);
+            panic!("InvalidTokenValue");
+            // panic_with_error!(&env, LendingTokenError::InvalidTokenValue);
         }
 
         let tokens_to_be_minted = amount.div(&token_value);
@@ -150,16 +150,16 @@ impl LiquidityPoolXLM {
 
         // Check if lender has registered
         if !env.storage().persistent().has(&key) {
-            // panic!("Lender not registered");
-            panic_with_error!(&env, LendingError::LenderNotRegistered);
+            panic!("Lender not registered");
+            // panic_with_error!(&env, LendingError::LenderNotRegistered);
         }
 
         // Check if lender has enough balance to deduct
         let current_balance: U256 = env.storage().persistent().get(&key).unwrap();
 
         if current_balance < amount {
-            // panic!("InsufficientBalance");
-            panic_with_error!(&env, LendingError::InsufficientBalance);
+            panic!("InsufficientBalance");
+            // panic_with_error!(&env, LendingError::InsufficientBalance);
         }
         let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
 

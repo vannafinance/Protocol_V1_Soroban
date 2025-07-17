@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_deposit_xlm_success() {
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, _admin, lender) = setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         // Initialize pool first
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Deposit amount must be positive")]
     fn test_deposit_xlm_zero_amount() {
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, _admin, lender) = setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         client.initialize_pool_xlm();
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn test_deposit_xlm_insufficient_balance() {
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, _admin, _lender) = setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         client.initialize_pool_xlm();
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn test_withdraw_xlm_success() {
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, _admin, lender) = setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         // Initialize pool and deposit first
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Lender not registered")]
     fn test_withdraw_xlm_lender_not_registered() {
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, _admin, lender) = setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         client.initialize_pool_xlm();
@@ -253,13 +253,13 @@ mod tests {
 
         // let result = panic::catch_unwind(|| {
         // });
-        let res = client.withdraw_xlm(&lender, &withdraw_amount);
+        let _res = client.withdraw_xlm(&lender, &withdraw_amount);
     }
 
     #[test]
     #[should_panic(expected = "InsufficientBalance")]
     fn test_withdraw_xlm_insufficient_balance() {
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, _admin, lender) = setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         // Initialize pool and deposit
@@ -282,7 +282,7 @@ mod tests {
         // Try to withdraw more than deposited
         let withdraw_amount = U256::from_u128(&env, 200000000);
 
-        let result = client.withdraw_xlm(&lender, &withdraw_amount);
+        let _result = client.withdraw_xlm(&lender, &withdraw_amount);
 
         // assert!(result.is_err());
     }
@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn test_mint_vxlm_tokens() {
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, _admin, lender) = setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         client.initialize_pool_xlm();
@@ -567,7 +567,7 @@ mod tests {
         // the test fails before reaching panic of Pool not initialised.
         // Actual error should be "Pool not initialised"
 
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, _admin, lender) = setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         let native_token_address = env.as_contract(&contract_address, || {
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn test_events_emission() {
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, _admin, lender) = setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         client.initialize_pool_xlm();
@@ -647,7 +647,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "InvalidTokenValue")]
     fn test_token_value_zero_error() {
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, _admin, lender) = setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         env.as_contract(&contract_address, || {
