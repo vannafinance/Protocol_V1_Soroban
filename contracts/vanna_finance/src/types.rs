@@ -1,4 +1,6 @@
-use soroban_sdk::{contracttype, Address, String, Symbol};
+use core::ops::Add;
+
+use soroban_sdk::{contracttype, Address, String, Symbol, Vec};
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[contracttype]
@@ -34,4 +36,42 @@ pub enum TokenDataKey {
     TokenClientAddress,
     NativeTokenClientAddress,
     TokenIssuerAddress,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[contracttype]
+pub enum MarginAccountDataKey {
+    UserAddresses,                          // List of all user addresses
+    UserCollateralBalance(Address, Symbol), // Collateral balance for a specific user address, collateral asset symbol
+    UserCollateralTokensList(Address),      // All collateral tokens symbols held by user address
+    UserBorrowedDebt(Address, Symbol),      // User debt balance in a specific asset symbol
+    UserBorrowedTokensList(Address),        // All borrowed tokens symbols held by user address
+    IsAccountInitialised(Address),          // Flag to check if account is initialized
+    IsAccountActive(Address),               // Flag to check if account is active
+    HasNoDebt(Address),                     // Flag to check if account has no debt
+    AccountCreatedTime(Address),            // Time when account was created
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarginAccount {
+    user_address: Address,
+    all_collateral_tokens: Vec<CollateralToken>,
+    all_borrowed_tokens: Vec<BorrowedToken>,
+    is_account_initialised: bool,
+    is_account_active: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CollateralToken {
+    symbol: Symbol,
+    balance: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BorrowedToken {
+    symbol: Symbol,
+    balance: u64,
 }

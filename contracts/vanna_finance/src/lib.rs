@@ -20,8 +20,10 @@ impl Contract {
     }
 }
 
+mod borrowing_protocol;
 mod errors;
 mod events;
 mod lending_protocol;
+mod margin_account;
 mod tests;
 mod types;
