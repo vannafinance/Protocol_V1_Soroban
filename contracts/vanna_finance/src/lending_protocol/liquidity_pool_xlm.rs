@@ -16,7 +16,11 @@ pub const XLM_CONTRACT_ID: [u8; 32] = [0; 32];
 
 #[contractimpl]
 impl LiquidityPoolXLM {
-    pub fn initialize_pool_xlm(env: Env) {
+    pub fn initialize_pool_xlm(
+        env: Env,
+        native_token_address: Address,
+        vxlm_token_address: Address,
+    ) {
         // Verify contract is deployed
         if !env.storage().persistent().has(&PoolDataKey::Deployed) {
             panic!("Contract not deployed");
@@ -28,15 +32,14 @@ impl LiquidityPoolXLM {
             .expect("Admin not set");
 
         admin.require_auth();
-        let native_token = env.register_stellar_asset_contract_v2(admin.clone());
-        let vxlm_token = env.register_stellar_asset_contract_v2(admin.clone());
+
         env.storage()
             .persistent()
-            .set(&TokenDataKey::TokenClientAddress, &vxlm_token.address());
+            .set(&TokenDataKey::TokenClientAddress, &vxlm_token_address);
 
         env.storage().persistent().set(
             &TokenDataKey::NativeTokenClientAddress,
-            &native_token.address(),
+            &native_token_address,
         );
 
         env.storage()

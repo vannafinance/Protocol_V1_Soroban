@@ -14,7 +14,7 @@ mod tests {
         token, Address, Env, Symbol, Vec, U256,
     };
 
-    fn setup_test_env() -> (Env, Address, Address, Address) {
+    fn setup_test_env() -> (Env, Address, Address, Address, Address, Address) {
         let env = Env::default();
         env.mock_all_auths();
 
@@ -39,17 +39,28 @@ mod tests {
             );
         });
 
-        (env, contract_address, admin, lender)
+        let native_token = Env::register_stellar_asset_contract_v2(&env, admin.clone());
+        let vxlm_token = env.register_stellar_asset_contract_v2(admin.clone());
+
+        (
+            env,
+            contract_address,
+            admin,
+            lender,
+            native_token.address(),
+            vxlm_token.address(),
+        )
     }
 
     #[test]
     fn test_initialize_pool_xlm_success() {
-        let (env, contract_address, admin, _) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
 
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         // Test successful initialization
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
 
         // Verify pool is initialized
         env.as_contract(&contract_address, || {
@@ -75,18 +86,22 @@ mod tests {
         env.as_contract(&contract_address, || {
             env.storage().persistent().set(&DataKey::Admin, &admin);
         });
+        let native_token_address = Address::generate(&env);
+        let vxlm_token_address = Address::generate(&env);
 
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
-        client.initialize_pool_xlm(); // Should panic
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
+        // Should panic
     }
 
     #[test]
     fn test_deposit_xlm_success() {
-        let (env, contract_address, _admin, lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         // Initialize pool first
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
 
         let native_token_address = env.as_contract(&contract_address, || {
             env.storage()
@@ -156,19 +171,22 @@ mod tests {
     #[test]
     #[should_panic(expected = "Deposit amount must be positive")]
     fn test_deposit_xlm_zero_amount() {
-        let (env, contract_address, _admin, lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
+
         client.deposit_xlm(&lender, &U256::from_u128(&env, 0)); // Should panic
     }
 
     #[test]
     fn test_deposit_xlm_insufficient_balance() {
-        let (env, contract_address, _admin, _lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
 
         // Don't mint any XLM to lender
         let deposit_amount = U256::from_u128(&env, 100000000);
@@ -183,11 +201,12 @@ mod tests {
 
     #[test]
     fn test_withdraw_xlm_success() {
-        let (env, contract_address, _admin, lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         // Initialize pool and deposit first
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
 
         let native_token_address = env.as_contract(&contract_address, || {
             env.storage()
@@ -243,10 +262,11 @@ mod tests {
     #[test]
     #[should_panic(expected = "Lender not registered")]
     fn test_withdraw_xlm_lender_not_registered() {
-        let (env, contract_address, _admin, lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
 
         // Try to withdraw without depositing first
         let withdraw_amount = U256::from_u128(&env, 50000000);
@@ -259,11 +279,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "InsufficientBalance")]
     fn test_withdraw_xlm_insufficient_balance() {
-        let (env, contract_address, _admin, lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         // Initialize pool and deposit
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
+
         let native_token_address = env.as_contract(&contract_address, || {
             env.storage()
                 .persistent()
@@ -289,10 +311,11 @@ mod tests {
 
     #[test]
     fn test_get_xlm_pool_balance() {
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
 
         // Initially should be 0
         let initial_balance = client.get_xlm_pool_balance();
@@ -318,10 +341,11 @@ mod tests {
 
     #[test]
     fn test_get_lenders_xlm() {
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
 
         // Initially should be empty
         let initial_lenders = client.get_lenders_xlm();
@@ -361,10 +385,11 @@ mod tests {
 
     #[test]
     fn test_multiple_deposits_same_lender() {
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
 
         let native_token_address = env.as_contract(&contract_address, || {
             env.storage()
@@ -410,11 +435,12 @@ mod tests {
 
     #[test]
     fn test_multiple_lenders() {
-        let (env, contract_address, admin, lender1) = setup_test_env();
+        let (env, contract_address, admin, lender1, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let lender2 = Address::generate(&env);
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
 
         // let xlm_token = token::Client::new(
         //     &env,
@@ -455,10 +481,11 @@ mod tests {
 
     #[test]
     fn test_mint_vxlm_tokens() {
-        let (env, contract_address, _admin, lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
 
         // let stellar_asset = StellarAssetClient::new(
         //     &env,
@@ -492,11 +519,12 @@ mod tests {
 
     #[test]
     fn test_burn_vxlm_tokens() {
-        let (env, contract_address, admin, lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         log!(&env, "Admin adresss from tests {:?}", admin);
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
 
         // let xlm_token = token::Client::new(
         //     &env,
@@ -567,7 +595,8 @@ mod tests {
         // the test fails before reaching panic of Pool not initialised.
         // Actual error should be "Pool not initialised"
 
-        let (env, contract_address, _admin, lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         let native_token_address = env.as_contract(&contract_address, || {
@@ -592,10 +621,11 @@ mod tests {
 
     #[test]
     fn test_events_emission() {
-        let (env, contract_address, _admin, lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
 
         let native_token_address = env.as_contract(&contract_address, || {
             env.storage()
@@ -647,7 +677,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "InvalidTokenValue")]
     fn test_token_value_zero_error() {
-        let (env, contract_address, _admin, lender) = setup_test_env();
+        let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
+            setup_test_env();
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         env.as_contract(&contract_address, || {
@@ -658,7 +689,7 @@ mod tests {
             );
         });
 
-        client.initialize_pool_xlm();
+        client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
 
         // let lender = Address::generate(&env);
         let deposit_amount = U256::from_u128(&env, 1000000000);
