@@ -13,6 +13,9 @@ use soroban_sdk::{
 pub struct LiquidityPoolXLM;
 
 pub const XLM_CONTRACT_ID: [u8; 32] = [0; 32];
+const TLL_LEDGERS_YEAR: u32 = 6307200;
+const TLL_LEDGERS_2YEAR: u32 = 6307200 * 2;
+const _TLL_LEDGERS_MONTH: u32 = 518400;
 
 #[contractimpl]
 impl LiquidityPoolXLM {
@@ -36,20 +39,24 @@ impl LiquidityPoolXLM {
         env.storage()
             .persistent()
             .set(&TokenDataKey::TokenClientAddress, &vxlm_token_address);
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::TokenClientAddress);
 
         env.storage().persistent().set(
             &TokenDataKey::NativeTokenClientAddress,
             &native_token_address,
         );
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::NativeTokenClientAddress);
 
         env.storage()
             .persistent()
             .set(&TokenDataKey::TokenIssuerAddress, &admin.clone());
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::TokenIssuerAddress);
 
         env.storage().persistent().set(
             &PoolDataKey::Pool(Symbol::new(&env, "XLM")),
             &U256::from_u128(&env, 0),
         ); // Store the XLM this contract handles
+        Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(Symbol::new(&env, "XLM")));
     }
 
     pub fn deposit_xlm(env: Env, lender: Address, amount: U256) {
@@ -103,6 +110,7 @@ impl LiquidityPoolXLM {
         let new_balance = current_balance.add(&amount);
 
         env.storage().persistent().set(&key, &new_balance);
+        Self::extend_ttl_pooldatakey(&env, key);
 
         // Adding same amount to Total Pool balance
         let current_pool: U256 = env
@@ -116,6 +124,7 @@ impl LiquidityPoolXLM {
         env.storage()
             .persistent()
             .set(&PoolDataKey::Pool(Symbol::new(&env, "XLM")), &(new_pool));
+        Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(Symbol::new(&env, "XLM")));
 
         let token_value: U256 = env
             .storage()
@@ -186,6 +195,7 @@ impl LiquidityPoolXLM {
         // First deduct amount from Lenders balance
         let new_balance = current_balance.sub(&amount);
         env.storage().persistent().set(&key, &new_balance);
+        Self::extend_ttl_pooldatakey(&env, key);
 
         let pool_key = PoolDataKey::Pool(Symbol::new(&env, "XLM"));
         // Deduct same amount from total pool balance
@@ -201,6 +211,7 @@ impl LiquidityPoolXLM {
         env.storage()
             .persistent()
             .set(&pool_key, &(current_pool_balance.sub(&amount)));
+        Self::extend_ttl_pooldatakey(&env, pool_key);
 
         // Now burn the vXLM tokens that were created for the lender
         // Get token value per unit vxlm
@@ -242,6 +253,7 @@ impl LiquidityPoolXLM {
             env.storage()
                 .persistent()
                 .set(&key, &U256::from_u128(&env, 0));
+            Self::extend_ttl_tokendatakey(&env, key.clone());
         }
 
         let tokens_to_mint_u128: u128 = tokens_to_mint
@@ -268,21 +280,22 @@ impl LiquidityPoolXLM {
         let current_vxlm_balance: U256 = env.storage().persistent().get(&key).unwrap();
         let new_vxlm_balance = current_vxlm_balance.add(&tokens_to_mint);
         env.storage().persistent().set(&key, &new_vxlm_balance);
+        Self::extend_ttl_tokendatakey(&env, key.clone());
 
         // Update total token balance available right now
         let current_total_token_balance = Self::get_current_total_vxlm_balance(env);
         let new_total_token_balance = current_total_token_balance.add(&tokens_to_mint);
-        env.storage().persistent().set(
-            &TokenDataKey::CurrentTokenBalance(Symbol::new(&env, "vXLM")),
-            &new_total_token_balance,
-        );
+        let key_x = TokenDataKey::CurrentTokenBalance(Symbol::new(&env, "vXLM"));
+        env.storage()
+            .persistent()
+            .set(&key_x, &new_total_token_balance);
+        Self::extend_ttl_tokendatakey(&env, key_x);
 
         let total_minted = Self::get_total_vxlm_minted(env);
         let new_total_minted = total_minted.add(&tokens_to_mint);
-        env.storage().persistent().set(
-            &TokenDataKey::TotalTokensMinted(Symbol::new(&env, "vXLM")),
-            &new_total_minted,
-        );
+        let key_y = TokenDataKey::TotalTokensMinted(Symbol::new(&env, "vXLM"));
+        env.storage().persistent().set(&key_y, &new_total_minted);
+        Self::extend_ttl_tokendatakey(&env, key_y);
 
         env.events().publish(
             (Symbol::new(&env, "mint_event"), lender.clone()),
@@ -310,6 +323,7 @@ impl LiquidityPoolXLM {
 
         let new_vxlm_balance = current_vxlm_balance.sub(&tokens_to_burn);
         env.storage().persistent().set(&key, &new_vxlm_balance);
+        Self::extend_ttl_tokendatakey(&env, key);
 
         let tokens_to_burn_u128: u128 = tokens_to_burn
             .to_u128()
@@ -342,13 +356,16 @@ impl LiquidityPoolXLM {
             &TokenDataKey::CurrentTokenBalance(Symbol::new(&env, "vXLM")),
             &new_total_token_balance,
         );
+        Self::extend_ttl_tokendatakey(
+            &env,
+            TokenDataKey::CurrentTokenBalance(Symbol::new(&env, "vXLM")),
+        );
 
         let total_burnt = Self::get_total_vxlm_burnt(env);
         let new_total_burnt = total_burnt.add(&tokens_to_burn);
-        env.storage().persistent().set(
-            &TokenDataKey::TotalTokensBurnt(Symbol::new(&env, "vXLM")),
-            &new_total_burnt,
-        );
+        let key_a = TokenDataKey::TotalTokensBurnt(Symbol::new(&env, "vXLM"));
+        env.storage().persistent().set(&key_a, &new_total_burnt);
+        Self::extend_ttl_tokendatakey(&env, key_a);
 
         env.events().publish(
             (Symbol::new(&env, "burn_event"), lender.clone()),
@@ -404,9 +421,9 @@ impl LiquidityPoolXLM {
 
         if !lenders.contains(lender) {
             lenders.push_back(lender.clone());
-            env.storage()
-                .persistent()
-                .set(&PoolDataKey::Lenders(Symbol::new(&env, "XLM")), &lenders);
+            let key_b = PoolDataKey::Lenders(Symbol::new(&env, "XLM"));
+            env.storage().persistent().set(&key_b, &lenders);
+            Self::extend_ttl_pooldatakey(&env, key_b);
         }
     }
 
@@ -426,6 +443,24 @@ impl LiquidityPoolXLM {
             panic_with_error!(&env, LendingError::PoolNotInitialized);
         }
         true
+    }
+
+    fn extend_ttl_datakey(env: &Env, key: DataKey) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_2YEAR);
+    }
+
+    fn extend_ttl_pooldatakey(env: &Env, key: PoolDataKey) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_2YEAR);
+    }
+
+    fn extend_ttl_tokendatakey(env: &Env, key: TokenDataKey) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_2YEAR);
     }
 
     // #[cfg(test)]

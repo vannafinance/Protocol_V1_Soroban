@@ -48,7 +48,7 @@ pub enum MarginAccountDataKey {
     UserBorrowedTokensList(Address),        // All borrowed tokens symbols held by user address
     IsAccountInitialised(Address),          // Flag to check if account is initialized
     IsAccountActive(Address),               // Flag to check if account is active
-    HasNoDebt(Address),                     // Flag to check if account has no debt
+    HasDebt(Address),                       // Flag to check if account has debt
     AccountCreatedTime(Address),            // Time when account was created
 }
 

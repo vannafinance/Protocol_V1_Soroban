@@ -35,3 +35,10 @@ pub enum LendingTokenError {
     InsufficientTokenBalance = 3,
     InvalidTokenValue = 4,
 }
+
+#[contracterror]
+#[derive(Copy, Clone, Debug)]
+pub enum MarginAccountError {
+    CollateralTokenNotFound = 1,
+    BorrowedTokenNotFound = 2,
+}
