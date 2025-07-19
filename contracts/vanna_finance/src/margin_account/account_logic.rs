@@ -6,7 +6,7 @@ use crate::{
 };
 
 const TLL_LEDGERS_YEAR: u32 = 6307200;
-const TLL_LEDGERS_2YEAR: u32 = 6307200 * 2;
+const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 const TLL_LEDGERS_MONTH: u32 = 518400;
 
 #[contract]
@@ -221,12 +221,12 @@ impl AccountLogicContract {
     fn extend_ttl_margin_account(env: &Env, key: MarginAccountDataKey) {
         env.storage()
             .persistent()
-            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_2YEAR);
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 
     fn extend_ttl(env: &Env, key: DataKey) {
         env.storage()
             .persistent()
-            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_2YEAR);
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 }

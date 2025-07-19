@@ -23,3 +23,6 @@ contracts/vanna_finance/test_snapshots/tests/lp_xlm_test/tests/test_token_value_
 contracts/vanna_finance/test_snapshots/tests/lp_xlm_test/tests/test_withdraw_xlm_insufficient_balance.1.json
 contracts/vanna_finance/test_snapshots/tests/lp_xlm_test/tests/test_withdraw_xlm_lender_not_registered.1.json
 contracts/vanna_finance/test_snapshots/tests/lp_xlm_test/tests/test_withdraw_xlm_success.1.json
+account.txt
+transaction_tests.txt
+tests_accounts.txt

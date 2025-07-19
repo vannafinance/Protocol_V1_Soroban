@@ -14,7 +14,7 @@ pub struct LiquidityPoolEURC;
 
 // pub const EURC_CONTRACT_ID: [u8; 32] = [0; 32];
 const TLL_LEDGERS_YEAR: u32 = 6307200;
-const TLL_LEDGERS_2YEAR: u32 = 6307200 * 2;
+const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 const _TLL_LEDGERS_MONTH: u32 = 518400;
 
 #[contractimpl]
@@ -25,9 +25,9 @@ impl LiquidityPoolEURC {
         veurc_token_address: Address,
     ) {
         // Verify contract is deployed
-        if !env.storage().persistent().has(&PoolDataKey::Deployed) {
-            panic!("Contract not deployed");
-        }
+        // if !env.storage().persistent().has(&PoolDataKey::Deployed) {
+        //     panic!("Contract not deployed");
+        // }
         let admin: Address = env
             .storage()
             .persistent()
@@ -448,19 +448,19 @@ impl LiquidityPoolEURC {
     fn extend_ttl_datakey(env: &Env, key: DataKey) {
         env.storage()
             .persistent()
-            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_2YEAR);
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 
     fn extend_ttl_pooldatakey(env: &Env, key: PoolDataKey) {
         env.storage()
             .persistent()
-            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_2YEAR);
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 
     fn extend_ttl_tokendatakey(env: &Env, key: TokenDataKey) {
         env.storage()
             .persistent()
-            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_2YEAR);
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 
     // #[cfg(test)]

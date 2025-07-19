@@ -6,7 +6,7 @@ use crate::events::{
 };
 use crate::types::{DataKey, PoolDataKey, TokenDataKey};
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, token, Address, Env, Symbol, Vec, U256,
+    contract, contractimpl, panic_with_error, token, Address, Env, String, Symbol, Vec, U256,
 };
 
 #[contract]
@@ -14,20 +14,41 @@ pub struct LiquidityPoolXLM;
 
 pub const XLM_CONTRACT_ID: [u8; 32] = [0; 32];
 const TLL_LEDGERS_YEAR: u32 = 6307200;
-const TLL_LEDGERS_2YEAR: u32 = 6307200 * 2;
+const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 const _TLL_LEDGERS_MONTH: u32 = 518400;
 
 #[contractimpl]
 impl LiquidityPoolXLM {
+    pub fn set_admin(env: Env, admin: Address) -> Result<String, LendingError> {
+        let key = DataKey::Admin;
+        if !env.storage().persistent().has(&key) {
+            env.storage().persistent().set(&DataKey::Admin, &admin);
+            Self::extend_ttl_datakey(&env, key);
+        } else {
+            panic!("Admin key has already been set");
+        }
+        Ok(String::from_str(&env, "Adminkey set successfully"))
+    }
+
+    pub fn get_admin(env: Env) -> Result<String, LendingError> {
+        let key = DataKey::Admin;
+        let admin_address: Address = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic!("Admin key has not been set"));
+        Ok(admin_address.to_string())
+    }
+
     pub fn initialize_pool_xlm(
         env: Env,
         native_token_address: Address,
         vxlm_token_address: Address,
-    ) {
+    ) -> Result<String, LendingError> {
         // Verify contract is deployed
-        if !env.storage().persistent().has(&PoolDataKey::Deployed) {
-            panic!("Contract not deployed");
-        }
+        // if !env.storage().persistent().has(&PoolDataKey::Deployed) {
+        //     panic!("Contract not deployed");
+        // }
         let admin: Address = env
             .storage()
             .persistent()
@@ -57,6 +78,7 @@ impl LiquidityPoolXLM {
             &U256::from_u128(&env, 0),
         ); // Store the XLM this contract handles
         Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(Symbol::new(&env, "XLM")));
+        Ok(String::from_str(&env, "XLM pool initialised"))
     }
 
     pub fn deposit_xlm(env: Env, lender: Address, amount: U256) {
@@ -448,19 +470,19 @@ impl LiquidityPoolXLM {
     fn extend_ttl_datakey(env: &Env, key: DataKey) {
         env.storage()
             .persistent()
-            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_2YEAR);
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 
     fn extend_ttl_pooldatakey(env: &Env, key: PoolDataKey) {
         env.storage()
             .persistent()
-            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_2YEAR);
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 
     fn extend_ttl_tokendatakey(env: &Env, key: TokenDataKey) {
         env.storage()
             .persistent()
-            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_2YEAR);
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 
     // #[cfg(test)]
