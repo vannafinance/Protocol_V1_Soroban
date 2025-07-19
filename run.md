@@ -27,13 +27,13 @@ stellar contract deploy \
 - use contract id in --id <Contract id>
 
 - now invoke set_admin function in liquidity_pool_xlm.rs
-
+```
 stellar contract invoke \
   --id <Contract id> \
   --source <Ur account name> \
   --network testnet \
   -- \
-  set_admin \
+  set_admin \ ```
   --admin <Admin address {use ur account public key}>
 
 - Now run get_admin to see admin set address
@@ -55,7 +55,7 @@ stellar contract invoke \
 
 
 ## Initialise XLM pool.
-
+```
 stellar contract invoke \
   --id <deployed contract id> \
   --source <ur account name> \
@@ -64,6 +64,7 @@ stellar contract invoke \
   initialize_pool_xlm \
   --native_token_address CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC \
   --vxlm_token_address <vXLM token contract address >
+  ```
 
 
 
