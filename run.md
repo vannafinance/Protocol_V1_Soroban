@@ -33,8 +33,9 @@ stellar contract invoke \
   --source <Ur account name> \
   --network testnet \
   -- \
-  set_admin \ ```
+  set_admin \ 
   --admin <Admin address {use ur account public key}>
+```
 
 - Now run get_admin to see admin set address
 
@@ -43,7 +44,8 @@ stellar contract invoke \
   --source <ur account name> \
   --network testnet \
   -- \
-  get_admin ```
+  get_admin 
+```
 
 - To initialise pool..
 
