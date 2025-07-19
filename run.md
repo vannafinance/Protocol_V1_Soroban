@@ -39,7 +39,8 @@ stellar contract invoke \
 
 - Now run get_admin to see admin set address
 
-```stellar contract invoke \
+```
+stellar contract invoke \
   --id <Contract id> \
   --source <ur account name> \
   --network testnet \
