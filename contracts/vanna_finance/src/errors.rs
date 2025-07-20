@@ -41,4 +41,5 @@ pub enum LendingTokenError {
 pub enum MarginAccountError {
     CollateralTokenNotFound = 1,
     BorrowedTokenNotFound = 2,
+    MarginAccountNotFound = 3,
 }

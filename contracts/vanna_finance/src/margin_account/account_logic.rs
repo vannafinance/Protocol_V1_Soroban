@@ -1,4 +1,4 @@
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, log, panic_with_error, Address, Env, Symbol, Vec};
 
 use crate::{
     errors::MarginAccountError,
@@ -17,6 +17,11 @@ impl AccountLogicContract {
     pub fn initialise_account_contract(env: Env, admin: Address) {
         env.storage().persistent().set(&DataKey::Admin, &admin);
         Self::extend_ttl(&env, DataKey::Admin);
+        let user_addresses: Vec<Address> = Vec::new(&env);
+        env.storage()
+            .persistent()
+            .set(&MarginAccountDataKey::UserAddresses, &user_addresses);
+        Self::extend_ttl_margin_account(&env, MarginAccountDataKey::UserAddresses);
     }
 
     pub fn initialise_account(env: Env, user_address: Address) {
@@ -71,7 +76,6 @@ impl AccountLogicContract {
     pub fn activate_account(env: Env, user_address: Address) -> Result<(), MarginAccountError> {
         user_address.require_auth();
         let key = MarginAccountDataKey::IsAccountActive(user_address.clone());
-
         env.storage().persistent().set(&key, &true);
         Self::extend_ttl_margin_account(&env, key);
 
@@ -107,18 +111,23 @@ impl AccountLogicContract {
         token_symbol: Symbol,
     ) -> Result<(), MarginAccountError> {
         user_address.require_auth();
+        let key_a = MarginAccountDataKey::UserCollateralTokensList(user_address.clone());
         let mut collateral_tokens_list: Vec<Symbol> = env
             .storage()
             .persistent()
-            .get(&MarginAccountDataKey::UserCollateralTokensList(
-                user_address.clone(),
-            ))
+            .get(&key_a)
             .unwrap_or_else(|| Vec::new(&env));
         let index = collateral_tokens_list
             .first_index_of(token_symbol)
             .unwrap_or_else(|| panic!("Collateral token doesn't exist in the list"));
 
         collateral_tokens_list.remove(index);
+        env.storage()
+            .persistent()
+            .set(&key_a, &collateral_tokens_list);
+
+        Self::extend_ttl_margin_account(&env, key_a);
+
         Ok(())
     }
 
@@ -150,6 +159,9 @@ impl AccountLogicContract {
                 user_address.clone(),
             ))
             .unwrap_or_else(|| Vec::new(&env));
+        if borrowed_tokens_list.contains(&token_symbol) {
+            return Ok(());
+        }
         borrowed_tokens_list.push_back(token_symbol);
 
         let key_a = MarginAccountDataKey::UserBorrowedTokensList(user_address.clone());
@@ -161,23 +173,30 @@ impl AccountLogicContract {
     }
 
     pub fn remove_borrowed_token(
-        env: Env,
+        env: &Env,
         user_address: Address,
         token_symbol: Symbol,
     ) -> Result<(), MarginAccountError> {
         user_address.require_auth();
+        let key_a = MarginAccountDataKey::UserBorrowedTokensList(user_address.clone());
         let mut borrowed_tokens_list: Vec<Symbol> = env
             .storage()
             .persistent()
-            .get(&MarginAccountDataKey::UserBorrowedTokensList(
-                user_address.clone(),
-            ))
+            .get(&key_a)
             .unwrap_or_else(|| Vec::new(&env));
+        // if !borrowed_tokens_list.contains(&token_symbol) {
+        //     return Ok(());
+        // }
         let index = borrowed_tokens_list
             .first_index_of(token_symbol)
             .unwrap_or_else(|| panic!("Borrowed token doesn't exist in the list"));
 
-        borrowed_tokens_list.remove(index);
+        borrowed_tokens_list.remove(index).unwrap();
+        env.storage()
+            .persistent()
+            .set(&key_a, &borrowed_tokens_list);
+        Self::extend_ttl_margin_account(&env, key_a);
+
         Ok(())
     }
 

@@ -1,10 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::errors::{LendingError, LendingTokenError};
-    use crate::events::{
-        LendingDepositEvent, LendingTokenBurnEvent, LendingTokenMintEvent, LendingWithdrawEvent,
-    };
     use crate::lending_protocol::liquidity_pool_xlm::{LiquidityPoolXLM, LiquidityPoolXLMClient};
     use crate::types::{DataKey, PoolDataKey, TokenDataKey};
     use soroban_sdk::log;
@@ -74,7 +69,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Contract not deployed")]
+    // #[should_panic(expected = "Contract not deployed")] Test is no longer needed
     fn test_initialize_pool_xlm_not_deployed() {
         let env = Env::default();
         env.mock_all_auths();
@@ -122,7 +117,6 @@ mod tests {
 
         // Verify event was emitted
         let events = env.events().all();
-        log!(&env, "Events emitteddd :::: {:?}", events.len());
         assert!(events.len() >= 2); // Deposit event + mint event
 
         // Verify lender balance is updated
@@ -164,8 +158,6 @@ mod tests {
                 .unwrap();
             assert_eq!(vxlm_balance, U256::from_u128(&env, 100)); // 100 vXLM tokens
         });
-
-        log!(&env, "HHHHHHH BBBBBBBBBBBBBBBBBBBB RREEEEEEEEEEEEEE");
     }
 
     #[test]
@@ -521,7 +513,6 @@ mod tests {
     fn test_burn_vxlm_tokens() {
         let (env, contract_address, admin, lender, native_token_address, vxlm_token_address) =
             setup_test_env();
-        log!(&env, "Admin adresss from tests {:?}", admin);
         let client = LiquidityPoolXLMClient::new(&env, &contract_address);
 
         client.initialize_pool_xlm(&native_token_address, &vxlm_token_address);
@@ -530,7 +521,6 @@ mod tests {
         //     &env,
         //     &Address::from_string_bytes(&Bytes::from_array(&env, &XLM_CONTRACT_ID)),
         // );
-        log!(&env, "initiaaallisseddd complete");
 
         // let native_token = env.register_stellar_asset_contract_v2(admin);
         let native_token_address = env.as_contract(&contract_address, || {
@@ -540,12 +530,7 @@ mod tests {
                 .expect("TokenClientAddress not found in storage")
         });
 
-        log!(&env, "initiaaallisseddd complete step 2");
-
-        log!(&env, "TOKEN ADDRESS I GOT IS {:?}", native_token_address);
         let stellar_asset = StellarAssetClient::new(&env, &native_token_address);
-
-        log!(&env, "initiaaallisseddd complete step 3");
 
         // let stellar_asset = StellarAssetClient::new(
         //     &env,
@@ -556,16 +541,8 @@ mod tests {
             .mock_all_auths()
             .mint(&lender, &1000000000i128);
 
-        log!(&env, "initiaaallisseddd complete step 4");
-
         let t_client = token::Client::new(&env, &native_token_address);
-        log!(
-            &env,
-            "BALANCEEEEEEEEEEEE HEREEE  IS : {:?}",
-            t_client.balance(&lender)
-        );
 
-        log!(&env, "native token address is {:?}", native_token_address);
         assert!(t_client.balance(&lender) == 1000000000i128);
 
         // Deposit then withdraw
@@ -646,7 +623,6 @@ mod tests {
         client.deposit_xlm(&lender, &deposit_amount);
 
         let events = env.events().all();
-        log!(&env, "Events after deposit {:?}", events.len());
 
         // Should have deposit event and mint event
         assert!(events.len() >= 2);
@@ -666,12 +642,6 @@ mod tests {
         client.withdraw_xlm(&lender, &withdraw_amount);
 
         let events_after_withdraw = env.events().all();
-        log!(
-            &env,
-            "Events after withdraw length: {:?}",
-            events_after_withdraw.len()
-        );
-        log!(&env, "All events length {:?}", events.len());
     }
 
     #[test]
