@@ -204,10 +204,9 @@ impl AccountLogicContract {
                 user_address.clone(),
             ))
             .unwrap_or_else(|| Vec::new(&env));
-        if borrowed_tokens_list.contains(&token_symbol.clone()) {
-            return Ok(());
+        if !borrowed_tokens_list.contains(&token_symbol.clone()) {
+            borrowed_tokens_list.push_back(token_symbol.clone());
         }
-        borrowed_tokens_list.push_back(token_symbol.clone());
 
         let key_a = MarginAccountDataKey::UserBorrowedTokensList(user_address.clone());
         env.storage()
@@ -225,6 +224,8 @@ impl AccountLogicContract {
         let new_debt = token_debt.add(&token_amount);
         env.storage().persistent().set(&key_b, &new_debt);
         Self::extend_ttl_margin_account(&env, key_b);
+
+        Self::set_has_debt(&env, user_address, true).unwrap();
 
         Ok(())
     }
@@ -266,6 +267,7 @@ impl AccountLogicContract {
                 .persistent()
                 .set(&key_a, &borrowed_tokens_list);
             Self::extend_ttl_margin_account(&env, key_a);
+            Self::set_has_debt(&env, user_address, false).unwrap();
         }
 
         Ok(())
@@ -301,7 +303,7 @@ impl AccountLogicContract {
         Ok(borrowed_tokens_list)
     }
 
-    pub fn has_debt(env: Env, user_address: Address) -> bool {
+    pub fn has_debt(env: &Env, user_address: Address) -> bool {
         let has_debt = env
             .storage()
             .persistent()
@@ -311,7 +313,7 @@ impl AccountLogicContract {
     }
 
     pub fn set_has_debt(
-        env: Env,
+        env: &Env,
         user_address: Address,
         has_debt: bool,
     ) -> Result<(), MarginAccountError> {
@@ -331,7 +333,11 @@ impl AccountLogicContract {
             &env.ledger().timestamp(),
         );
 
-        // remove users address from list of Margin account user addresses
+        if Self::has_debt(env, user_address.clone()) {
+            panic!("Cannot delete account with debt, please repay debt first");
+        }
+
+        // remove user's address from list of Margin account user addresses
         let key_d = MarginAccountDataKey::UserAddresses;
         let mut user_addresses: Vec<Address> = env
             .storage()

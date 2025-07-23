@@ -783,7 +783,7 @@ mod test {
             AccountLogicContract::initialise_account(env.clone(), user.clone());
 
             // Initially should have no debt
-            let has_debt = AccountLogicContract::has_debt(env.clone(), user.clone());
+            let has_debt = AccountLogicContract::has_debt(&env.clone(), user.clone());
             assert!(!has_debt);
         });
     }
@@ -797,17 +797,17 @@ mod test {
             AccountLogicContract::initialise_account(env.clone(), user.clone());
 
             // Set debt to true
-            let result = AccountLogicContract::set_has_debt(env.clone(), user.clone(), true);
+            let result = AccountLogicContract::set_has_debt(&env.clone(), user.clone(), true);
             assert!(result.is_ok());
 
-            let has_debt = AccountLogicContract::has_debt(env.clone(), user.clone());
+            let has_debt = AccountLogicContract::has_debt(&env.clone(), user.clone());
             assert!(has_debt);
 
             // Set debt back to false
-            let result = AccountLogicContract::set_has_debt(env.clone(), user.clone(), false);
+            let result = AccountLogicContract::set_has_debt(&env.clone(), user.clone(), false);
             assert!(result.is_ok());
 
-            let has_debt = AccountLogicContract::has_debt(env.clone(), user.clone());
+            let has_debt = AccountLogicContract::has_debt(&env.clone(), user.clone());
             assert!(!has_debt);
         });
     }
@@ -949,13 +949,14 @@ mod test {
     }
 
     #[test]
-    fn test_delete_account() {
+    #[should_panic(expected = "Cannot delete account with debt, please repay debt first")]
+    fn test_delete_account_failure_debt() {
         let (env, admin, user) = create_test_env();
         let contract_address = env.register_contract(None, AccountLogicContract);
         setup_contract(&env, &admin, &contract_address);
 
         let token_symbol = Symbol::new(&env, "USDC");
-        let token_symbol2 = Symbol::new(&env, "USDC");
+        let token_symbol2 = Symbol::new(&env, "USDT");
 
         env.as_contract(&contract_address, || {
             // Set a mock timestamp
@@ -978,6 +979,113 @@ mod test {
         env.as_contract(&contract_address, || {
             let result2 = AccountLogicContract::add_borrowed_token_balance(
                 env.clone(),
+                user.clone(),
+                token_symbol2.clone(),
+                U256::from_u128(&env, 10000),
+            );
+            assert!(result2.is_ok());
+        });
+
+        env.as_contract(&contract_address, || {
+            let res = AccountLogicContract::delete_account(&env, user.clone());
+            assert!(res.is_ok());
+        });
+
+        env.as_contract(&contract_address, || {
+            // Verify account deletion time is set
+            let deletion_time: u64 = env
+                .storage()
+                .persistent()
+                .get(&MarginAccountDataKey::AccountDeletedTime(user.clone()))
+                .unwrap();
+            assert_eq!(deletion_time, 1000000);
+        });
+        env.as_contract(&contract_address, || {
+            // Verify user is deleted from user addresses list
+            let user_addresses: Vec<Address> = env
+                .storage()
+                .persistent()
+                .get(&MarginAccountDataKey::UserAddresses)
+                .unwrap();
+            assert_eq!(user_addresses.len(), 0);
+        });
+
+        env.as_contract(&contract_address, || {
+            // Verify account is deactivated
+            let is_active: bool = env
+                .storage()
+                .persistent()
+                .get(&MarginAccountDataKey::IsAccountActive(user.clone()))
+                .unwrap();
+            assert!(!is_active);
+        });
+        env.as_contract(&contract_address, || {
+            // Verify has no debt
+            let has_debt: bool = env
+                .storage()
+                .persistent()
+                .get(&MarginAccountDataKey::HasDebt(user.clone()))
+                .unwrap();
+            assert!(!has_debt);
+        });
+
+        env.as_contract(&contract_address, || {
+            // Get all tokens
+            let result = AccountLogicContract::get_all_collateral_tokens(env.clone(), user.clone());
+            assert!(result.is_ok());
+            let tokens = result.unwrap();
+            assert_eq!(tokens.len(), 0);
+        });
+
+        env.as_contract(&contract_address, || {
+            // Get all tokens
+            let result = AccountLogicContract::get_all_borrowed_tokens(env.clone(), user.clone());
+            assert!(result.is_ok());
+            let tokens = result.unwrap();
+            assert_eq!(tokens.len(), 0);
+        });
+    }
+
+    #[test]
+    fn test_delete_account_success() {
+        let (env, admin, user) = create_test_env();
+        let contract_address = env.register_contract(None, AccountLogicContract);
+        setup_contract(&env, &admin, &contract_address);
+
+        let token_symbol = Symbol::new(&env, "USDC");
+        let token_symbol2 = Symbol::new(&env, "USDT");
+
+        env.as_contract(&contract_address, || {
+            // Set a mock timestamp
+            env.ledger().with_mut(|li| {
+                li.timestamp = 1000000;
+            });
+            AccountLogicContract::initialise_account(env.clone(), user.clone());
+        });
+
+        env.as_contract(&contract_address, || {
+            let result = AccountLogicContract::add_collateral_token_balance(
+                env.clone(),
+                user.clone(),
+                token_symbol.clone(),
+                U256::from_u128(&env, 12340),
+            );
+            assert!(result.is_ok());
+        });
+
+        env.as_contract(&contract_address, || {
+            let result2 = AccountLogicContract::add_borrowed_token_balance(
+                env.clone(),
+                user.clone(),
+                token_symbol2.clone(),
+                U256::from_u128(&env, 10000),
+            );
+            assert!(result2.is_ok());
+        });
+
+        env.as_contract(&contract_address, || {
+            let result2 = AccountLogicContract::remove_borrowed_token_balance(
+                &env.clone(),
                 user.clone(),
                 token_symbol2.clone(),
                 U256::from_u128(&env, 10000),
