@@ -3,7 +3,7 @@ mod test {
     use soroban_sdk::{
         log,
         testutils::{Address as _, Ledger},
-        Address, Env, Symbol, Vec,
+        Address, Env, Symbol, Vec, U256,
     };
 
     use crate::types::{DataKey, MarginAccountDataKey};
@@ -199,15 +199,15 @@ mod test {
         let contract_address = env.register_contract(None, AccountLogicContract);
         setup_contract(&env, &admin, &contract_address);
 
+        let token_symbol = Symbol::new(&env, "USDC");
         env.as_contract(&contract_address, || {
             AccountLogicContract::initialise_account(env.clone(), user.clone());
 
-            let token_symbol = Symbol::new(&env, "USDC");
-
-            let result = AccountLogicContract::add_collateral_token(
+            let result = AccountLogicContract::add_collateral_token_balance(
                 env.clone(),
                 user.clone(),
                 token_symbol.clone(),
+                U256::from_u128(&env, 12340),
             );
             assert!(result.is_ok());
 
@@ -222,6 +222,16 @@ mod test {
             assert_eq!(collateral_tokens.len(), 1);
             assert_eq!(collateral_tokens.get(0).unwrap(), token_symbol);
         });
+
+        env.as_contract(&contract_address, || {
+            let res = AccountLogicContract::get_collateral_token_balance(
+                &env,
+                user.clone(),
+                token_symbol,
+            );
+            assert!(res.is_ok());
+            assert!(res.unwrap() == U256::from_u128(&env, 12340));
+        });
     }
 
     #[test]
@@ -235,12 +245,22 @@ mod test {
         env.as_contract(&contract_address, || {
             AccountLogicContract::initialise_account(env.clone(), user.clone());
 
-            AccountLogicContract::add_collateral_token(env.clone(), user.clone(), usdc.clone())
-                .unwrap();
+            AccountLogicContract::add_collateral_token_balance(
+                env.clone(),
+                user.clone(),
+                usdc.clone(),
+                U256::from_u128(&env, 11111),
+            )
+            .unwrap();
         });
         env.as_contract(&contract_address, || {
-            AccountLogicContract::add_collateral_token(env.clone(), user.clone(), xlm.clone())
-                .unwrap();
+            AccountLogicContract::add_collateral_token_balance(
+                env.clone(),
+                user.clone(),
+                xlm.clone(),
+                U256::from_u128(&env, 22222),
+            )
+            .unwrap();
 
             let collateral_tokens: Vec<Symbol> = env
                 .storage()
@@ -252,6 +272,16 @@ mod test {
             assert_eq!(collateral_tokens.len(), 2);
             assert_eq!(collateral_tokens.get(0).unwrap(), usdc);
             assert_eq!(collateral_tokens.get(1).unwrap(), xlm);
+        });
+        env.as_contract(&contract_address, || {
+            let res = AccountLogicContract::get_collateral_token_balance(&env, user.clone(), usdc);
+            assert!(res.is_ok());
+            assert!(res.unwrap() == U256::from_u128(&env, 11111));
+        });
+        env.as_contract(&contract_address, || {
+            let res = AccountLogicContract::get_collateral_token_balance(&env, user.clone(), xlm);
+            assert!(res.is_ok());
+            assert!(res.unwrap() == U256::from_u128(&env, 22222));
         });
     }
 
@@ -267,19 +297,30 @@ mod test {
             AccountLogicContract::initialise_account(env.clone(), user.clone());
 
             // Add tokens
-            AccountLogicContract::add_collateral_token(env.clone(), user.clone(), usdc.clone())
-                .unwrap();
-        });
-        env.as_contract(&contract_address, || {
-            AccountLogicContract::add_collateral_token(env.clone(), user.clone(), xlm.clone())
-                .unwrap();
-        });
-        env.as_contract(&contract_address, || {
-            // Remove one token
-            let result = AccountLogicContract::remove_collateral_token(
+            AccountLogicContract::add_collateral_token_balance(
                 env.clone(),
                 user.clone(),
                 usdc.clone(),
+                U256::from_u128(&env, 22222),
+            )
+            .unwrap();
+        });
+        env.as_contract(&contract_address, || {
+            AccountLogicContract::add_collateral_token_balance(
+                env.clone(),
+                user.clone(),
+                xlm.clone(),
+                U256::from_u128(&env, 11111),
+            )
+            .unwrap();
+        });
+        env.as_contract(&contract_address, || {
+            // Remove one token
+            let result = AccountLogicContract::remove_collateral_token_balance(
+                env.clone(),
+                user.clone(),
+                usdc.clone(),
+                U256::from_u128(&env, 22222),
             );
             assert!(result.is_ok());
 
@@ -292,6 +333,115 @@ mod test {
                 .unwrap();
             assert_eq!(collateral_tokens.len(), 1);
             assert_eq!(collateral_tokens.get(0).unwrap(), xlm);
+        });
+
+        env.as_contract(&contract_address, || {
+            let res = AccountLogicContract::get_collateral_token_balance(&env, user.clone(), xlm);
+            assert!(res.is_ok());
+            assert!(res.unwrap() == U256::from_u128(&env, 11111));
+        });
+
+        env.as_contract(&contract_address, || {
+            let res = AccountLogicContract::get_collateral_token_balance(&env, user.clone(), usdc);
+            assert!(res.is_ok());
+            assert!(res.unwrap() == U256::from_u128(&env, 0));
+        });
+    }
+
+    #[test]
+    fn test_remove_partial_collateral_token_success() {
+        let (env, admin, user) = create_test_env();
+        let contract_address = env.register_contract(None, AccountLogicContract);
+        setup_contract(&env, &admin, &contract_address);
+
+        let usdc = Symbol::new(&env, "USDC");
+        let xlm = Symbol::new(&env, "XLM");
+        env.as_contract(&contract_address, || {
+            AccountLogicContract::initialise_account(env.clone(), user.clone());
+
+            // Add tokens
+            AccountLogicContract::add_collateral_token_balance(
+                env.clone(),
+                user.clone(),
+                usdc.clone(),
+                U256::from_u128(&env, 22222),
+            )
+            .unwrap();
+        });
+        env.as_contract(&contract_address, || {
+            AccountLogicContract::add_collateral_token_balance(
+                env.clone(),
+                user.clone(),
+                xlm.clone(),
+                U256::from_u128(&env, 11111),
+            )
+            .unwrap();
+        });
+        env.as_contract(&contract_address, || {
+            // Remove one token
+            let result = AccountLogicContract::remove_collateral_token_balance(
+                env.clone(),
+                user.clone(),
+                usdc.clone(),
+                U256::from_u128(&env, 11111),
+            );
+            assert!(result.is_ok());
+
+            let collateral_tokens: Vec<Symbol> = env
+                .storage()
+                .persistent()
+                .get(&MarginAccountDataKey::UserCollateralTokensList(
+                    user.clone(),
+                ))
+                .unwrap();
+            assert_eq!(collateral_tokens.len(), 2);
+            assert_eq!(collateral_tokens.get(0).unwrap(), usdc);
+            assert_eq!(collateral_tokens.get(1).unwrap(), xlm);
+        });
+
+        env.as_contract(&contract_address, || {
+            let res = AccountLogicContract::get_collateral_token_balance(&env, user.clone(), xlm);
+            assert!(res.is_ok());
+            assert!(res.unwrap() == U256::from_u128(&env, 11111));
+        });
+
+        env.as_contract(&contract_address, || {
+            let res = AccountLogicContract::get_collateral_token_balance(&env, user.clone(), usdc);
+            assert!(res.is_ok());
+            assert!(res.unwrap() == U256::from_u128(&env, 11111));
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "Insufficient Collateral balance for user in this token to deduct")]
+    fn test_remove_excess_amount_collateral_token() {
+        let (env, admin, user) = create_test_env();
+        let contract_address = env.register_contract(None, AccountLogicContract);
+        setup_contract(&env, &admin, &contract_address);
+        let xlm = Symbol::new(&env, "XLM");
+
+        env.as_contract(&contract_address, || {
+            AccountLogicContract::initialise_account(env.clone(), user.clone());
+        });
+
+        env.as_contract(&contract_address, || {
+            AccountLogicContract::add_collateral_token_balance(
+                env.clone(),
+                user.clone(),
+                xlm.clone(),
+                U256::from_u128(&env, 11111),
+            )
+            .unwrap();
+        });
+
+        env.as_contract(&contract_address, || {
+            AccountLogicContract::remove_collateral_token_balance(
+                env.clone(),
+                user.clone(),
+                xlm,
+                U256::from_u128(&env, 33333),
+            )
+            .unwrap();
         });
     }
 
@@ -307,10 +457,11 @@ mod test {
 
             let nonexistent_token = Symbol::new(&env, "NONEXISTENT");
 
-            AccountLogicContract::remove_collateral_token(
+            AccountLogicContract::remove_collateral_token_balance(
                 env.clone(),
                 user.clone(),
                 nonexistent_token,
+                U256::from_u128(&env, 10000),
             )
             .unwrap();
         });
@@ -335,12 +486,22 @@ mod test {
         });
         env.as_contract(&contract_address, || {
             // Add tokens
-            AccountLogicContract::add_collateral_token(env.clone(), user.clone(), usdc.clone())
-                .unwrap();
+            AccountLogicContract::add_collateral_token_balance(
+                env.clone(),
+                user.clone(),
+                usdc.clone(),
+                U256::from_u128(&env, 10000),
+            )
+            .unwrap();
         });
         env.as_contract(&contract_address, || {
-            AccountLogicContract::add_collateral_token(env.clone(), user.clone(), xlm.clone())
-                .unwrap();
+            AccountLogicContract::add_collateral_token_balance(
+                env.clone(),
+                user.clone(),
+                xlm.clone(),
+                U256::from_u128(&env, 10000),
+            )
+            .unwrap();
         });
         env.as_contract(&contract_address, || {
             // Get all tokens
@@ -359,15 +520,15 @@ mod test {
         let contract_address = env.register_contract(None, AccountLogicContract);
         setup_contract(&env, &admin, &contract_address);
 
+        let token_symbol = Symbol::new(&env, "USDT");
         env.as_contract(&contract_address, || {
             AccountLogicContract::initialise_account(env.clone(), user.clone());
 
-            let token_symbol = Symbol::new(&env, "USDT");
-
-            let result = AccountLogicContract::add_borrowed_token(
+            let result = AccountLogicContract::add_borrowed_token_balance(
                 env.clone(),
                 user.clone(),
                 token_symbol.clone(),
+                U256::from_u128(&env, 10000),
             );
             assert!(result.is_ok());
 
@@ -379,6 +540,13 @@ mod test {
                 .unwrap();
             assert_eq!(borrowed_tokens.len(), 1);
             assert_eq!(borrowed_tokens.get(0).unwrap(), token_symbol);
+        });
+
+        env.as_contract(&contract_address, || {
+            let res =
+                AccountLogicContract::get_borrowed_token_debt(&env, user.clone(), token_symbol);
+            assert!(res.is_ok());
+            assert!(res.unwrap() == U256::from_u128(&env, 10000));
         });
     }
 
@@ -394,17 +562,31 @@ mod test {
             AccountLogicContract::initialise_account(env.clone(), user.clone());
 
             // Add tokens
-            AccountLogicContract::add_borrowed_token(env.clone(), user.clone(), usdt.clone())
-                .unwrap();
+            AccountLogicContract::add_borrowed_token_balance(
+                env.clone(),
+                user.clone(),
+                usdt.clone(),
+                U256::from_u128(&env, 22222),
+            )
+            .unwrap();
         });
         env.as_contract(&contract_address, || {
-            AccountLogicContract::add_borrowed_token(env.clone(), user.clone(), dai.clone())
-                .unwrap();
+            AccountLogicContract::add_borrowed_token_balance(
+                env.clone(),
+                user.clone(),
+                dai.clone(),
+                U256::from_u128(&env, 11111),
+            )
+            .unwrap();
         });
         env.as_contract(&contract_address, || {
             // Remove one token
-            let result =
-                AccountLogicContract::remove_borrowed_token(&env, user.clone(), usdt.clone());
+            let result = AccountLogicContract::remove_borrowed_token_balance(
+                &env,
+                user.clone(),
+                usdt.clone(),
+                U256::from_u128(&env, 22222),
+            );
             assert!(result.is_ok());
 
             let borrowed_tokens: Vec<Symbol> = env
@@ -414,6 +596,110 @@ mod test {
                 .unwrap();
             assert_eq!(borrowed_tokens.len(), 1);
             assert_eq!(borrowed_tokens.get(0).unwrap(), dai);
+        });
+
+        env.as_contract(&contract_address, || {
+            let res = AccountLogicContract::get_borrowed_token_debt(&env, user.clone(), usdt);
+            assert!(res.is_ok());
+            assert!(res.unwrap() == U256::from_u128(&env, 0));
+        });
+        env.as_contract(&contract_address, || {
+            let res = AccountLogicContract::get_borrowed_token_debt(&env, user.clone(), dai);
+            assert!(res.is_ok());
+            assert!(res.unwrap() == U256::from_u128(&env, 11111));
+        });
+    }
+
+    #[test]
+    fn test_remove_partial_borrowed_token_success() {
+        let (env, admin, user) = create_test_env();
+        let contract_address = env.register_contract(None, AccountLogicContract);
+        setup_contract(&env, &admin, &contract_address);
+
+        let usdt = Symbol::new(&env, "USDT");
+        let dai = Symbol::new(&env, "DAI");
+        env.as_contract(&contract_address, || {
+            AccountLogicContract::initialise_account(env.clone(), user.clone());
+
+            // Add tokens
+            AccountLogicContract::add_borrowed_token_balance(
+                env.clone(),
+                user.clone(),
+                usdt.clone(),
+                U256::from_u128(&env, 22222),
+            )
+            .unwrap();
+        });
+        env.as_contract(&contract_address, || {
+            AccountLogicContract::add_borrowed_token_balance(
+                env.clone(),
+                user.clone(),
+                dai.clone(),
+                U256::from_u128(&env, 11111),
+            )
+            .unwrap();
+        });
+        env.as_contract(&contract_address, || {
+            // Remove one token
+            let result = AccountLogicContract::remove_borrowed_token_balance(
+                &env,
+                user.clone(),
+                usdt.clone(),
+                U256::from_u128(&env, 11111),
+            );
+            assert!(result.is_ok());
+
+            let borrowed_tokens: Vec<Symbol> = env
+                .storage()
+                .persistent()
+                .get(&MarginAccountDataKey::UserBorrowedTokensList(user.clone()))
+                .unwrap();
+            assert_eq!(borrowed_tokens.len(), 2);
+            assert_eq!(borrowed_tokens.get(0).unwrap(), usdt);
+        });
+
+        env.as_contract(&contract_address, || {
+            let res = AccountLogicContract::get_borrowed_token_debt(&env, user.clone(), usdt);
+            assert!(res.is_ok());
+            assert!(res.unwrap() == U256::from_u128(&env, 11111));
+        });
+        env.as_contract(&contract_address, || {
+            let res = AccountLogicContract::get_borrowed_token_debt(&env, user.clone(), dai);
+            assert!(res.is_ok());
+            assert!(res.unwrap() == U256::from_u128(&env, 11111));
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot remove debt more than what it exists for this token")]
+    fn test_remove_excess_amount_borrowed_token() {
+        let (env, admin, user) = create_test_env();
+        let contract_address = env.register_contract(None, AccountLogicContract);
+        setup_contract(&env, &admin, &contract_address);
+        let dai = Symbol::new(&env, "DAI");
+
+        env.as_contract(&contract_address, || {
+            AccountLogicContract::initialise_account(env.clone(), user.clone());
+        });
+
+        env.as_contract(&contract_address, || {
+            AccountLogicContract::add_borrowed_token_balance(
+                env.clone(),
+                user.clone(),
+                dai.clone(),
+                U256::from_u128(&env, 11111),
+            )
+            .unwrap();
+        });
+
+        env.as_contract(&contract_address, || {
+            AccountLogicContract::remove_borrowed_token_balance(
+                &env,
+                user.clone(),
+                dai.clone(),
+                U256::from_u128(&env, 33333),
+            )
+            .unwrap();
         });
     }
 
@@ -430,8 +716,13 @@ mod test {
         env.as_contract(&contract_address, || {
             let nonexistent_token = Symbol::new(&env, "NONEXISTENT");
 
-            AccountLogicContract::remove_borrowed_token(&env, user.clone(), nonexistent_token)
-                .unwrap();
+            AccountLogicContract::remove_borrowed_token_balance(
+                &env,
+                user.clone(),
+                nonexistent_token,
+                U256::from_u128(&env, 10000),
+            )
+            .unwrap();
         });
     }
 
@@ -455,12 +746,22 @@ mod test {
 
         env.as_contract(&contract_address, || {
             // Add tokens
-            AccountLogicContract::add_borrowed_token(env.clone(), user.clone(), usdt.clone())
-                .unwrap();
+            AccountLogicContract::add_borrowed_token_balance(
+                env.clone(),
+                user.clone(),
+                usdt.clone(),
+                U256::from_u128(&env, 10000),
+            )
+            .unwrap();
         });
         env.as_contract(&contract_address, || {
-            AccountLogicContract::add_borrowed_token(env.clone(), user.clone(), dai.clone())
-                .unwrap();
+            AccountLogicContract::add_borrowed_token_balance(
+                env.clone(),
+                user.clone(),
+                dai.clone(),
+                U256::from_u128(&env, 10000),
+            )
+            .unwrap();
         });
         env.as_contract(&contract_address, || {
             // Get all tokens
@@ -526,10 +827,11 @@ mod test {
             let token = Symbol::new(&env, "USDC");
 
             // These should succeed with mocked auth
-            assert!(AccountLogicContract::add_collateral_token(
+            assert!(AccountLogicContract::add_collateral_token_balance(
                 env.clone(),
                 user.clone(),
-                token.clone()
+                token.clone(),
+                U256::from_u128(&env, 10000)
             )
             .is_ok());
         });
@@ -610,12 +912,22 @@ mod test {
         });
 
         env.as_contract(&contract_address, || {
-            AccountLogicContract::add_collateral_token(env.clone(), user1.clone(), usdc.clone())
-                .unwrap();
+            AccountLogicContract::add_collateral_token_balance(
+                env.clone(),
+                user1.clone(),
+                usdc.clone(),
+                U256::from_u128(&env, 10000),
+            )
+            .unwrap();
         });
         env.as_contract(&contract_address, || {
-            AccountLogicContract::add_collateral_token(env.clone(), user2.clone(), xlm.clone())
-                .unwrap();
+            AccountLogicContract::add_collateral_token_balance(
+                env.clone(),
+                user2.clone(),
+                xlm.clone(),
+                U256::from_u128(&env, 10000),
+            )
+            .unwrap();
         });
         env.as_contract(&contract_address, || {
             // Verify each user has their own tokens
@@ -633,6 +945,103 @@ mod test {
 
             assert_eq!(user2_tokens.len(), 1);
             assert_eq!(user2_tokens.get(0).unwrap(), xlm);
+        });
+    }
+
+    #[test]
+    fn test_delete_account() {
+        let (env, admin, user) = create_test_env();
+        let contract_address = env.register_contract(None, AccountLogicContract);
+        setup_contract(&env, &admin, &contract_address);
+
+        let token_symbol = Symbol::new(&env, "USDC");
+        let token_symbol2 = Symbol::new(&env, "USDC");
+
+        env.as_contract(&contract_address, || {
+            // Set a mock timestamp
+            env.ledger().with_mut(|li| {
+                li.timestamp = 1000000;
+            });
+            AccountLogicContract::initialise_account(env.clone(), user.clone());
+        });
+
+        env.as_contract(&contract_address, || {
+            let result = AccountLogicContract::add_collateral_token_balance(
+                env.clone(),
+                user.clone(),
+                token_symbol.clone(),
+                U256::from_u128(&env, 12340),
+            );
+            assert!(result.is_ok());
+        });
+
+        env.as_contract(&contract_address, || {
+            let result2 = AccountLogicContract::add_borrowed_token_balance(
+                env.clone(),
+                user.clone(),
+                token_symbol2.clone(),
+                U256::from_u128(&env, 10000),
+            );
+            assert!(result2.is_ok());
+        });
+
+        env.as_contract(&contract_address, || {
+            let res = AccountLogicContract::delete_account(&env, user.clone());
+            assert!(res.is_ok());
+        });
+
+        env.as_contract(&contract_address, || {
+            // Verify account deletion time is set
+            let deletion_time: u64 = env
+                .storage()
+                .persistent()
+                .get(&MarginAccountDataKey::AccountDeletedTime(user.clone()))
+                .unwrap();
+            assert_eq!(deletion_time, 1000000);
+        });
+        env.as_contract(&contract_address, || {
+            // Verify user is deleted from user addresses list
+            let user_addresses: Vec<Address> = env
+                .storage()
+                .persistent()
+                .get(&MarginAccountDataKey::UserAddresses)
+                .unwrap();
+            assert_eq!(user_addresses.len(), 0);
+        });
+
+        env.as_contract(&contract_address, || {
+            // Verify account is deactivated
+            let is_active: bool = env
+                .storage()
+                .persistent()
+                .get(&MarginAccountDataKey::IsAccountActive(user.clone()))
+                .unwrap();
+            assert!(!is_active);
+        });
+        env.as_contract(&contract_address, || {
+            // Verify has no debt
+            let has_debt: bool = env
+                .storage()
+                .persistent()
+                .get(&MarginAccountDataKey::HasDebt(user.clone()))
+                .unwrap();
+            assert!(!has_debt);
+        });
+
+        env.as_contract(&contract_address, || {
+            // Get all tokens
+            let result = AccountLogicContract::get_all_collateral_tokens(env.clone(), user.clone());
+            assert!(result.is_ok());
+            let tokens = result.unwrap();
+            assert_eq!(tokens.len(), 0);
+        });
+
+        env.as_contract(&contract_address, || {
+            // Get all tokens
+            let result = AccountLogicContract::get_all_borrowed_tokens(env.clone(), user.clone());
+            assert!(result.is_ok());
+            let tokens = result.unwrap();
+            assert_eq!(tokens.len(), 0);
         });
     }
 

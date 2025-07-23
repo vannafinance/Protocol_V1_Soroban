@@ -50,6 +50,17 @@ pub enum MarginAccountDataKey {
     IsAccountActive(Address),               // Flag to check if account is active
     HasDebt(Address),                       // Flag to check if account has debt
     AccountCreatedTime(Address),            // Time when account was created
+    AccountDeletedTime(Address),            // Time when account is deleted
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[contracttype]
+pub enum BorrowDataKey {
+    IsBorrowAllowed(Address, Symbol), // Flag to check if borrow is allowed for a user for a specific asset symbol
+    BorrowLimit(Address, Symbol),     // Borrow limit for a user for a specific asset symbol
+    IsWithDrawAllowed(Address, Symbol), // Flag to check if withdraw is allowed for a user for a specific asset symbol
+    WithdrawLimit(Address, Symbol),     // Withdraw limit for a user for a specific asset symbol
+    IsAccountHealthy(Address),          // Flag to check if account is healthy
 }
 
 #[contracttype]

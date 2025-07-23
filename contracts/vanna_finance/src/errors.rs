@@ -43,3 +43,15 @@ pub enum MarginAccountError {
     BorrowedTokenNotFound = 2,
     MarginAccountNotFound = 3,
 }
+
+#[contracterror]
+#[derive(Copy, Clone, Debug)]
+pub enum BorrowError {
+    BorrowNotInitialized = 1,
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug)]
+pub enum InterestRateError {
+    InterestRateNotInitialized = 1,
+}
