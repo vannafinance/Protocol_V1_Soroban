@@ -327,15 +327,16 @@ impl AccountLogicContract {
 
     pub fn delete_account(env: &Env, user_address: Address) -> Result<(), MarginAccountError> {
         user_address.require_auth();
+
+        if Self::has_debt(env, user_address.clone()) {
+            panic!("Cannot delete account with debt, please repay debt first");
+        }
+
         // Set account deletion time
         env.storage().persistent().set(
             &MarginAccountDataKey::AccountDeletedTime(user_address.clone()),
             &env.ledger().timestamp(),
         );
-
-        if Self::has_debt(env, user_address.clone()) {
-            panic!("Cannot delete account with debt, please repay debt first");
-        }
 
         // remove user's address from list of Margin account user addresses
         let key_d = MarginAccountDataKey::UserAddresses;
