@@ -401,7 +401,7 @@ impl LiquidityPoolXLM {
         );
     }
 
-    pub fn get_xlm_pool_balance(env: Env) -> U256 {
+    pub fn get_xlm_pool_balance(env: &Env) -> U256 {
         Self::is_xlm_pool_initialised(&env, Symbol::new(&env, "XLM"));
 
         env.storage()

@@ -176,7 +176,7 @@ impl AccountLogicContract {
     }
 
     pub fn get_all_collateral_tokens(
-        env: Env,
+        env: &Env,
         user_address: Address,
     ) -> Result<Vec<Symbol>, MarginAccountError> {
         user_address.require_auth();
@@ -191,7 +191,7 @@ impl AccountLogicContract {
     }
 
     pub fn add_borrowed_token_balance(
-        env: Env,
+        env: &Env,
         user_address: Address,
         token_symbol: Symbol,
         token_amount: U256,
@@ -267,7 +267,9 @@ impl AccountLogicContract {
                 .persistent()
                 .set(&key_a, &borrowed_tokens_list);
             Self::extend_ttl_margin_account(&env, key_a);
-            Self::set_has_debt(&env, user_address, false).unwrap();
+            if borrowed_tokens_list.len() == 0 {
+                Self::set_has_debt(&env, user_address, false).unwrap();
+            }
         }
 
         Ok(())
@@ -289,7 +291,7 @@ impl AccountLogicContract {
     }
 
     pub fn get_all_borrowed_tokens(
-        env: Env,
+        env: &Env,
         user_address: Address,
     ) -> Result<Vec<Symbol>, MarginAccountError> {
         user_address.require_auth();
@@ -308,7 +310,7 @@ impl AccountLogicContract {
             .storage()
             .persistent()
             .get(&MarginAccountDataKey::HasDebt(user_address))
-            .unwrap();
+            .unwrap_or_else(|| false);
         has_debt
     }
 
