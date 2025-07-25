@@ -163,13 +163,13 @@ impl LiquidityPoolXLM {
         let token_value: U256 = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::TokenValue(Symbol::new(&env, "vXLM")))
+            .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "vXLM")))
             .unwrap();
 
         // Making sure token_value is not zero before dividing
         if token_value == U256::from_u128(&env, 0) {
-            panic!("InvalidTokenValue");
-            // panic_with_error!(&env, LendingTokenError::InvalidTokenValue);
+            panic!("InvalidVTokenValue");
+            // panic_with_error!(&env, LendingTokenError::InvalidVTokenValue);
         }
 
         let tokens_to_be_minted = amount.div(&token_value);
@@ -257,12 +257,12 @@ impl LiquidityPoolXLM {
         let token_value: U256 = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::TokenValue(Symbol::new(&env, "vXLM")))
+            .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "vXLM")))
             .unwrap();
 
         // Making sure token_value is not zero before dividing
         if token_value == U256::from_u128(&env, 0) {
-            panic_with_error!(&env, LendingTokenError::InvalidTokenValue);
+            panic_with_error!(&env, LendingTokenError::InvalidVTokenValue);
         }
 
         let tokens_to_be_burnt = amount.div(&token_value);
@@ -282,7 +282,7 @@ impl LiquidityPoolXLM {
     }
 
     fn mint_vxlm_tokens(env: &Env, lender: Address, tokens_to_mint: U256, token_value: U256) {
-        let key = TokenDataKey::TokenBalance(lender.clone(), Symbol::new(&env, "vXLM"));
+        let key = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "vXLM"));
 
         // Check if user has balance initialised, else initialise key for user
         if !env.storage().persistent().has(&key) {
@@ -322,7 +322,7 @@ impl LiquidityPoolXLM {
         // Update total token balance available right now
         let current_total_token_balance = Self::get_current_total_vxlm_balance(env);
         let new_total_token_balance = current_total_token_balance.add(&tokens_to_mint);
-        let key_x = TokenDataKey::CurrentTokenBalance(Symbol::new(&env, "vXLM"));
+        let key_x = TokenDataKey::CurrentVTokenBalance(Symbol::new(&env, "vXLM"));
         env.storage()
             .persistent()
             .set(&key_x, &new_total_token_balance);
@@ -347,7 +347,7 @@ impl LiquidityPoolXLM {
     }
 
     fn burn_vxlm_tokens(env: &Env, lender: Address, tokens_to_burn: U256, token_value: U256) {
-        let key = TokenDataKey::TokenBalance(lender.clone(), Symbol::new(&env, "vXLM"));
+        let key = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "vXLM"));
         if !env.storage().persistent().has(&key) {
             panic_with_error!(&env, LendingTokenError::TokenBalanceNotInitialised);
         }
@@ -398,12 +398,12 @@ impl LiquidityPoolXLM {
         let current_total_token_balance = Self::get_current_total_vxlm_balance(env);
         let new_total_token_balance = current_total_token_balance.sub(&tokens_to_burn);
         env.storage().persistent().set(
-            &TokenDataKey::CurrentTokenBalance(Symbol::new(&env, "vXLM")),
+            &TokenDataKey::CurrentVTokenBalance(Symbol::new(&env, "vXLM")),
             &new_total_token_balance,
         );
         Self::extend_ttl_tokendatakey(
             &env,
-            TokenDataKey::CurrentTokenBalance(Symbol::new(&env, "vXLM")),
+            TokenDataKey::CurrentVTokenBalance(Symbol::new(&env, "vXLM")),
         );
 
         let total_burnt = Self::get_total_vxlm_burnt(env);
@@ -436,7 +436,7 @@ impl LiquidityPoolXLM {
     pub fn get_current_total_vxlm_balance(env: &Env) -> U256 {
         env.storage()
             .persistent()
-            .get(&TokenDataKey::CurrentTokenBalance(Symbol::new(
+            .get(&TokenDataKey::CurrentVTokenBalance(Symbol::new(
                 &env, "vXLM",
             )))
             .unwrap_or_else(|| U256::from_u128(&env, 0))

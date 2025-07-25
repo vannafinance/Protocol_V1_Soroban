@@ -32,9 +32,9 @@ pub enum PoolDataKey {
 pub enum TokenDataKey {
     TotalTokensMinted(Symbol),
     TotalTokensBurnt(Symbol),
-    CurrentTokenBalance(Symbol),
-    TokenBalance(Address, Symbol),
-    TokenValue(Symbol),
+    CurrentVTokenBalance(Symbol),
+    VTokenBalance(Address, Symbol),
+    VTokenValue(Symbol),
     VTokenClientAddress(Symbol),
     UsdcClientAddress,
     EurcClientAddress,
@@ -50,6 +50,7 @@ pub enum MarginAccountDataKey {
     UserCollateralTokensList(Address),      // All collateral tokens symbols held by user address
     UserBorrowedDebt(Address, Symbol),      // User debt balance in a specific asset symbol
     UserBorrowedTokensList(Address),        // All borrowed tokens symbols held by user address
+    TotalDebtInPool(Symbol),                // Total debt in pool for a specific asset symbol
     IsAccountInitialised(Address),          // Flag to check if account is initialized
     IsAccountActive(Address),               // Flag to check if account is active
     HasDebt(Address),                       // Flag to check if account has debt
@@ -65,28 +66,29 @@ pub enum BorrowDataKey {
     IsWithDrawAllowed(Address, Symbol), // Flag to check if withdraw is allowed for a user for a specific asset symbol
     WithdrawLimit(Address, Symbol),     // Withdraw limit for a user for a specific asset symbol
     IsAccountHealthy(Address),          // Flag to check if account is healthy
+    LastUpdatedTime(Symbol),            // Last updated time for token symbol
 }
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MarginAccount {
-    user_address: Address,
-    all_collateral_tokens: Vec<CollateralToken>,
-    all_borrowed_tokens: Vec<BorrowedToken>,
-    is_account_initialised: bool,
-    is_account_active: bool,
-}
+// #[contracttype]
+// #[derive(Clone, Debug, Eq, PartialEq)]
+// pub struct MarginAccount {
+//     user_address: Address,
+//     all_collateral_tokens: Vec<CollateralToken>,
+//     all_borrowed_tokens: Vec<BorrowedToken>,
+//     is_account_initialised: bool,
+//     is_account_active: bool,
+// }
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CollateralToken {
-    symbol: Symbol,
-    balance: u64,
-}
+// #[contracttype]
+// #[derive(Clone, Debug, Eq, PartialEq)]
+// pub struct CollateralToken {
+//     symbol: Symbol,
+//     balance: u64,
+// }
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BorrowedToken {
-    symbol: Symbol,
-    balance: u64,
-}
+// #[contracttype]
+// #[derive(Clone, Debug, Eq, PartialEq)]
+// pub struct BorrowedToken {
+//     symbol: Symbol,
+//     balance: u64,
+// }

@@ -139,13 +139,13 @@ impl LiquidityPoolUSDC {
         let token_value: U256 = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::TokenValue(Symbol::new(&env, "vUSDC")))
+            .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "vUSDC")))
             .unwrap();
 
         // Making sure token_value is not zero before dividing
         if token_value == U256::from_u128(&env, 0) {
-            panic!("InvalidTokenValue");
-            // panic_with_error!(&env, LendingTokenError::InvalidTokenValue);
+            panic!("InvalidVTokenValue");
+            // panic_with_error!(&env, LendingTokenError::InvalidVTokenValue);
         }
 
         let tokens_to_be_minted = amount.div(&token_value);
@@ -233,12 +233,12 @@ impl LiquidityPoolUSDC {
         let token_value: U256 = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::TokenValue(Symbol::new(&env, "vUSDC")))
+            .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "vUSDC")))
             .unwrap();
 
         // Making sure token_value is not zero before dividing
         if token_value == U256::from_u128(&env, 0) {
-            panic_with_error!(&env, LendingTokenError::InvalidTokenValue);
+            panic_with_error!(&env, LendingTokenError::InvalidVTokenValue);
         }
 
         let tokens_to_be_burnt = amount.div(&token_value);
@@ -258,7 +258,7 @@ impl LiquidityPoolUSDC {
     }
 
     fn mint_vusdc_tokens(env: &Env, lender: Address, tokens_to_mint: U256, token_value: U256) {
-        let key = TokenDataKey::TokenBalance(lender.clone(), Symbol::new(&env, "vUSDC"));
+        let key = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "vUSDC"));
 
         // Check if user has balance initialised, else initialise key for user
         if !env.storage().persistent().has(&key) {
@@ -298,7 +298,7 @@ impl LiquidityPoolUSDC {
         // Update total token balance available right now
         let current_total_token_balance = Self::get_current_total_vusdc_balance(env);
         let new_total_token_balance = current_total_token_balance.add(&tokens_to_mint);
-        let key_x = TokenDataKey::CurrentTokenBalance(Symbol::new(&env, "vUSDC"));
+        let key_x = TokenDataKey::CurrentVTokenBalance(Symbol::new(&env, "vUSDC"));
         env.storage()
             .persistent()
             .set(&key_x, &new_total_token_balance);
@@ -323,7 +323,7 @@ impl LiquidityPoolUSDC {
     }
 
     fn burn_vusdc_tokens(env: &Env, lender: Address, tokens_to_burn: U256, token_value: U256) {
-        let key = TokenDataKey::TokenBalance(lender.clone(), Symbol::new(&env, "vUSDC"));
+        let key = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "vUSDC"));
         if !env.storage().persistent().has(&key) {
             panic_with_error!(&env, LendingTokenError::TokenBalanceNotInitialised);
         }
@@ -371,12 +371,12 @@ impl LiquidityPoolUSDC {
         let current_total_token_balance = Self::get_current_total_vusdc_balance(env);
         let new_total_token_balance = current_total_token_balance.sub(&tokens_to_burn);
         env.storage().persistent().set(
-            &TokenDataKey::CurrentTokenBalance(Symbol::new(&env, "vUSDC")),
+            &TokenDataKey::CurrentVTokenBalance(Symbol::new(&env, "vUSDC")),
             &new_total_token_balance,
         );
         Self::extend_ttl_tokendatakey(
             &env,
-            TokenDataKey::CurrentTokenBalance(Symbol::new(&env, "vUSDC")),
+            TokenDataKey::CurrentVTokenBalance(Symbol::new(&env, "vUSDC")),
         );
 
         let total_burnt = Self::get_total_vusdc_burnt(env);
@@ -409,7 +409,7 @@ impl LiquidityPoolUSDC {
     pub fn get_current_total_vusdc_balance(env: &Env) -> U256 {
         env.storage()
             .persistent()
-            .get(&TokenDataKey::CurrentTokenBalance(Symbol::new(
+            .get(&TokenDataKey::CurrentVTokenBalance(Symbol::new(
                 &env, "vUSDC",
             )))
             .unwrap_or_else(|| U256::from_u128(&env, 0))

@@ -3,8 +3,9 @@ use core::ops::Mul;
 use soroban_sdk::{contract, contractimpl, log, panic_with_error, Address, Env, Symbol, Vec, U256};
 
 use crate::{
-    errors::InterestRateError, lending_protocol::liquidity_pool_xlm::LiquidityPoolXLM,
-    types::DataKey,
+    borrowing_protocol::borrow_logic::BorrowLogicContract, errors::InterestRateError,
+    lending_protocol::liquidity_pool_xlm::LiquidityPoolXLM,
+    margin_account::account_logic::AccountLogicContract, types::DataKey,
 };
 
 const TLL_LEDGERS_YEAR: u32 = 6307200;
@@ -20,8 +21,24 @@ const SECS_PER_YEAR: u128 = 31556952 * 1000000000000000000;
 pub struct InterestRateContract;
 
 impl InterestRateContract {
-    pub fn initialise_interest_rate(env: &Env) -> Result<(), InterestRateError> {
-        Ok(())
+    // pub fn initialise_interest_rate(env: &Env) -> Result<(), InterestRateError> {
+    //     Ok(())
+    // }
+
+    pub fn get_rate_factor(env: &Env, token: Symbol) -> Result<u128, InterestRateError> {
+        let lastupdatetime = BorrowLogicContract::get_last_updated_time(&env, token.clone());
+        let blocktimestamp = env.ledger().timestamp();
+        if lastupdatetime == env.ledger().timestamp() {
+            return Ok(0);
+        }
+
+        let borrows = AccountLogicContract::get_total_debt_in_pool(&env, token.clone());
+        let liquidity = AccountLogicContract::get_total_liquidity_in_pool(&env, token.clone());
+
+        U256::from_u128(&env, (blocktimestamp - lastupdatetime) as u128)
+            .mul(&(Self::get_borrow_rate_per_sec(&env, token, liquidity, borrows).unwrap()));
+
+        Ok(0)
     }
 
     pub fn get_borrow_rate_per_sec(

@@ -30,7 +30,7 @@ mod tests {
                 .set(&PoolDataKey::Deployed, &true);
             env.storage().persistent().set(&DataKey::Admin, &admin);
             env.storage().persistent().set(
-                &TokenDataKey::TokenValue(Symbol::new(&env, "vXLM")),
+                &TokenDataKey::VTokenValue(Symbol::new(&env, "vXLM")),
                 &U256::from_u128(&env, 1000000), // 1 XLM = 1 vXLM initially
             );
         });
@@ -180,7 +180,7 @@ mod tests {
             let vxlm_balance: U256 = env
                 .storage()
                 .persistent()
-                .get(&TokenDataKey::TokenBalance(
+                .get(&TokenDataKey::VTokenBalance(
                     lender.clone(),
                     Symbol::new(&env, "vXLM"),
                 ))
@@ -304,7 +304,7 @@ mod tests {
             let vxlm_balance: U256 = env
                 .storage()
                 .persistent()
-                .get(&TokenDataKey::TokenBalance(
+                .get(&TokenDataKey::VTokenBalance(
                     lender.clone(),
                     Symbol::new(&env, "vXLM"),
                 ))
@@ -812,7 +812,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "InvalidTokenValue")]
+    #[should_panic(expected = "InvalidVTokenValue")]
     fn test_token_value_zero_error() {
         let (
             env,
@@ -828,7 +828,7 @@ mod tests {
         env.as_contract(&contract_address, || {
             // Set token value to zero
             env.storage().persistent().set(
-                &TokenDataKey::TokenValue(Symbol::new(&env, "vXLM")),
+                &TokenDataKey::VTokenValue(Symbol::new(&env, "vXLM")),
                 &U256::from_u128(&env, 0),
             );
         });
@@ -854,7 +854,7 @@ mod tests {
             .mock_all_auths()
             .mint(&lender, &1000000000i128);
 
-        // This should panic with InvalidTokenValue
+        // This should panic with InvalidVTokenValue
         client.deposit_xlm(&lender, &deposit_amount);
     }
 }

@@ -1,8 +1,8 @@
-use soroban_sdk::{contract, contractimpl, Address, Env, Symbol, Vec, U256};
+use soroban_sdk::{contract, contractimpl, log, Address, Env, Symbol, Vec, U256};
 
 use crate::{
     errors::MarginAccountError,
-    types::{DataKey, MarginAccountDataKey},
+    types::{DataKey, MarginAccountDataKey, PoolDataKey},
 };
 
 const TLL_LEDGERS_YEAR: u32 = 6307200;
@@ -225,6 +225,17 @@ impl AccountLogicContract {
         env.storage().persistent().set(&key_b, &new_debt);
         Self::extend_ttl_margin_account(&env, key_b);
 
+        let total_debt = Self::get_total_debt_in_pool(&env, token_symbol.clone());
+        total_debt.add(&token_amount);
+        env.storage().persistent().set(
+            &MarginAccountDataKey::TotalDebtInPool(token_symbol.clone()),
+            &total_debt,
+        );
+        Self::extend_ttl_margin_account(
+            &env,
+            MarginAccountDataKey::TotalDebtInPool(token_symbol.clone()),
+        );
+
         Self::set_has_debt(&env, user_address, true).unwrap();
 
         Ok(())
@@ -267,6 +278,19 @@ impl AccountLogicContract {
                 .persistent()
                 .set(&key_a, &borrowed_tokens_list);
             Self::extend_ttl_margin_account(&env, key_a);
+
+            // Set total_debt for pool
+            let total_debt = Self::get_total_debt_in_pool(&env, token_symbol.clone());
+            log!(&env, "Reached x");
+
+            let res = total_debt.sub(&token_amount);
+            log!(&env, "Reached y");
+
+            env.storage().persistent().set(
+                &MarginAccountDataKey::TotalDebtInPool(token_symbol.clone()),
+                &res,
+            );
+
             if borrowed_tokens_list.len() == 0 {
                 Self::set_has_debt(&env, user_address, false).unwrap();
             }
@@ -274,7 +298,20 @@ impl AccountLogicContract {
             let new_debt = token_debt.sub(&token_amount);
             env.storage().persistent().set(&key_b, &new_debt);
             Self::extend_ttl_margin_account(&env, key_b);
+
+            // Set total_debt for pool
+            let total_debt = Self::get_total_debt_in_pool(&env, token_symbol.clone());
+            let res = total_debt.sub(&token_amount);
+            env.storage().persistent().set(
+                &MarginAccountDataKey::TotalDebtInPool(token_symbol.clone()),
+                &res,
+            );
         }
+
+        Self::extend_ttl_margin_account(
+            &env,
+            MarginAccountDataKey::TotalDebtInPool(token_symbol.clone()),
+        );
 
         Ok(())
     }
@@ -329,6 +366,25 @@ impl AccountLogicContract {
         );
         Self::extend_ttl_margin_account(&env, MarginAccountDataKey::HasDebt(user_address));
         Ok(())
+    }
+
+    pub fn get_total_debt_in_pool(env: &Env, token_symbol: Symbol) -> U256 {
+        let key_x = MarginAccountDataKey::TotalDebtInPool(token_symbol.clone());
+
+        let res = env
+            .storage()
+            .persistent()
+            .get(&key_x)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
+
+        res
+    }
+
+    pub fn get_total_liquidity_in_pool(env: &Env, token_symbol: Symbol) -> U256 {
+        env.storage()
+            .persistent()
+            .get(&PoolDataKey::Pool(token_symbol))
+            .unwrap_or(U256::from_u128(&env, 0))
     }
 
     pub fn delete_account(env: &Env, user_address: Address) -> Result<(), MarginAccountError> {

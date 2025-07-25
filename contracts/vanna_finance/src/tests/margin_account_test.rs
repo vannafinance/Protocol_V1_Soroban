@@ -569,6 +569,7 @@ mod test {
                 U256::from_u128(&env, 22222),
             )
             .unwrap();
+            log!(&env, "Reached 1");
         });
         env.as_contract(&contract_address, || {
             AccountLogicContract::add_borrowed_token_balance(
@@ -578,6 +579,14 @@ mod test {
                 U256::from_u128(&env, 11111),
             )
             .unwrap();
+            log!(&env, "Reached 2");
+        });
+        env.as_contract(&contract_address, || {
+            let key_x = MarginAccountDataKey::TotalDebtInPool(usdt.clone());
+
+            env.storage()
+                .persistent()
+                .set(&key_x, &U256::from_u128(&env, 22222));
         });
         env.as_contract(&contract_address, || {
             // Remove one token
@@ -588,12 +597,15 @@ mod test {
                 U256::from_u128(&env, 22222),
             );
             assert!(result.is_ok());
+            log!(&env, "Reached 3");
 
             let borrowed_tokens: Vec<Symbol> = env
                 .storage()
                 .persistent()
                 .get(&MarginAccountDataKey::UserBorrowedTokensList(user.clone()))
                 .unwrap();
+            log!(&env, "Reached 4");
+
             assert_eq!(borrowed_tokens.len(), 1);
             assert_eq!(borrowed_tokens.get(0).unwrap(), dai);
         });
@@ -644,6 +656,13 @@ mod test {
                 U256::from_u128(&env, 11111),
             )
             .unwrap();
+        });
+        env.as_contract(&contract_address, || {
+            let key_x = MarginAccountDataKey::TotalDebtInPool(usdt.clone());
+
+            env.storage()
+                .persistent()
+                .set(&key_x, &U256::from_u128(&env, 22222));
         });
         env.as_contract(&contract_address, || {
             // Remove one token
@@ -1097,6 +1116,14 @@ mod test {
                 U256::from_u128(&env, 10000),
             );
             assert!(result2.is_ok());
+        });
+
+        env.as_contract(&contract_address, || {
+            let key_x = MarginAccountDataKey::TotalDebtInPool(token_symbol2.clone());
+
+            env.storage()
+                .persistent()
+                .set(&key_x, &U256::from_u128(&env, 10000));
         });
 
         env.as_contract(&contract_address, || {
