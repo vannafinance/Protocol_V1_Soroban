@@ -256,12 +256,12 @@ impl AccountLogicContract {
             .unwrap_or_else(|| U256::from_u128(&env, 0));
         if token_amount > token_debt {
             panic!("Cannot remove debt more than what it exists for this token",);
-        }
-        let new_debt = token_debt.sub(&token_amount);
-        env.storage().persistent().set(&key_b, &new_debt);
-        Self::extend_ttl_margin_account(&env, key_b);
+        } else if token_amount == token_debt {
+            env.storage()
+                .persistent()
+                .set(&key_b, &U256::from_u128(&env, 0));
+            Self::extend_ttl_margin_account(&env, key_b);
 
-        if token_amount == token_debt {
             borrowed_tokens_list.remove(index).unwrap();
             env.storage()
                 .persistent()
@@ -270,6 +270,10 @@ impl AccountLogicContract {
             if borrowed_tokens_list.len() == 0 {
                 Self::set_has_debt(&env, user_address, false).unwrap();
             }
+        } else {
+            let new_debt = token_debt.sub(&token_amount);
+            env.storage().persistent().set(&key_b, &new_debt);
+            Self::extend_ttl_margin_account(&env, key_b);
         }
 
         Ok(())

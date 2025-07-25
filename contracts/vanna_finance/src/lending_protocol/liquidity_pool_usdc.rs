@@ -21,13 +21,10 @@ const _TLL_LEDGERS_MONTH: u32 = 518400;
 impl LiquidityPoolUSDC {
     pub fn initialize_pool_usdc(
         env: Env,
-        native_token_address: Address,
+        usdc_token_address: Address,
         vusdc_token_address: Address,
+        usdc_pool_address: Address,
     ) {
-        // Verify contract is deployed
-        // if !env.storage().persistent().has(&PoolDataKey::Deployed) {
-        //     panic!("Contract not deployed");
-        // }
         let admin: Address = env
             .storage()
             .persistent()
@@ -35,17 +32,22 @@ impl LiquidityPoolUSDC {
             .expect("Admin not set");
 
         admin.require_auth();
+        let usdc_symbol = Symbol::new(&env, "USDC");
+        let vusdc_symbol = Symbol::new(&env, "vUSDC");
+
+        env.storage().persistent().set(
+            &TokenDataKey::VTokenClientAddress(vusdc_symbol.clone()),
+            &vusdc_token_address,
+        );
+        Self::extend_ttl_tokendatakey(
+            &env,
+            TokenDataKey::VTokenClientAddress(vusdc_symbol.clone()),
+        );
 
         env.storage()
             .persistent()
-            .set(&TokenDataKey::TokenClientAddress, &vusdc_token_address);
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::TokenClientAddress);
-
-        env.storage().persistent().set(
-            &TokenDataKey::NativeTokenClientAddress,
-            &native_token_address,
-        );
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::NativeTokenClientAddress);
+            .set(&TokenDataKey::UsdcClientAddress, &usdc_token_address);
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::UsdcClientAddress);
 
         env.storage()
             .persistent()
@@ -53,10 +55,16 @@ impl LiquidityPoolUSDC {
         Self::extend_ttl_tokendatakey(&env, TokenDataKey::TokenIssuerAddress);
 
         env.storage().persistent().set(
-            &PoolDataKey::Pool(Symbol::new(&env, "USDC")),
+            &PoolDataKey::PoolAddress(usdc_symbol.clone()),
+            &usdc_pool_address,
+        );
+        Self::extend_ttl_pooldatakey(&env, PoolDataKey::PoolAddress(usdc_symbol.clone()));
+
+        env.storage().persistent().set(
+            &PoolDataKey::Pool(usdc_symbol.clone()),
             &U256::from_u128(&env, 0),
         ); // Store the USDC this contract handles
-        Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(Symbol::new(&env, "USDC")));
+        Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(usdc_symbol.clone()));
     }
 
     pub fn deposit_usdc(env: Env, lender: Address, amount: U256) {
@@ -73,12 +81,8 @@ impl LiquidityPoolUSDC {
 
         let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
 
-        let native_token_address: Address = env
-            .storage()
-            .persistent()
-            .get(&TokenDataKey::NativeTokenClientAddress)
-            .unwrap();
-        let usdc_token = token::Client::new(&env, &native_token_address);
+        let usdc_token_address: Address = Self::get_usdc_client_address(&env);
+        let usdc_token = token::Client::new(&env, &usdc_token_address);
 
         // let usdc_token: token::TokenClient<'_> = Self::get_usdc_token_client(&env, admin);
 
@@ -88,10 +92,16 @@ impl LiquidityPoolUSDC {
             panic_with_error!(&env, LendingError::InsufficientBalance);
         }
 
+        let usdc_pool_address: Address = env
+            .storage()
+            .persistent()
+            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "USDC")))
+            .unwrap_or_else(|| panic!("Failed to fetch USDC pool address"));
+
         // Transfer USDC from user to this contract
         usdc_token.transfer(
-            &lender,                         // from
-            &env.current_contract_address(), // to
+            &lender,            // from
+            &usdc_pool_address, // to
             &(amount_u128 as i128),
         );
 
@@ -175,20 +185,22 @@ impl LiquidityPoolUSDC {
         }
         let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
 
-        let native_token_address: Address = env
-            .storage()
-            .persistent()
-            .get(&TokenDataKey::NativeTokenClientAddress)
-            .unwrap();
-        let usdc_token = token::Client::new(&env, &native_token_address);
+        let usdc_token_address: Address = Self::get_usdc_client_address(&env);
+        let usdc_token = token::Client::new(&env, &usdc_token_address);
 
         let amount_u128: u128 = amount
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
 
+        let usdc_pool_address: Address = env
+            .storage()
+            .persistent()
+            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "USDC")))
+            .unwrap_or_else(|| panic!("Failed to fetch USDC pool address"));
+
         usdc_token.transfer(
-            &env.current_contract_address(), // from
-            &lender,                         // to
+            &usdc_pool_address, // from
+            &lender,            // to
             &(amount_u128 as i128),
         );
 
@@ -259,11 +271,12 @@ impl LiquidityPoolUSDC {
         let tokens_to_mint_u128: u128 = tokens_to_mint
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+        let vusdc_symbol = Symbol::new(&env, "vUSDC");
 
         let token_address: Address = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::TokenClientAddress)
+            .get(&TokenDataKey::VTokenClientAddress(vusdc_symbol))
             .unwrap();
 
         let token_sac = token::StellarAssetClient::new(&env, &token_address);
@@ -329,10 +342,12 @@ impl LiquidityPoolUSDC {
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
 
+        let vusdc_symbol = Symbol::new(&env, "vUSDC");
+
         let token_address: Address = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::TokenClientAddress)
+            .get(&TokenDataKey::VTokenClientAddress(vusdc_symbol))
             .unwrap();
 
         let token_sac = token::TokenClient::new(&env, &token_address);
@@ -343,12 +358,15 @@ impl LiquidityPoolUSDC {
             .get(&TokenDataKey::TokenIssuerAddress)
             .unwrap();
         issuer.require_auth();
+
+        let usdc_pool_address: Address = env
+            .storage()
+            .persistent()
+            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "USDC")))
+            .unwrap_or_else(|| panic!("Failed to fetch USDC pool address"));
+
         // burn tokens from his address.
-        token_sac.transfer(
-            &lender,
-            &env.current_contract_address(),
-            &(tokens_to_burn_u128 as i128),
-        );
+        token_sac.transfer(&lender, &usdc_pool_address, &(tokens_to_burn_u128 as i128));
 
         let current_total_token_balance = Self::get_current_total_vusdc_balance(env);
         let new_total_token_balance = current_total_token_balance.sub(&tokens_to_burn);
@@ -443,6 +461,20 @@ impl LiquidityPoolUSDC {
             panic_with_error!(&env, LendingError::PoolNotInitialized);
         }
         true
+    }
+
+    pub fn get_usdc_pool_address(env: &Env) -> Address {
+        env.storage()
+            .persistent()
+            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "USDC").clone()))
+            .unwrap_or_else(|| panic!("USDC pool address not set"))
+    }
+
+    pub fn get_usdc_client_address(env: &Env) -> Address {
+        env.storage()
+            .persistent()
+            .get(&TokenDataKey::UsdcClientAddress)
+            .unwrap_or_else(|| panic!("Native USDC client address not set"))
     }
 
     fn extend_ttl_datakey(env: &Env, key: DataKey) {

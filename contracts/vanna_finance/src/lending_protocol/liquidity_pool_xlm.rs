@@ -6,7 +6,8 @@ use crate::events::{
 };
 use crate::types::{DataKey, PoolDataKey, TokenDataKey};
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, token, Address, Env, String, Symbol, Vec, U256,
+    contract, contractimpl, panic_with_error, token, Address, BytesN, Env, String, Symbol, Vec,
+    U256,
 };
 
 #[contract]
@@ -40,15 +41,16 @@ impl LiquidityPoolXLM {
         Ok(admin_address.to_string())
     }
 
+    // fn create_pool(env: &Env) -> Address {
+    //     // AccountId::
+    // }
+
     pub fn initialize_pool_xlm(
         env: Env,
         native_token_address: Address,
         vxlm_token_address: Address,
+        xlm_pool_address: Address,
     ) -> Result<String, LendingError> {
-        // Verify contract is deployed
-        // if !env.storage().persistent().has(&PoolDataKey::Deployed) {
-        //     panic!("Contract not deployed");
-        // }
         let admin: Address = env
             .storage()
             .persistent()
@@ -56,17 +58,25 @@ impl LiquidityPoolXLM {
             .expect("Admin not set");
 
         admin.require_auth();
+        let xlm_symbol = Symbol::new(&env, "XLM");
+        let vxlm_symbol = Symbol::new(&env, "vXLM");
+
+        env.storage().persistent().set(
+            &TokenDataKey::VTokenClientAddress(vxlm_symbol.clone()),
+            &vxlm_token_address,
+        );
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::VTokenClientAddress(vxlm_symbol.clone()));
 
         env.storage()
             .persistent()
-            .set(&TokenDataKey::TokenClientAddress, &vxlm_token_address);
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::TokenClientAddress);
+            .set(&TokenDataKey::NativeXLMClientAddress, &native_token_address);
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::NativeXLMClientAddress);
 
         env.storage().persistent().set(
-            &TokenDataKey::NativeTokenClientAddress,
-            &native_token_address,
+            &PoolDataKey::PoolAddress(xlm_symbol.clone()),
+            &xlm_pool_address,
         );
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::NativeTokenClientAddress);
+        Self::extend_ttl_pooldatakey(&env, PoolDataKey::PoolAddress(xlm_symbol.clone()));
 
         env.storage()
             .persistent()
@@ -74,10 +84,10 @@ impl LiquidityPoolXLM {
         Self::extend_ttl_tokendatakey(&env, TokenDataKey::TokenIssuerAddress);
 
         env.storage().persistent().set(
-            &PoolDataKey::Pool(Symbol::new(&env, "XLM")),
+            &PoolDataKey::Pool(xlm_symbol.clone()),
             &U256::from_u128(&env, 0),
         ); // Store the XLM this contract handles
-        Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(Symbol::new(&env, "XLM")));
+        Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(xlm_symbol.clone()));
         Ok(String::from_str(&env, "XLM pool initialised"))
     }
 
@@ -95,11 +105,7 @@ impl LiquidityPoolXLM {
 
         let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
 
-        let native_token_address: Address = env
-            .storage()
-            .persistent()
-            .get(&TokenDataKey::NativeTokenClientAddress)
-            .unwrap();
+        let native_token_address: Address = Self::get_native_xlm_client_address(&env);
         let xlm_token = token::Client::new(&env, &native_token_address);
 
         // let xlm_token: token::TokenClient<'_> = Self::get_xlm_token_client(&env, admin);
@@ -109,6 +115,12 @@ impl LiquidityPoolXLM {
         if user_balance < amount_u128 {
             panic_with_error!(&env, LendingError::InsufficientBalance);
         }
+
+        let xlm_pool_address: Address = env
+            .storage()
+            .persistent()
+            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "XLM")))
+            .unwrap_or_else(|| panic!("Failed to fetch XLM pool address"));
 
         // Transfer XLM from user to this contract
         xlm_token.transfer(
@@ -197,16 +209,18 @@ impl LiquidityPoolXLM {
         }
         let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
 
-        let native_token_address: Address = env
-            .storage()
-            .persistent()
-            .get(&TokenDataKey::NativeTokenClientAddress)
-            .unwrap();
+        let native_token_address: Address = Self::get_native_xlm_client_address(&env);
         let xlm_token = token::Client::new(&env, &native_token_address);
 
         let amount_u128: u128 = amount
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+
+        let xlm_pool_address: Address = env
+            .storage()
+            .persistent()
+            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "XLM")))
+            .unwrap_or_else(|| panic!("Failed to fetch XLM pool address"));
 
         xlm_token.transfer(
             &env.current_contract_address(), // from
@@ -281,11 +295,12 @@ impl LiquidityPoolXLM {
         let tokens_to_mint_u128: u128 = tokens_to_mint
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+        let vxlm_symbol = Symbol::new(&env, "vXLM");
 
         let token_address: Address = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::TokenClientAddress)
+            .get(&TokenDataKey::VTokenClientAddress(vxlm_symbol))
             .unwrap();
 
         let token_sac = token::StellarAssetClient::new(&env, &token_address);
@@ -350,11 +365,12 @@ impl LiquidityPoolXLM {
         let tokens_to_burn_u128: u128 = tokens_to_burn
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+        let vxlm_symbol = Symbol::new(&env, "vXLM");
 
         let token_address: Address = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::TokenClientAddress)
+            .get(&TokenDataKey::VTokenClientAddress(vxlm_symbol))
             .unwrap();
 
         let token_sac = token::TokenClient::new(&env, &token_address);
@@ -365,6 +381,13 @@ impl LiquidityPoolXLM {
             .get(&TokenDataKey::TokenIssuerAddress)
             .unwrap();
         issuer.require_auth();
+
+        let xlm_pool_address: Address = env
+            .storage()
+            .persistent()
+            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "XLM")))
+            .unwrap_or_else(|| panic!("Failed to fetch XLM pool address"));
+
         // burn tokens from his address.
         token_sac.transfer(
             &lender,
@@ -465,6 +488,20 @@ impl LiquidityPoolXLM {
             panic_with_error!(&env, LendingError::PoolNotInitialized);
         }
         true
+    }
+
+    pub fn get_xlm_pool_address(env: &Env) -> Address {
+        env.storage()
+            .persistent()
+            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "XLM").clone()))
+            .unwrap_or_else(|| panic!("XLM pool address not set"))
+    }
+
+    pub fn get_native_xlm_client_address(env: &Env) -> Address {
+        env.storage()
+            .persistent()
+            .get(&TokenDataKey::NativeXLMClientAddress)
+            .unwrap_or_else(|| panic!("Native XLM client address not set"))
     }
 
     fn extend_ttl_datakey(env: &Env, key: DataKey) {

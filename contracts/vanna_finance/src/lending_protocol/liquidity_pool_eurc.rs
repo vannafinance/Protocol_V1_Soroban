@@ -21,13 +21,10 @@ const _TLL_LEDGERS_MONTH: u32 = 518400;
 impl LiquidityPoolEURC {
     pub fn initialize_pool_eurc(
         env: Env,
-        native_token_address: Address,
+        eurc_token_address: Address,
         veurc_token_address: Address,
+        eurc_pool_address: Address,
     ) {
-        // Verify contract is deployed
-        // if !env.storage().persistent().has(&PoolDataKey::Deployed) {
-        //     panic!("Contract not deployed");
-        // }
         let admin: Address = env
             .storage()
             .persistent()
@@ -35,17 +32,19 @@ impl LiquidityPoolEURC {
             .expect("Admin not set");
 
         admin.require_auth();
+        let eurc_symbol = Symbol::new(&env, "EURC");
+        let veurc_symbol = Symbol::new(&env, "vEURC");
+
+        env.storage().persistent().set(
+            &TokenDataKey::VTokenClientAddress(veurc_symbol.clone()),
+            &veurc_token_address,
+        );
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::VTokenClientAddress(veurc_symbol));
 
         env.storage()
             .persistent()
-            .set(&TokenDataKey::TokenClientAddress, &veurc_token_address);
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::TokenClientAddress);
-
-        env.storage().persistent().set(
-            &TokenDataKey::NativeTokenClientAddress,
-            &native_token_address,
-        );
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::NativeTokenClientAddress);
+            .set(&TokenDataKey::EurcClientAddress, &eurc_token_address);
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::EurcClientAddress);
 
         env.storage()
             .persistent()
@@ -53,10 +52,16 @@ impl LiquidityPoolEURC {
         Self::extend_ttl_tokendatakey(&env, TokenDataKey::TokenIssuerAddress);
 
         env.storage().persistent().set(
-            &PoolDataKey::Pool(Symbol::new(&env, "EURC")),
+            &PoolDataKey::PoolAddress(eurc_symbol.clone()),
+            &eurc_pool_address,
+        );
+        Self::extend_ttl_pooldatakey(&env, PoolDataKey::PoolAddress(eurc_symbol.clone()));
+
+        env.storage().persistent().set(
+            &PoolDataKey::Pool(eurc_symbol.clone()),
             &U256::from_u128(&env, 0),
         ); // Store the EURC this contract handles
-        Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(Symbol::new(&env, "EURC")));
+        Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(eurc_symbol.clone()));
     }
 
     pub fn deposit_eurc(env: Env, lender: Address, amount: U256) {
@@ -73,12 +78,8 @@ impl LiquidityPoolEURC {
 
         let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
 
-        let native_token_address: Address = env
-            .storage()
-            .persistent()
-            .get(&TokenDataKey::NativeTokenClientAddress)
-            .unwrap();
-        let eurc_token = token::Client::new(&env, &native_token_address);
+        let eurc_token_address: Address = Self::get_eurc_client_address(&env);
+        let eurc_token = token::Client::new(&env, &eurc_token_address);
 
         // let eurc_token: token::TokenClient<'_> = Self::get_eurc_token_client(&env, admin);
 
@@ -88,10 +89,16 @@ impl LiquidityPoolEURC {
             panic_with_error!(&env, LendingError::InsufficientBalance);
         }
 
+        let eurc_pool_address: Address = env
+            .storage()
+            .persistent()
+            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "EURC")))
+            .unwrap_or_else(|| panic!("Failed to fetch EURC pool address"));
+
         // Transfer EURC from user to this contract
         eurc_token.transfer(
-            &lender,                         // from
-            &env.current_contract_address(), // to
+            &lender,            // from
+            &eurc_pool_address, // to
             &(amount_u128 as i128),
         );
 
@@ -175,20 +182,22 @@ impl LiquidityPoolEURC {
         }
         let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
 
-        let native_token_address: Address = env
-            .storage()
-            .persistent()
-            .get(&TokenDataKey::NativeTokenClientAddress)
-            .unwrap();
-        let eurc_token = token::Client::new(&env, &native_token_address);
+        let eurc_token_address: Address = Self::get_eurc_client_address(&env);
+        let eurc_token = token::Client::new(&env, &eurc_token_address);
 
         let amount_u128: u128 = amount
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
 
+        let eurc_pool_address: Address = env
+            .storage()
+            .persistent()
+            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "EURC")))
+            .unwrap_or_else(|| panic!("Failed to fetch EURC pool address"));
+
         eurc_token.transfer(
-            &env.current_contract_address(), // from
-            &lender,                         // to
+            &eurc_pool_address, // from
+            &lender,            // to
             &(amount_u128 as i128),
         );
 
@@ -259,11 +268,12 @@ impl LiquidityPoolEURC {
         let tokens_to_mint_u128: u128 = tokens_to_mint
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+        let veurc_symbol = Symbol::new(&env, "vEURC");
 
         let token_address: Address = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::TokenClientAddress)
+            .get(&TokenDataKey::VTokenClientAddress(veurc_symbol))
             .unwrap();
 
         let token_sac = token::StellarAssetClient::new(&env, &token_address);
@@ -328,11 +338,12 @@ impl LiquidityPoolEURC {
         let tokens_to_burn_u128: u128 = tokens_to_burn
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+        let veurc_symbol = Symbol::new(&env, "vEURC");
 
         let token_address: Address = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::TokenClientAddress)
+            .get(&TokenDataKey::VTokenClientAddress(veurc_symbol))
             .unwrap();
 
         let token_sac = token::TokenClient::new(&env, &token_address);
@@ -343,12 +354,15 @@ impl LiquidityPoolEURC {
             .get(&TokenDataKey::TokenIssuerAddress)
             .unwrap();
         issuer.require_auth();
+
+        let eurc_pool_address: Address = env
+            .storage()
+            .persistent()
+            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "EURC")))
+            .unwrap_or_else(|| panic!("Failed to fetch EURC pool address"));
+
         // burn tokens from his address.
-        token_sac.transfer(
-            &lender,
-            &env.current_contract_address(),
-            &(tokens_to_burn_u128 as i128),
-        );
+        token_sac.transfer(&lender, &eurc_pool_address, &(tokens_to_burn_u128 as i128));
 
         let current_total_token_balance = Self::get_current_total_veurc_balance(env);
         let new_total_token_balance = current_total_token_balance.sub(&tokens_to_burn);
@@ -443,6 +457,20 @@ impl LiquidityPoolEURC {
             panic_with_error!(&env, LendingError::PoolNotInitialized);
         }
         true
+    }
+
+    pub fn get_eurc_pool_address(env: &Env) -> Address {
+        env.storage()
+            .persistent()
+            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "EURC").clone()))
+            .unwrap_or_else(|| panic!("EURC pool address not set"))
+    }
+
+    pub fn get_eurc_client_address(env: &Env) -> Address {
+        env.storage()
+            .persistent()
+            .get(&TokenDataKey::EurcClientAddress)
+            .unwrap_or_else(|| panic!("Native EURC client address not set"))
     }
 
     fn extend_ttl_datakey(env: &Env, key: DataKey) {
