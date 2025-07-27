@@ -19,12 +19,22 @@ pub enum DataKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[contracttype]
+pub enum AccountManagerKey {
+    Admin,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[contracttype]
 pub enum PoolDataKey {
     Deployed,                       // Whether the pool has been deployed
     LenderBalance(Address, Symbol), // Lender balance for a specific user address, asset symbol
     Lenders(Symbol),                // List of all lenders for particular asset symbol
     Pool(Symbol),                   // Liquidity pool balance for each asset symbol
     PoolAddress(Symbol),            // Pool Address for each token
+    TotalBorrowShares,              // Total borrow shares of all users
+    UserBorrowShares(Address),      // Borrow shares of a user
+    LastUpdatedTime,                // Last time the pool data was updated
+    Borrows,                        // Total borrowed asset value
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -56,6 +66,16 @@ pub enum MarginAccountDataKey {
     HasDebt(Address),                       // Flag to check if account has debt
     AccountCreatedTime(Address),            // Time when account was created
     AccountDeletedTime(Address),            // Time when account is deleted
+    IsCollateralAllowed(Symbol),
+    AssetCap,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[contracttype]
+pub enum LendingProtocols {
+    XlmAddress,
+    EurcAddress,
+    UsdcAddress,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -69,26 +89,11 @@ pub enum BorrowDataKey {
     LastUpdatedTime(Symbol),            // Last updated time for token symbol
 }
 
-// #[contracttype]
-// #[derive(Clone, Debug, Eq, PartialEq)]
-// pub struct MarginAccount {
-//     user_address: Address,
-//     all_collateral_tokens: Vec<CollateralToken>,
-//     all_borrowed_tokens: Vec<BorrowedToken>,
-//     is_account_initialised: bool,
-//     is_account_active: bool,
-// }
-
-// #[contracttype]
-// #[derive(Clone, Debug, Eq, PartialEq)]
-// pub struct CollateralToken {
-//     symbol: Symbol,
-//     balance: u64,
-// }
-
-// #[contracttype]
-// #[derive(Clone, Debug, Eq, PartialEq)]
-// pub struct BorrowedToken {
-//     symbol: Symbol,
-//     balance: u64,
-// }
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[contracttype]
+pub enum ContractDetails {
+    RegistryContract,
+    RateModel,
+    AccountManager,
+    Treasury,
+}

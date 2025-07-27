@@ -6,13 +6,13 @@ use crate::events::{
 };
 use crate::types::{ContractDetails, DataKey, PoolDataKey, TokenDataKey};
 use soroban_sdk::{
-    contract, contractimpl, log, panic_with_error, token, Address, Env, String, Symbol, Vec, U256,
+    Address, Env, String, Symbol, U256, Vec, contract, contractimpl, panic_with_error, token,
 };
 
 #[contract]
 pub struct LiquidityPoolXLM;
 
-pub const XLM_CONTRACT_ID: [u8; 32] = [0; 32];
+// pub const XLM_CONTRACT_ID: [u8; 32] = [0; 32];
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 const _TLL_LEDGERS_MONTH: u32 = 518400;
@@ -30,7 +30,7 @@ impl LiquidityPoolXLM {
             env.storage().persistent().set(&DataKey::Admin, &admin);
             Self::extend_ttl_datakey(&env, key);
         } else {
-            panic!("Admin key has already been set");
+            self::panic!("Admin key has already been set");
         }
         Ok(String::from_str(&env, "Adminkey set successfully"))
     }
@@ -214,6 +214,12 @@ impl LiquidityPoolXLM {
         lender.require_auth();
         // Check if pool is initialised
         Self::is_xlm_pool_initialised(&env, Symbol::new(&env, "XLM"));
+        let key = PoolDataKey::LenderBalance(lender.clone(), Symbol::new(&env, "XLM"));
+
+        // Check if lender has registered
+        if !env.storage().persistent().has(&key) {
+            panic!("Lender not registered");
+        }
 
         let key_k = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "vXLM"));
         let vxlm_balance = env
@@ -228,18 +234,8 @@ impl LiquidityPoolXLM {
 
         let xlm_value = Self::convert_vtoken_to_asset(env, tokens_to_redeem.clone());
 
-        let key = PoolDataKey::LenderBalance(lender.clone(), Symbol::new(&env, "XLM"));
-
-        // Check if lender has registered
-        if !env.storage().persistent().has(&key) {
-            panic!("Lender not registered");
-        }
-
         // Check if lender has enough balance to deduct
         let current_balance: U256 = env.storage().persistent().get(&key).unwrap();
-
-        // // Getting amount of vXLM tokens to burn from the lender to get the amount of XLM he withdraws
-        // let vtokens_to_be_burnt = Self::convert_xlm_to_vtoken(&env, amount.clone());
 
         let native_token_address: Address = Self::get_native_xlm_client_address(&env);
         let xlm_token = token::Client::new(&env, &native_token_address);
@@ -275,11 +271,6 @@ impl LiquidityPoolXLM {
             .set(&pool_key, &(current_pool_balance.sub(&xlm_value)));
         Self::extend_ttl_pooldatakey(&env, pool_key);
 
-        // Now burn the vXLM tokens that were created for the lender
-        // Get token value per unit vxlm
-        // When lender wants to withdraw amount of xlm, we need to calculate how many vxlm tokens to burn
-        // This is done by dividing the amount of xlm by the token value per unit vxlm
-        // token_value is latest value of each vXLM
         let token_value: U256 = env
             .storage()
             .persistent()
@@ -311,7 +302,7 @@ impl LiquidityPoolXLM {
         trader: Address,
         amount: U256,
     ) -> Result<bool, LendingError> {
-        account_manager.require_auth();
+        // account_manager.require_auth();
         let borrow_shares = Self::convert_asset_borrow_shares(env, amount.clone());
         let mut is_first_borrow: bool = false;
 
@@ -358,7 +349,7 @@ impl LiquidityPoolXLM {
         amount: U256,
         trader: Address,
     ) -> Result<bool, LendingError> {
-        account_manager.require_auth();
+        // account_manager.require_auth();
         let borrow_shares = Self::convert_asset_borrow_shares(env, amount.clone());
         if borrow_shares == U256::from_u32(&env, 0) {
             panic!("Zero borrow shares");
@@ -402,12 +393,6 @@ impl LiquidityPoolXLM {
 
         let token_sac = token::StellarAssetClient::new(&env, &token_address);
 
-        let issuer: Address = env
-            .storage()
-            .persistent()
-            .get(&TokenDataKey::TokenIssuerAddress)
-            .unwrap();
-        issuer.require_auth();
         // mint tokens to his address.
         token_sac.mint(&lender, &(tokens_to_mint_u128 as i128)); // Mint tokens to recipient
 
@@ -471,13 +456,6 @@ impl LiquidityPoolXLM {
             .unwrap();
 
         let token_sac = token::TokenClient::new(&env, &token_address);
-
-        let issuer: Address = env
-            .storage()
-            .persistent()
-            .get(&TokenDataKey::TokenIssuerAddress)
-            .unwrap();
-        issuer.require_auth();
 
         // burn tokens from his address.
         token_sac.burn(&lender, &(tokens_to_burn_u128 as i128));
@@ -618,7 +596,7 @@ impl LiquidityPoolXLM {
     pub fn get_rate_factor(env: &Env) -> Result<U256, InterestRateError> {
         let lastupdatetime = Self::get_last_updated_time(&env);
         let blocktimestamp = env.ledger().timestamp();
-        if lastupdatetime == env.ledger().timestamp() {
+        if lastupdatetime == blocktimestamp {
             return Ok(U256::from_u32(&env, 0));
         }
         let token = Symbol::new(&env, "XLM");
@@ -784,6 +762,7 @@ impl LiquidityPoolXLM {
 
         Ok(res)
     }
+
     pub fn get_utilisation_ratio(
         env: &Env,
         liquidity: U256,

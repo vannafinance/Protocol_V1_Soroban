@@ -2,34 +2,79 @@ use soroban_sdk::{contract, contractimpl, log, Address, Env, Symbol, Vec, U256};
 
 use crate::{
     errors::MarginAccountError,
-    types::{DataKey, MarginAccountDataKey, PoolDataKey},
+    events::{AccountCreationEvent, AccountDeactivationEvent, AccountDeletionEvent},
+    types::{AccountManagerKey, DataKey, LendingProtocols, MarginAccountDataKey},
 };
 
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 // const TLL_LEDGERS_MONTH: u32 = 518400;
 
+pub mod lending_protocol_xlm {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/lending_protocol_xlm.wasm"
+    );
+}
+
+pub mod lending_protocol_usdc {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/lending_protocol_usdc.wasm"
+    );
+}
+
+pub mod lending_protocol_eurc {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/lending_protocol_eurc.wasm"
+    );
+}
+
 #[contract]
 pub struct AccountLogicContract;
 
 #[contractimpl]
 impl AccountLogicContract {
-    pub fn initialise_account_contract(env: Env, admin: Address) {
-        env.storage().persistent().set(&DataKey::Admin, &admin);
-        Self::extend_ttl(&env, DataKey::Admin);
+    pub fn init_accountmanager_contract(env: Env, admin: Address, asset_cap: U256) {
+        if env.storage().persistent().has(&AccountManagerKey::Admin) {
+            panic!("Admin already set for account manager");
+        }
+        env.storage()
+            .persistent()
+            .set(&AccountManagerKey::Admin, &admin);
+        Self::extend_account_ttl(&env, AccountManagerKey::Admin);
         let user_addresses: Vec<Address> = Vec::new(&env);
         env.storage()
             .persistent()
             .set(&MarginAccountDataKey::UserAddresses, &user_addresses);
         Self::extend_ttl_margin_account(&env, MarginAccountDataKey::UserAddresses);
+
+        Self::set_max_asset_cap(&env, asset_cap);
+    }
+
+    pub fn init_lending_protocols(
+        env: Env,
+        lending_protocol_xlm: Address,
+        lending_protocol_usdc: Address,
+        lending_protocol_eurc: Address,
+    ) {
+        let admin = Self::get_account_contract_admin(&env);
+        admin.require_auth();
+        env.storage()
+            .persistent()
+            .set(&LendingProtocols::XlmAddress, &lending_protocol_xlm);
+        env.storage()
+            .persistent()
+            .set(&LendingProtocols::UsdcAddress, &lending_protocol_usdc);
+
+        env.storage()
+            .persistent()
+            .set(&LendingProtocols::EurcAddress, &lending_protocol_eurc);
+        Self::extend_lendingttl(&env, LendingProtocols::XlmAddress);
+        Self::extend_lendingttl(&env, LendingProtocols::UsdcAddress);
+        Self::extend_lendingttl(&env, LendingProtocols::EurcAddress);
     }
 
     pub fn initialise_account(env: Env, user_address: Address) {
-        let admin: Address = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Admin)
-            .expect("Admin not set");
+        let admin: Address = Self::get_account_contract_admin(&env);
         admin.require_auth();
 
         //Set account creation time
@@ -62,6 +107,16 @@ impl AccountLogicContract {
         let key_d = MarginAccountDataKey::HasDebt(user_address.clone());
         env.storage().persistent().set(&key_d, &false);
         Self::extend_ttl_margin_account(&env, key_d);
+        log!(&env, "Reach aaaauuuuuxd");
+
+        env.events().publish(
+            (Symbol::new(&env, "Account_Creation"), user_address.clone()),
+            AccountCreationEvent {
+                margin_account: user_address,
+                creation_time: env.ledger().timestamp(),
+            },
+        );
+        log!(&env, "Reach qqqqq");
     }
 
     pub fn deactivate_account(env: Env, user_address: Address) -> Result<(), MarginAccountError> {
@@ -69,6 +124,16 @@ impl AccountLogicContract {
         let key = MarginAccountDataKey::IsAccountActive(user_address.clone());
         env.storage().persistent().set(&key, &false);
         Self::extend_ttl_margin_account(&env, key);
+        env.events().publish(
+            (
+                Symbol::new(&env, "Account_Deactivated"),
+                user_address.clone(),
+            ),
+            AccountDeactivationEvent {
+                margin_account: user_address,
+                deactivate_time: env.ledger().timestamp(),
+            },
+        );
         Ok(())
     }
 
@@ -88,14 +153,25 @@ impl AccountLogicContract {
         token_amount: U256,
     ) -> Result<(), MarginAccountError> {
         user_address.require_auth();
-        let key_c = MarginAccountDataKey::UserCollateralTokensList(user_address.clone());
 
+        if !Self::get_iscollateral_allowed(&env, token_symbol.clone()) {
+            panic!("This token is not allowed as collateral");
+        }
+
+        let key_c = MarginAccountDataKey::UserCollateralTokensList(user_address.clone());
         let mut collateral_tokens_list: Vec<Symbol> = env
             .storage()
             .persistent()
             .get(&key_c)
             .unwrap_or_else(|| Vec::new(&env));
-        collateral_tokens_list.push_back(token_symbol.clone());
+
+        if U256::from_u32(&env, collateral_tokens_list.len()) >= Self::get_max_asset_cap(&env) {
+            panic!("Max asset cap crossed!");
+        };
+
+        if !collateral_tokens_list.contains(token_symbol.clone()) {
+            collateral_tokens_list.push_back(token_symbol.clone());
+        }
 
         env.storage()
             .persistent()
@@ -197,18 +273,17 @@ impl AccountLogicContract {
         token_amount: U256,
     ) -> Result<(), MarginAccountError> {
         user_address.require_auth();
+        let key_a = MarginAccountDataKey::UserBorrowedTokensList(user_address.clone());
+
         let mut borrowed_tokens_list: Vec<Symbol> = env
             .storage()
             .persistent()
-            .get(&MarginAccountDataKey::UserBorrowedTokensList(
-                user_address.clone(),
-            ))
+            .get(&key_a)
             .unwrap_or_else(|| Vec::new(&env));
         if !borrowed_tokens_list.contains(&token_symbol.clone()) {
             borrowed_tokens_list.push_back(token_symbol.clone());
         }
 
-        let key_a = MarginAccountDataKey::UserBorrowedTokensList(user_address.clone());
         env.storage()
             .persistent()
             .set(&key_a, &borrowed_tokens_list);
@@ -226,10 +301,10 @@ impl AccountLogicContract {
         Self::extend_ttl_margin_account(&env, key_b);
 
         let total_debt = Self::get_total_debt_in_pool(&env, token_symbol.clone());
-        total_debt.add(&token_amount);
+        let res = total_debt.add(&token_amount);
         env.storage().persistent().set(
             &MarginAccountDataKey::TotalDebtInPool(token_symbol.clone()),
-            &total_debt,
+            &res,
         );
         Self::extend_ttl_margin_account(
             &env,
@@ -380,12 +455,13 @@ impl AccountLogicContract {
         res
     }
 
-    pub fn get_total_liquidity_in_pool(env: &Env, token_symbol: Symbol) -> U256 {
-        env.storage()
-            .persistent()
-            .get(&PoolDataKey::Pool(token_symbol))
-            .unwrap_or(U256::from_u128(&env, 0))
-    }
+    // !!! todo CCI
+    // pub fn get_total_liquidity_in_pool(env: &Env, token_symbol: Symbol) -> U256 {
+    //     env.storage()
+    //         .persistent()
+    //         .get(&PoolDataKey::Pool(token_symbol))
+    //         .unwrap_or(U256::from_u128(&env, 0))
+    // }
 
     pub fn delete_account(env: &Env, user_address: Address) -> Result<(), MarginAccountError> {
         user_address.require_auth();
@@ -470,7 +546,51 @@ impl AccountLogicContract {
         env.storage().persistent().set(&key_d, &false);
         Self::extend_ttl_margin_account(&env, key_d);
 
+        env.events().publish(
+            (Symbol::new(&env, "Account_Deleted"), user_address.clone()),
+            AccountDeletionEvent {
+                margin_account: user_address,
+                deletion_time: env.ledger().timestamp(),
+            },
+        );
+
         Ok(())
+    }
+
+    pub fn set_iscollateral_allowed(env: &Env, token_symbol: Symbol, allowed: bool) {
+        let admin: Address = Self::get_account_contract_admin(env);
+        admin.require_auth();
+        let key = MarginAccountDataKey::IsCollateralAllowed(token_symbol);
+        env.storage().persistent().set(&key, &allowed);
+        Self::extend_ttl_margin_account(env, key);
+    }
+
+    pub fn get_iscollateral_allowed(env: &Env, token_symbol: Symbol) -> bool {
+        let key = MarginAccountDataKey::IsCollateralAllowed(token_symbol);
+        env.storage().persistent().get(&key).unwrap_or(false)
+    }
+
+    fn get_account_contract_admin(env: &Env) -> Address {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&AccountManagerKey::Admin)
+            .unwrap_or_else(|| panic!("Admin key not set"));
+        admin
+    }
+
+    pub fn set_max_asset_cap(env: &Env, cap: U256) {
+        let key = MarginAccountDataKey::AssetCap;
+        env.storage().persistent().set(&key, &cap);
+        Self::extend_ttl_margin_account(env, key);
+    }
+
+    pub fn get_max_asset_cap(env: &Env) -> U256 {
+        let key = MarginAccountDataKey::AssetCap;
+        env.storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic!("Asset cap not set"))
     }
 
     fn extend_ttl_margin_account(env: &Env, key: MarginAccountDataKey) {
@@ -480,6 +600,18 @@ impl AccountLogicContract {
     }
 
     fn extend_ttl(env: &Env, key: DataKey) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
+    }
+
+    fn extend_account_ttl(env: &Env, key: AccountManagerKey) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
+    }
+
+    fn extend_lendingttl(env: &Env, key: LendingProtocols) {
         env.storage()
             .persistent()
             .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);

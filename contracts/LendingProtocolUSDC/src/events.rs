@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Symbol, U256};
+use soroban_sdk::{Address, Symbol, U256, contracttype};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -38,27 +38,6 @@ pub struct LendingTokenBurnEvent {
     pub timestamp: u64,
     pub token_symbol: Symbol,
     pub token_value: U256,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AccountCreationEvent {
-    pub margin_account: Address,
-    pub creation_time: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AccountDeletionEvent {
-    pub margin_account: Address,
-    pub deletion_time: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AccountDeactivationEvent {
-    pub margin_account: Address,
-    pub deactivate_time: u64,
 }
 
 #[contracttype]

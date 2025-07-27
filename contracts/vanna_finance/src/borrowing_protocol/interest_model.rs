@@ -1,10 +1,7 @@
-use core::ops::Mul;
-
-use soroban_sdk::{contract, contractimpl, log, panic_with_error, Address, Env, Symbol, Vec, U256};
+use soroban_sdk::{contract, Env, Symbol, Vec, U256};
 
 use crate::{
     borrowing_protocol::borrow_logic::BorrowLogicContract, errors::InterestRateError,
-    lending_protocol::liquidity_pool_xlm::LiquidityPoolXLM,
     margin_account::account_logic::AccountLogicContract, types::DataKey,
 };
 
@@ -25,29 +22,28 @@ impl InterestRateContract {
     //     Ok(())
     // }
 
-    pub fn get_rate_factor(env: &Env, token: Symbol) -> Result<u128, InterestRateError> {
-        let lastupdatetime = BorrowLogicContract::get_last_updated_time(&env, token.clone());
-        let blocktimestamp = env.ledger().timestamp();
-        if lastupdatetime == env.ledger().timestamp() {
-            return Ok(0);
-        }
+    // pub fn get_rate_factor(env: &Env, token: Symbol) -> Result<u128, InterestRateError> {
+    //     let lastupdatetime = BorrowLogicContract::get_last_updated_time(&env, token.clone());
+    //     let blocktimestamp = env.ledger().timestamp();
+    //     if lastupdatetime == env.ledger().timestamp() {
+    //         return Ok(0);
+    //     }
 
-        let borrows = AccountLogicContract::get_total_debt_in_pool(&env, token.clone());
-        let liquidity = AccountLogicContract::get_total_liquidity_in_pool(&env, token.clone());
+    //     let borrows = AccountLogicContract::get_total_debt_in_pool(&env, token.clone());
+    //     let liquidity = AccountLogicContract::get_total_liquidity_in_pool(&env, token.clone());
 
-        U256::from_u128(&env, (blocktimestamp - lastupdatetime) as u128)
-            .mul(&(Self::get_borrow_rate_per_sec(&env, token, liquidity, borrows).unwrap()));
+    //     U256::from_u128(&env, (blocktimestamp - lastupdatetime) as u128)
+    //         .mul(&(Self::get_borrow_rate_per_sec(&env, liquidity, borrows).unwrap()));
 
-        Ok(0)
-    }
+    //     Ok(0)
+    // }
 
     pub fn get_borrow_rate_per_sec(
         env: &Env,
-        asset_symbol: Symbol,
         liquidity: U256,
         borrows: U256,
     ) -> Result<U256, InterestRateError> {
-        let util = Self::get_utilisation_ratio(env, asset_symbol, liquidity, borrows)
+        let util = Self::get_utilisation_ratio(env, liquidity, borrows)
             .expect("Panicked to get utilization ratio");
         let c1_u256 = U256::from_u128(&env, C1);
         let c2_u256 = U256::from_u128(&env, C2);
@@ -62,14 +58,9 @@ impl InterestRateContract {
     }
     pub fn get_utilisation_ratio(
         env: &Env,
-        asset_symbol: Symbol,
         liquidity: U256,
         borrows: U256,
     ) -> Result<U256, InterestRateError> {
-        if asset_symbol == Symbol::new(&env, "XLM") {
-            let current_liquidity = LiquidityPoolXLM::get_xlm_pool_balance(&env);
-        }
-
         let total_assets = liquidity.add(&borrows);
 
         if total_assets == U256::from_u128(&env, 0) {

@@ -185,7 +185,7 @@ mod tests {
                     Symbol::new(&env, "vXLM"),
                 ))
                 .unwrap();
-            assert_eq!(vxlm_balance, U256::from_u128(&env, 100)); // 100 vXLM tokens
+            assert_eq!(vxlm_balance, U256::from_u128(&env, 100000000)); // 100 vXLM tokens
         });
     }
 
@@ -243,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn test_withdraw_xlm_success() {
+    fn test_redeem_vxlm_success() {
         let (
             env,
             contract_address,
@@ -279,7 +279,7 @@ mod tests {
 
         // Test withdrawal
         let withdraw_amount = U256::from_u128(&env, 50000000); // 50 XLM
-        client.withdraw_xlm(&lender, &withdraw_amount);
+        client.redeem_vxlm(&lender, &withdraw_amount);
 
         // Verify balances are updated
         env.as_contract(&contract_address, || {
@@ -309,13 +309,13 @@ mod tests {
                     Symbol::new(&env, "vXLM"),
                 ))
                 .unwrap();
-            assert_eq!(vxlm_balance, U256::from_u128(&env, 50)); // 50 vXLM tokens remaining
+            assert_eq!(vxlm_balance, U256::from_u128(&env, 50000000)); // 50 vXLM tokens remaining
         });
     }
 
     #[test]
     #[should_panic(expected = "Lender not registered")]
-    fn test_withdraw_xlm_lender_not_registered() {
+    fn test_redeem_vxlm_lender_not_registered() {
         let (
             env,
             contract_address,
@@ -338,12 +338,12 @@ mod tests {
 
         // let result = panic::catch_unwind(|| {
         // });
-        let _res = client.withdraw_xlm(&lender, &withdraw_amount);
+        let _res = client.redeem_vxlm(&lender, &withdraw_amount);
     }
 
     #[test]
     #[should_panic(expected = "InsufficientBalance")]
-    fn test_withdraw_xlm_insufficient_balance() {
+    fn test_redeem_vxlm_insufficient_balance() {
         let (
             env,
             contract_address,
@@ -380,7 +380,7 @@ mod tests {
         // Try to withdraw more than deposited
         let withdraw_amount = U256::from_u128(&env, 200000000);
 
-        let _result = client.withdraw_xlm(&lender, &withdraw_amount);
+        let _result = client.redeem_vxlm(&lender, &withdraw_amount);
 
         // assert!(result.is_err());
     }
@@ -642,8 +642,8 @@ mod tests {
             let total_minted = LiquidityPoolXLM::get_total_vxlm_minted(&env);
             let total_burnt = LiquidityPoolXLM::get_total_vxlm_burnt(&env);
 
-            assert_eq!(current_balance, U256::from_u128(&env, 100));
-            assert_eq!(total_minted, U256::from_u128(&env, 100));
+            assert_eq!(current_balance, U256::from_u128(&env, 100000000));
+            assert_eq!(total_minted, U256::from_u128(&env, 100000000));
             assert_eq!(total_burnt, U256::from_u128(&env, 0));
         });
     }
@@ -667,12 +667,6 @@ mod tests {
             &xlm_pool_address,
         );
 
-        // let xlm_token = token::Client::new(
-        //     &env,
-        //     &Address::from_string_bytes(&Bytes::from_array(&env, &XLM_CONTRACT_ID)),
-        // );
-
-        // let native_token = env.register_stellar_asset_contract_v2(admin);
         let native_token_address = env.as_contract(&contract_address, || {
             env.storage()
                 .persistent()
@@ -681,11 +675,6 @@ mod tests {
         });
 
         let stellar_asset = StellarAssetClient::new(&env, &native_token_address);
-
-        // let stellar_asset = StellarAssetClient::new(
-        //     &env,
-        //     &Address::from_string_bytes(&Bytes::from_array(&env, &XLM_CONTRACT_ID)),
-        // );
 
         stellar_asset
             .mock_all_auths()
@@ -700,7 +689,7 @@ mod tests {
         client.deposit_xlm(&lender, &deposit_amount);
 
         let withdraw_amount = U256::from_u128(&env, 50000000);
-        client.withdraw_xlm(&lender, &withdraw_amount);
+        client.redeem_vxlm(&lender, &withdraw_amount);
 
         // Verify vXLM token tracking after burn
         env.as_contract(&contract_address, || {
@@ -708,9 +697,9 @@ mod tests {
             let total_minted = LiquidityPoolXLM::get_total_vxlm_minted(&env);
             let total_burnt = LiquidityPoolXLM::get_total_vxlm_burnt(&env);
 
-            assert_eq!(current_balance, U256::from_u128(&env, 50));
-            assert_eq!(total_minted, U256::from_u128(&env, 100));
-            assert_eq!(total_burnt, U256::from_u128(&env, 50));
+            assert_eq!(current_balance, U256::from_u128(&env, 50000000));
+            assert_eq!(total_minted, U256::from_u128(&env, 100000000));
+            assert_eq!(total_burnt, U256::from_u128(&env, 50000000));
         });
     }
 
@@ -806,7 +795,7 @@ mod tests {
 
         // Test withdraw event
         let withdraw_amount = U256::from_u128(&env, 50000000);
-        client.withdraw_xlm(&lender, &withdraw_amount);
+        client.redeem_vxlm(&lender, &withdraw_amount);
 
         let events_after_withdraw = env.events().all();
     }

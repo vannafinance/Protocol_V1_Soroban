@@ -3,6 +3,7 @@ use soroban_sdk::{contract, panic_with_error, token, Address, Env, Symbol, Vec, 
 use crate::{
     borrowing_protocol::oracle::PriceConsumerContract,
     errors::{BorrowError, LendingError},
+    events::{TraderBorrowEvent, TraderLiquidateEvent, TraderRepayEvent, TraderSettleAccountEvent},
     lending_protocol::{
         liquidity_pool_eurc::LiquidityPoolEURC, liquidity_pool_usdc::LiquidityPoolUSDC,
         liquidity_pool_xlm::LiquidityPoolXLM,
@@ -63,7 +64,7 @@ impl BorrowLogicContract {
             &(borrow_amount_u128 as i128),
         );
 
-        let new_pool_balance = pool_balance.sub(&borrow_amount);
+        let new_pool_balance = pool_balance.sub(&borrow_amount.clone());
         env.storage()
             .persistent()
             .set(&PoolDataKey::Pool(token_symbol.clone()), &new_pool_balance);
@@ -72,10 +73,24 @@ impl BorrowLogicContract {
         AccountLogicContract::add_borrowed_token_balance(
             &env,
             margin_account.clone(),
-            token_symbol,
-            borrow_amount,
+            token_symbol.clone(),
+            borrow_amount.clone(),
         )
         .unwrap();
+
+        env.events().publish(
+            (
+                Symbol::new(&env, "Trader Borrow Event"),
+                margin_account.clone(),
+            ),
+            TraderBorrowEvent {
+                margin_account,
+                token_amount: borrow_amount,
+                timestamp: env.ledger().timestamp(),
+                token_symbol,
+                token_value: U256::from_u128(&env, 0),
+            },
+        );
 
         Ok(())
     }
@@ -125,15 +140,28 @@ impl BorrowLogicContract {
 
             AccountLogicContract::remove_borrowed_token_balance(
                 &env,
-                margin_account,
+                margin_account.clone(),
                 token_symbol.clone(),
-                repay_amount,
+                repay_amount.clone(),
             )
             .unwrap();
 
-            Self::set_last_updated_time(&env, token_symbol);
+            Self::set_last_updated_time(&env, token_symbol.clone());
         }
 
+        env.events().publish(
+            (
+                Symbol::new(&env, "Trader Repay Event"),
+                margin_account.clone(),
+            ),
+            TraderRepayEvent {
+                margin_account,
+                token_amount: repay_amount,
+                timestamp: env.ledger().timestamp(),
+                token_symbol,
+                token_value: U256::from_u128(&env, 0),
+            },
+        );
         Ok(())
     }
 
@@ -214,6 +242,16 @@ impl BorrowLogicContract {
             .unwrap();
         }
 
+        env.events().publish(
+            (
+                Symbol::new(&env, "Trader Liquidate Event"),
+                margin_account.clone(),
+            ),
+            TraderLiquidateEvent {
+                margin_account,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
         Ok(())
     }
 
@@ -232,6 +270,17 @@ impl BorrowLogicContract {
             Self::repay(env.clone(), token_debt, tokenx, margin_account.clone())
                 .expect("Failed to repay while settling the account");
         }
+
+        env.events().publish(
+            (
+                Symbol::new(&env, "Trader SettleAccount Event"),
+                margin_account.clone(),
+            ),
+            TraderSettleAccountEvent {
+                margin_account,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
         Ok(())
     }
 
@@ -361,7 +410,10 @@ impl BorrowLogicContract {
         Ok(total_account_debt)
     }
 
-    fn get_token_client_and_pool_address(env: &Env, token_symbol: Symbol) -> (Address, Address) {
+    pub fn get_token_client_and_pool_address(
+        env: &Env,
+        token_symbol: Symbol,
+    ) -> (Address, Address) {
         let xlm_symbol = Symbol::new(&env, "XLM");
         let usdc_symbol = Symbol::new(&env, "USDC");
         let eurc_symbol = Symbol::new(&env, "EURC");
@@ -396,8 +448,6 @@ impl BorrowLogicContract {
             .get(&BorrowDataKey::LastUpdatedTime(token_symbol.clone()))
             .unwrap_or_else(|| env.ledger().timestamp())
     }
-
-    // fn get_last_updated_time(env: &Env, user_address: Address, token_symbol: Symbol) {}
 
     /// For future integration of trading
     pub fn approve(env: Env, margin_account: Address) -> Result<(), BorrowError> {

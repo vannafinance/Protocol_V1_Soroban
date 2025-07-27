@@ -1,13 +1,12 @@
 use core::panic;
 
-use crate::errors::{LendingError, LendingTokenError};
+use crate::errors::{InterestRateError, LendingError, LendingTokenError};
 use crate::events::{
     LendingDepositEvent, LendingTokenBurnEvent, LendingTokenMintEvent, LendingWithdrawEvent,
 };
-use crate::margin_account::account_logic::AccountLogicContract;
-use crate::types::{DataKey, PoolDataKey, TokenDataKey};
+use crate::types::{ContractDetails, DataKey, PoolDataKey, TokenDataKey};
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, token, Address, Env, Symbol, Vec, U256,
+    Address, Env, String, Symbol, U256, Vec, contract, contractimpl, panic_with_error, token,
 };
 
 #[contract]
@@ -18,14 +17,43 @@ const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 const _TLL_LEDGERS_MONTH: u32 = 518400;
 
+const C1: u128 = 100000000000000000;
+const C2: u128 = 3 * 100000000000000000;
+const C3: u128 = 35 * 100000000000000000;
+const SECS_PER_YEAR: u128 = 31556952 * 1000000000000000000;
+
 #[contractimpl]
 impl LiquidityPoolEURC {
+    pub fn set_admin(env: Env, admin: Address) -> Result<String, LendingError> {
+        let key = DataKey::Admin;
+        if !env.storage().persistent().has(&key) {
+            env.storage().persistent().set(&DataKey::Admin, &admin);
+            Self::extend_ttl_datakey(&env, key);
+        } else {
+            self::panic!("Admin key has already been set");
+        }
+        Ok(String::from_str(&env, "Adminkey set successfully"))
+    }
+
+    pub fn get_admin(env: Env) -> Result<String, LendingError> {
+        let key = DataKey::Admin;
+        let admin_address: Address = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic!("Admin key has not been set"));
+        Ok(admin_address.to_string())
+    }
+
     pub fn initialize_pool_eurc(
         env: Env,
-        eurc_token_address: Address,
+        native_token_address: Address,
         veurc_token_address: Address,
-        eurc_pool_address: Address,
-    ) {
+        registry_contract: Address,
+        treasury_address: Address,
+        account_manager: Address,
+        rate_model: Address,
+    ) -> Result<String, LendingError> {
         let admin: Address = env
             .storage()
             .persistent()
@@ -36,16 +64,45 @@ impl LiquidityPoolEURC {
         let eurc_symbol = Symbol::new(&env, "EURC");
         let veurc_symbol = Symbol::new(&env, "vEURC");
 
+        env.storage()
+            .persistent()
+            .set(&ContractDetails::RegistryContract, &registry_contract);
+        Self::extend_ttl_contractdatakey(&env, ContractDetails::RegistryContract);
+
+        env.storage()
+            .persistent()
+            .set(&ContractDetails::AccountManager, &account_manager);
+        Self::extend_ttl_contractdatakey(&env, ContractDetails::AccountManager);
+
+        env.storage()
+            .persistent()
+            .set(&ContractDetails::RateModel, &rate_model);
+        Self::extend_ttl_contractdatakey(&env, ContractDetails::RateModel);
+
+        env.storage()
+            .persistent()
+            .set(&ContractDetails::Treasury, &treasury_address);
+        Self::extend_ttl_contractdatakey(&env, ContractDetails::Treasury);
+
         env.storage().persistent().set(
             &TokenDataKey::VTokenClientAddress(veurc_symbol.clone()),
             &veurc_token_address,
         );
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::VTokenClientAddress(veurc_symbol));
+        Self::extend_ttl_tokendatakey(
+            &env,
+            TokenDataKey::VTokenClientAddress(veurc_symbol.clone()),
+        );
 
         env.storage()
             .persistent()
-            .set(&TokenDataKey::EurcClientAddress, &eurc_token_address);
+            .set(&TokenDataKey::EurcClientAddress, &native_token_address);
         Self::extend_ttl_tokendatakey(&env, TokenDataKey::EurcClientAddress);
+
+        // env.storage().persistent().set(
+        //     &PoolDataKey::PoolAddress(eurc_symbol.clone()),
+        //     &eurc_pool_address,
+        // );
+        // Self::extend_ttl_pooldatakey(&env, PoolDataKey::PoolAddress(eurc_symbol.clone()));
 
         env.storage()
             .persistent()
@@ -53,16 +110,11 @@ impl LiquidityPoolEURC {
         Self::extend_ttl_tokendatakey(&env, TokenDataKey::TokenIssuerAddress);
 
         env.storage().persistent().set(
-            &PoolDataKey::PoolAddress(eurc_symbol.clone()),
-            &eurc_pool_address,
-        );
-        Self::extend_ttl_pooldatakey(&env, PoolDataKey::PoolAddress(eurc_symbol.clone()));
-
-        env.storage().persistent().set(
             &PoolDataKey::Pool(eurc_symbol.clone()),
             &U256::from_u128(&env, 0),
         ); // Store the EURC this contract handles
         Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(eurc_symbol.clone()));
+        Ok(String::from_str(&env, "EURC pool initialised"))
     }
 
     pub fn deposit_eurc(env: Env, lender: Address, amount: U256) {
@@ -77,13 +129,11 @@ impl LiquidityPoolEURC {
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
 
-        // let vtokens_to_be_minted = amount.div(&token_value);
+        // Getting the amount of tokens to be minted for Asset deposited
         let vtokens_to_be_minted = Self::convert_eurc_to_vtoken(&env, amount.clone());
 
-        let eurc_token_address: Address = Self::get_eurc_client_address(&env);
-        let eurc_token = token::Client::new(&env, &eurc_token_address);
-
-        // let eurc_token: token::TokenClient<'_> = Self::get_eurc_token_client(&env, admin);
+        let native_token_address: Address = Self::get_native_eurc_client_address(&env);
+        let eurc_token = token::Client::new(&env, &native_token_address);
 
         let user_balance = eurc_token.balance(&lender) as u128;
 
@@ -99,8 +149,8 @@ impl LiquidityPoolEURC {
 
         // Transfer EURC from user to this contract
         eurc_token.transfer(
-            &lender,            // from
-            &eurc_pool_address, // to
+            &lender,                         // from
+            &env.current_contract_address(), // to
             &(amount_u128 as i128),
         );
 
@@ -147,6 +197,8 @@ impl LiquidityPoolEURC {
             // panic_with_error!(&env, LendingTokenError::InvalidVTokenValue);
         }
 
+        // let vtokens_to_be_minted = amount.div(&token_value);
+
         // Now Mint the vEURC tokens that were created for the lender
         Self::mint_veurc_tokens(&env, lender.clone(), vtokens_to_be_minted, token_value);
 
@@ -161,7 +213,7 @@ impl LiquidityPoolEURC {
         );
     }
 
-    pub fn withdraw_eurc(env: &Env, lender: Address, amount: U256) {
+    pub fn redeem_veurc(env: &Env, lender: Address, tokens_to_redeem: U256) {
         lender.require_auth();
         // Check if pool is initialised
         Self::is_eurc_pool_initialised(&env, Symbol::new(&env, "EURC"));
@@ -170,41 +222,39 @@ impl LiquidityPoolEURC {
         // Check if lender has registered
         if !env.storage().persistent().has(&key) {
             panic!("Lender not registered");
-            // panic_with_error!(&env, LendingError::LenderNotRegistered);
         }
+
+        let key_k = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "vEURC"));
+        let veurc_balance = env
+            .storage()
+            .persistent()
+            .get(&key_k)
+            .unwrap_or_else(|| U256::from_u32(&env, 0));
+
+        if tokens_to_redeem > veurc_balance {
+            panic!("Insufficient Token Balance to redeem");
+        }
+
+        let eurc_value = Self::convert_vtoken_to_eurc(env, tokens_to_redeem.clone());
 
         // Check if lender has enough balance to deduct
         let current_balance: U256 = env.storage().persistent().get(&key).unwrap();
 
-        if current_balance < amount {
-            panic!("InsufficientBalance");
-            // panic_with_error!(&env, LendingError::InsufficientBalance);
-        }
+        let native_token_address: Address = Self::get_native_eurc_client_address(&env);
+        let eurc_token = token::Client::new(&env, &native_token_address);
 
-        // let vtokens_to_be_burnt = amount.div(&token_value);
-        let vtokens_to_be_burnt = Self::convert_eurc_to_vtoken(&env, amount.clone());
-
-        let eurc_token_address: Address = Self::get_eurc_client_address(&env);
-        let eurc_token = token::Client::new(&env, &eurc_token_address);
-
-        let amount_u128: u128 = amount
+        let amount_u128: u128 = eurc_value
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
 
-        let eurc_pool_address: Address = env
-            .storage()
-            .persistent()
-            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "EURC")))
-            .unwrap_or_else(|| panic!("Failed to fetch EURC pool address"));
-
         eurc_token.transfer(
-            &eurc_pool_address, // from
-            &lender,            // to
+            &env.current_contract_address(), // from
+            &lender,                         // to
             &(amount_u128 as i128),
         );
 
         // First deduct amount from Lenders balance
-        let new_balance = current_balance.sub(&amount);
+        let new_balance = current_balance.sub(&eurc_value);
         env.storage().persistent().set(&key, &new_balance);
         Self::extend_ttl_pooldatakey(&env, key);
 
@@ -215,20 +265,15 @@ impl LiquidityPoolEURC {
             .persistent()
             .get(&pool_key)
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::PoolNotInitialized));
-        if current_pool_balance < amount {
+        if current_pool_balance < eurc_value {
             panic_with_error!(&env, LendingError::InsufficientPoolBalance);
         }
 
         env.storage()
             .persistent()
-            .set(&pool_key, &(current_pool_balance.sub(&amount)));
+            .set(&pool_key, &(current_pool_balance.sub(&eurc_value)));
         Self::extend_ttl_pooldatakey(&env, pool_key);
 
-        // Now burn the vEURC tokens that were created for the lender
-        // Get token value per unit veurc
-        // When lender wants to withdraw amount of eurc, we need to calculate how many veurc tokens to burn
-        // This is done by dividing the amount of eurc by the token value per unit veurc
-        // token_value is latest value of each vEURC
         let token_value: U256 = env
             .storage()
             .persistent()
@@ -240,18 +285,91 @@ impl LiquidityPoolEURC {
             panic_with_error!(&env, LendingTokenError::InvalidVTokenValue);
         }
 
-        Self::burn_veurc_tokens(&env, lender.clone(), vtokens_to_be_burnt, token_value);
+        Self::burn_veurc_tokens(&env, lender.clone(), tokens_to_redeem.clone(), token_value);
 
         // emit event after withdraw
         env.events().publish(
             (Symbol::new(&env, "withdraw_event"), lender.clone()),
             LendingWithdrawEvent {
                 lender: lender,
-                vtoken_amount: amount,
+                vtoken_amount: tokens_to_redeem,
                 timestamp: env.ledger().timestamp(),
                 asset_symbol: Symbol::new(&env, "EURC"),
             },
         );
+    }
+
+    pub fn lend_to(
+        env: &Env,
+        account_manager: Address,
+        trader: Address,
+        amount: U256,
+    ) -> Result<bool, LendingError> {
+        // account_manager.require_auth();
+        let borrow_shares = Self::convert_asset_borrow_shares(env, amount.clone());
+        let mut is_first_borrow: bool = false;
+
+        let key_a = PoolDataKey::UserBorrowShares(trader.clone());
+        let key_b = PoolDataKey::TotalBorrowShares;
+        let key_c = PoolDataKey::Borrows;
+        let user_borrow_shares: U256 = env.storage().persistent().get(&key_a).unwrap();
+        let total_borrow_shares: U256 = env.storage().persistent().get(&key_b).unwrap();
+        let borrows: U256 = env.storage().persistent().get(&key_c).unwrap();
+
+        if user_borrow_shares == U256::from_u32(&env, 0) {
+            is_first_borrow = true;
+        }
+
+        let res1 = user_borrow_shares.add(&borrow_shares.clone());
+        let res2 = total_borrow_shares.add(&borrow_shares.clone());
+        let res3 = borrows.add(&amount.clone());
+
+        env.storage().persistent().set(&key_a, &res1);
+        env.storage().persistent().set(&key_b, &res2);
+        env.storage().persistent().set(&key_c, &res3);
+        Self::extend_ttl_pooldatakey(env, key_a);
+        Self::extend_ttl_pooldatakey(env, key_b);
+        Self::extend_ttl_pooldatakey(env, key_c);
+
+        // Now transfer amount to trader address
+        let native_token_address: Address = Self::get_native_eurc_client_address(&env);
+        let eurc_token = token::Client::new(&env, &native_token_address);
+        let amount_u128: u128 = amount
+            .to_u128()
+            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+        eurc_token.transfer(
+            &env.current_contract_address(), // from
+            &trader,                         // to
+            &(amount_u128 as i128),
+        );
+
+        Ok(is_first_borrow)
+    }
+
+    pub fn collect_from(
+        env: &Env,
+        account_manager: Address,
+        amount: U256,
+        trader: Address,
+    ) -> Result<bool, LendingError> {
+        // account_manager.require_auth();
+        let borrow_shares = Self::convert_asset_borrow_shares(env, amount.clone());
+        if borrow_shares == U256::from_u32(&env, 0) {
+            panic!("Zero borrow shares");
+        }
+
+        let user_borrow_shares: U256 = Self::get_user_borrow_shares(env, trader.clone());
+        let total_borrow_shares: U256 = Self::get_total_borrow_shares(env);
+        let key_c = PoolDataKey::Borrows;
+        let borrows: U256 = env.storage().persistent().get(&key_c).unwrap();
+
+        let res1 = user_borrow_shares.sub(&borrow_shares);
+        let res2 = total_borrow_shares.sub(&borrow_shares);
+        let res3 = borrows.sub(&amount);
+        Self::set_user_borrow_shares(env, trader.clone(), res1.clone());
+        Self::set_total_borrow_shares(env, res2);
+        env.storage().persistent().set(&key_c, &res3);
+        return Ok(res1 == U256::from_u32(&env, 0));
     }
 
     fn mint_veurc_tokens(env: &Env, lender: Address, tokens_to_mint: U256, token_value: U256) {
@@ -278,12 +396,6 @@ impl LiquidityPoolEURC {
 
         let token_sac = token::StellarAssetClient::new(&env, &token_address);
 
-        let issuer: Address = env
-            .storage()
-            .persistent()
-            .get(&TokenDataKey::TokenIssuerAddress)
-            .unwrap();
-        issuer.require_auth();
         // mint tokens to his address.
         token_sac.mint(&lender, &(tokens_to_mint_u128 as i128)); // Mint tokens to recipient
 
@@ -348,22 +460,8 @@ impl LiquidityPoolEURC {
 
         let token_sac = token::TokenClient::new(&env, &token_address);
 
-        let issuer: Address = env
-            .storage()
-            .persistent()
-            .get(&TokenDataKey::TokenIssuerAddress)
-            .unwrap();
-        issuer.require_auth();
-
-        let eurc_pool_address: Address = env
-            .storage()
-            .persistent()
-            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "EURC")))
-            .unwrap_or_else(|| panic!("Failed to fetch EURC pool address"));
-
         // burn tokens from his address.
-        // token_sac.burn(&lender, &(tokens_to_burn_u128 as i128));
-        token_sac.transfer(&lender, &eurc_pool_address, &(tokens_to_burn_u128 as i128));
+        token_sac.burn(&lender, &(tokens_to_burn_u128 as i128));
 
         let current_total_token_balance = Self::get_current_total_veurc_balance(env);
         let new_total_token_balance = current_total_token_balance.sub(&tokens_to_burn);
@@ -401,6 +499,136 @@ impl LiquidityPoolEURC {
             .persistent()
             .get(&PoolDataKey::Pool(Symbol::new(&env, "EURC")))
             .unwrap_or(U256::from_u128(&env, 0))
+    }
+
+    pub fn convert_asset_borrow_shares(env: &Env, amount: U256) -> U256 {
+        let key_b = PoolDataKey::TotalBorrowShares;
+        let total_borrow_shares: U256 = env.storage().persistent().get(&key_b).unwrap();
+
+        if total_borrow_shares == U256::from_u32(&env, 0) {
+            return amount;
+        } else {
+            let res = amount.mul(&total_borrow_shares);
+            let result = res.div(&Self::get_borrows(&env));
+            return result;
+        }
+    }
+
+    pub fn convert_borrow_shares_asset(env: &Env, debt: U256) -> U256 {
+        let key_b = PoolDataKey::TotalBorrowShares;
+        let total_borrow_shares: U256 = env.storage().persistent().get(&key_b).unwrap();
+        if total_borrow_shares == U256::from_u32(&env, 0) {
+            return debt;
+        } else {
+            let res = debt.mul(&Self::get_borrows(&env));
+            let result = res.div(&total_borrow_shares);
+            return result;
+        }
+    }
+
+    pub fn update_state(env: &Env) {
+        let lastupdatetime = Self::get_last_updated_time(&env);
+        if lastupdatetime == env.ledger().timestamp() {
+            return;
+        }
+        let key_c = PoolDataKey::Borrows;
+        let borrows: U256 = env.storage().persistent().get(&key_c).unwrap();
+        let rate_factor = Self::get_rate_factor(&env).unwrap();
+        let interest_accrued = borrows.mul(&rate_factor);
+        let res = borrows.add(&interest_accrued);
+        env.storage().persistent().set(&key_c, &res);
+        env.storage()
+            .persistent()
+            .set(&PoolDataKey::LastUpdatedTime, &env.ledger().timestamp());
+    }
+
+    pub fn before_deposit(env: &Env) {
+        Self::update_state(env);
+    }
+
+    pub fn before_withdraw(env: &Env) {
+        Self::update_state(env);
+    }
+
+    pub fn get_user_borrow_shares(env: &Env, trader: Address) -> U256 {
+        let key_a = PoolDataKey::UserBorrowShares(trader.clone());
+        let user_borrow_shares: U256 = env.storage().persistent().get(&key_a).unwrap();
+        return user_borrow_shares;
+    }
+
+    pub fn set_user_borrow_shares(env: &Env, trader: Address, res: U256) {
+        let key_a = PoolDataKey::UserBorrowShares(trader.clone());
+        env.storage().persistent().set(&key_a, &res);
+        Self::extend_ttl_pooldatakey(env, key_a);
+    }
+
+    pub fn get_borrow_balance(env: &Env, trader: Address) -> U256 {
+        let key_a = PoolDataKey::UserBorrowShares(trader.clone());
+        let user_borrow_shares: U256 = env.storage().persistent().get(&key_a).unwrap();
+        let res = Self::convert_borrow_shares_asset(env, user_borrow_shares);
+        res
+    }
+
+    pub fn get_total_borrow_shares(env: &Env) -> U256 {
+        let key_b = PoolDataKey::TotalBorrowShares;
+        let total_borrow_shares: U256 = env.storage().persistent().get(&key_b).unwrap();
+        return total_borrow_shares;
+    }
+
+    pub fn set_total_borrow_shares(env: &Env, res: U256) {
+        let key_b = PoolDataKey::TotalBorrowShares;
+        env.storage().persistent().set(&key_b, &res);
+        Self::extend_ttl_pooldatakey(env, key_b);
+    }
+
+    pub fn total_assets(env: &Env) -> U256 {
+        let token = Symbol::new(&env, "EURC");
+        let assets = Self::get_total_liquidity_in_pool(&env, token.clone());
+        let borrows = Self::get_borrows(env);
+        let total_assets = assets.add(&borrows);
+        total_assets
+    }
+
+    pub fn get_borrows(env: &Env) -> U256 {
+        let key_c = PoolDataKey::Borrows;
+
+        let borrows: U256 = env.storage().persistent().get(&key_c).unwrap();
+        let res = borrows.mul(&Self::get_rate_factor(&env).unwrap());
+        let result = borrows.add(&res);
+        result
+    }
+
+    pub fn get_rate_factor(env: &Env) -> Result<U256, InterestRateError> {
+        let lastupdatetime = Self::get_last_updated_time(&env);
+        let blocktimestamp = env.ledger().timestamp();
+        if lastupdatetime == blocktimestamp {
+            return Ok(U256::from_u32(&env, 0));
+        }
+        let token = Symbol::new(&env, "EURC");
+
+        let key_c = PoolDataKey::Borrows;
+
+        let borrows: U256 = env.storage().persistent().get(&key_c).unwrap();
+        let liquidity = Self::get_total_liquidity_in_pool(&env, token.clone());
+
+        let res = U256::from_u128(&env, (blocktimestamp - lastupdatetime) as u128)
+            .mul(&(Self::get_borrow_rate_per_sec(&env, liquidity, borrows).unwrap()));
+
+        Ok(res)
+    }
+
+    pub fn get_total_liquidity_in_pool(env: &Env, token_symbol: Symbol) -> U256 {
+        env.storage()
+            .persistent()
+            .get(&PoolDataKey::Pool(token_symbol))
+            .unwrap_or(U256::from_u128(&env, 0))
+    }
+
+    pub fn get_last_updated_time(env: &Env) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&PoolDataKey::LastUpdatedTime)
+            .unwrap_or_else(|| env.ledger().timestamp())
     }
 
     pub fn get_current_total_veurc_balance(env: &Env) -> U256 {
@@ -467,13 +695,14 @@ impl LiquidityPoolEURC {
             .unwrap_or_else(|| panic!("EURC pool address not set"))
     }
 
-    pub fn get_eurc_client_address(env: &Env) -> Address {
+    pub fn get_native_eurc_client_address(env: &Env) -> Address {
         env.storage()
             .persistent()
             .get(&TokenDataKey::EurcClientAddress)
             .unwrap_or_else(|| panic!("Native EURC client address not set"))
     }
 
+    // Converts EURC to vEURC
     pub fn convert_eurc_to_vtoken(env: &Env, amount: U256) -> U256 {
         let pool_balance = Self::get_eurc_pool_balance(env);
         let minted = Self::get_total_veurc_minted(env);
@@ -483,16 +712,73 @@ impl LiquidityPoolEURC {
         } else {
             let supply = Self::get_current_total_veurc_balance(env);
             let total_liquidity_pool =
-                AccountLogicContract::get_total_liquidity_in_pool(env, Symbol::new(&env, "EURC"));
+                Self::get_total_liquidity_in_pool(env, Symbol::new(&env, "EURC"));
+
             let res = amount.mul(&supply);
             let resx = res.div(&total_liquidity_pool);
 
-            let vtoken_value = resx.div(&amount);
-            let keyp = TokenDataKey::VTokenValue(Symbol::new(&env, "vEURC"));
-            env.storage().persistent().set(&keyp, &vtoken_value);
-            Self::extend_ttl_tokendatakey(&env, keyp);
-
+            let vtoken_value = amount.div(&resx);
+            env.storage().persistent().set(
+                &TokenDataKey::VTokenValue(Symbol::new(&env, "vEURC")),
+                &vtoken_value,
+            );
+            Self::extend_ttl_tokendatakey(
+                &env,
+                TokenDataKey::VTokenValue(Symbol::new(&env, "vEURC")),
+            );
             resx
+        }
+    }
+
+    //  Converting vEURC to EURC
+    pub fn convert_vtoken_to_eurc(env: &Env, vtokens_to_be_burnt: U256) -> U256 {
+        let pool_balance = Self::get_eurc_pool_balance(env);
+        let v_token_supply = Self::get_current_total_veurc_balance(env);
+        let res = vtokens_to_be_burnt.mul(&pool_balance);
+        let resx = res.div(&v_token_supply);
+
+        let vtoken_value = resx.div(&vtokens_to_be_burnt);
+        env.storage().persistent().set(
+            &TokenDataKey::VTokenValue(Symbol::new(&env, "vEURC")),
+            &vtoken_value,
+        );
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::VTokenValue(Symbol::new(&env, "vEURC")));
+
+        resx
+    }
+
+    pub fn get_borrow_rate_per_sec(
+        env: &Env,
+        liquidity: U256,
+        borrows: U256,
+    ) -> Result<U256, InterestRateError> {
+        let util = Self::get_utilisation_ratio(env, liquidity, borrows)
+            .expect("Panicked to get utilization ratio");
+        let c1_u256 = U256::from_u128(&env, C1);
+        let c2_u256 = U256::from_u128(&env, C2);
+        let c3_u256 = U256::from_u128(&env, C3);
+        let secs_per_year = U256::from_u128(&env, SECS_PER_YEAR);
+
+        let x = (util.pow(32)).mul(&c1_u256);
+        let y = (util.pow(64)).mul(&c2_u256);
+        let rhs = util.mul(&c1_u256).add(&(x.add(&y)));
+        let result = c3_u256.mul(&rhs);
+        let res = result.div(&secs_per_year);
+
+        Ok(res)
+    }
+
+    pub fn get_utilisation_ratio(
+        env: &Env,
+        liquidity: U256,
+        borrows: U256,
+    ) -> Result<U256, InterestRateError> {
+        let total_assets = liquidity.add(&borrows);
+
+        if total_assets == U256::from_u128(&env, 0) {
+            Ok(U256::from_u128(&env, 0))
+        } else {
+            Ok(borrows.div(&total_assets))
         }
     }
 
@@ -514,21 +800,9 @@ impl LiquidityPoolEURC {
             .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 
-    // #[cfg(test)]
-    // fn get_eurc_token_client(env: &Env, admin: Address) -> token::Client {
-    //     // Create a mock stellar asset contract that behaves like EURC
-    //     // let admin = <soroban_sdk::Address as soroban_sdk::testutils::Address>::generate(env);
-    //     let mock_eurc_id = env.register_stellar_asset_contract_v2(admin);
-    //     token::Client::new(env, &mock_eurc_id.address())
-    // }
-
-    // #[cfg(not(test))]
-    // fn get_eurc_token_client(env: &Env, admin: Address) -> token::Client {
-    //     // In production, use the real EURC contract
-    //     token::Client::new(
-    //         env,
-    //         &Address::from_string_bytes(&Bytes::from_array(env, &EURC_CONTRACT_ID)),
-    //     )
-    //     // &Address::from_string_bytes(&Bytes::from_array(env, &EURC_CONTRACT_ID)),
-    // }
+    fn extend_ttl_contractdatakey(env: &Env, key: ContractDetails) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
+    }
 }

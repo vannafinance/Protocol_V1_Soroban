@@ -166,7 +166,10 @@ mod test {
         env.as_contract(&contract_address, || {
             // env.mock_all_auths();
             // First initialize and deactivate the account
+            log!(&env, "Reach xaasssd");
+
             AccountLogicContract::initialise_account(env.clone(), user.clone());
+            log!(&env, "Reach xd");
 
             AccountLogicContract::deactivate_account(env.clone(), user.clone()).unwrap();
             let is_active: bool = env
@@ -174,6 +177,7 @@ mod test {
                 .persistent()
                 .get(&MarginAccountDataKey::IsAccountActive(user.clone()))
                 .unwrap();
+            log!(&env, "Reach xp");
 
             assert!(!is_active);
         });
@@ -182,6 +186,7 @@ mod test {
             // Activate account
             let result = AccountLogicContract::activate_account(env.clone(), user.clone());
             assert!(result.is_ok());
+            log!(&env, "Reach xc");
 
             // Verify account is now active
             let is_active: bool = env
