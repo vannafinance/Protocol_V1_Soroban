@@ -9,6 +9,11 @@ use soroban_sdk::{
     Address, Env, String, Symbol, U256, Vec, contract, contractimpl, panic_with_error, token,
 };
 
+pub mod rate_model_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/rate_model_contract.wasm"
+    );
+}
 #[contract]
 pub struct LiquidityPoolEURC;
 

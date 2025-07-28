@@ -71,3 +71,9 @@ stellar contract invoke \
 
 
 
+
+stellar contract deploy \
+  --wasm target/wasm32v1-none/release/lending_protocol_xlm.wasm \
+  --source hemanth \
+  --network testnet \
+  --alias vanna_finance_test

@@ -11,8 +11,6 @@ pub enum DataKey {
     PriceData(String),   // Asset pair price data
     Oracle,              // Authorized oracle address
     User(Address),       // User account data
-    Loan(u32),           // Loan details (global loan ID)
-    LoanCounter,         // Global loan counter
     Governance,          // Governance parameters
     StdReferenceAddress, // Oracle reference address
 }

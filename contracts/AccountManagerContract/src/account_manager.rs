@@ -1,27 +1,207 @@
-use soroban_sdk::{contract, panic_with_error, token, Address, Env, Symbol, Vec, U256};
+use core::panic;
 
-use crate::{
-    borrowing_protocol::oracle::PriceConsumerContract,
-    errors::{BorrowError, LendingError},
-    events::{TraderBorrowEvent, TraderLiquidateEvent, TraderRepayEvent, TraderSettleAccountEvent},
-    lending_protocol::{
-        liquidity_pool_eurc::LiquidityPoolEURC, liquidity_pool_usdc::LiquidityPoolUSDC,
-        liquidity_pool_xlm::LiquidityPoolXLM,
-    },
-    margin_account::account_logic::AccountLogicContract,
-    types::{BorrowDataKey, MarginAccountDataKey, PoolDataKey},
+use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract, panic_with_error};
+
+use crate::types::{
+    AccountDataKey, AccountDeletionEvent, AccountError, TraderBorrowEvent, TraderLiquidateEvent,
+    TraderRepayEvent, TraderSettleAccountEvent,
 };
 
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
-const TLL_LEDGERS_MONTH: u32 = 518400;
-const BALANCE_TO_BORROW_THRESHOLD: u128 = 1100000000000000000;
-const DECIMALS: u128 = 1000000000000000000;
+
+pub mod account_contract {
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/account_contract.wasm");
+}
 
 #[contract]
-pub struct BorrowLogicContract;
+pub struct AccountManagerContract;
 
-impl BorrowLogicContract {
+impl AccountManagerContract {
+    pub fn delete_account(env: &Env, user_address: Address) -> Result<(), AccountError> {
+        user_address.require_auth();
+
+        if Self::has_debt(env, user_address.clone()) {
+            panic!("Cannot delete account with debt, please repay debt first");
+        }
+
+        // Set account deletion time
+        env.storage().persistent().set(
+            &AccountDataKey::AccountDeletedTime(user_address.clone()),
+            &env.ledger().timestamp(),
+        );
+
+        // remove user's address from list of Margin account user addresses
+        let key_d = AccountDataKey::UserAddresses;
+        let mut user_addresses: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&key_d)
+            .expect("Account contract not initiated");
+        let index = user_addresses
+            .first_index_of(user_address.clone())
+            .unwrap_or_else(|| panic!("User account not found in list"));
+        user_addresses.remove(index);
+        env.storage().persistent().set(&key_d, &user_addresses);
+        Self::extend_ttl_margin_account(&env, key_d);
+
+        let borrowed_tokens_symbols: Vec<Symbol> = env
+            .storage()
+            .persistent()
+            .get(&AccountDataKey::UserBorrowedTokensList(
+                user_address.clone(),
+            ))
+            .unwrap_or_else(|| Vec::new(&env));
+        // Remove balance for each borrowed token
+        for symbol in borrowed_tokens_symbols {
+            env.storage()
+                .persistent()
+                .remove(&AccountDataKey::UserBorrowedDebt(
+                    user_address.clone(),
+                    symbol,
+                ));
+        }
+        // Then remove all borrowed tokens from the list
+        env.storage()
+            .persistent()
+            .remove(&AccountDataKey::UserBorrowedTokensList(
+                user_address.clone(),
+            ));
+
+        let collateral_tokens: Vec<Symbol> = env
+            .storage()
+            .persistent()
+            .get(&AccountDataKey::UserCollateralTokensList(
+                user_address.clone(),
+            ))
+            .unwrap_or_else(|| Vec::new(&env));
+
+        // Remove balance for each collateral token
+        for symbolx in collateral_tokens {
+            env.storage()
+                .persistent()
+                .remove(&AccountDataKey::UserCollateralBalance(
+                    user_address.clone(),
+                    symbolx,
+                ));
+        }
+
+        // Then remove all collateral tokens from the list
+        env.storage()
+            .persistent()
+            .remove(&AccountDataKey::UserCollateralTokensList(
+                user_address.clone(),
+            ));
+
+        let key_c = AccountDataKey::IsAccountActive(user_address.clone());
+        env.storage().persistent().set(&key_c, &false);
+        Self::extend_ttl_margin_account(&env, key_c);
+
+        let key_d = AccountDataKey::HasDebt(user_address.clone());
+        env.storage().persistent().set(&key_d, &false);
+        Self::extend_ttl_margin_account(&env, key_d);
+
+        env.events().publish(
+            (Symbol::new(&env, "Account_Deleted"), user_address.clone()),
+            AccountDeletionEvent {
+                margin_account: user_address,
+                deletion_time: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    pub fn deposit_collateral_tokens(
+        env: Env,
+        user_address: Address,
+        token_symbol: Symbol,
+        token_amount: U256,
+    ) -> Result<(), AccountError> {
+        user_address.require_auth();
+
+        if !Self::get_iscollateral_allowed(&env, token_symbol.clone()) {
+            panic!("This token is not allowed as collateral");
+        }
+
+        let key_c = AccountDataKey::UserCollateralTokensList(user_address.clone());
+        let mut collateral_tokens_list: Vec<Symbol> = env
+            .storage()
+            .persistent()
+            .get(&key_c)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        if U256::from_u32(&env, collateral_tokens_list.len()) >= Self::get_max_asset_cap(&env) {
+            panic!("Max asset cap crossed!");
+        };
+
+        if !collateral_tokens_list.contains(token_symbol.clone()) {
+            collateral_tokens_list.push_back(token_symbol.clone());
+        }
+
+        env.storage()
+            .persistent()
+            .set(&key_c, &collateral_tokens_list);
+        Self::extend_ttl_margin_account(&env, key_c);
+
+        let key_a =
+            AccountDataKey::UserCollateralBalance(user_address.clone(), token_symbol.clone());
+        let token_balance = env
+            .storage()
+            .persistent()
+            .get(&key_a)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
+        let new_balance = token_balance.add(&token_amount);
+        env.storage().persistent().set(&key_a, &new_balance);
+        Self::extend_ttl_margin_account(&env, key_a);
+
+        Ok(())
+    }
+
+    pub fn remove_collateral_tokens(
+        env: Env,
+        user_address: Address,
+        token_symbol: Symbol,
+        token_amount: U256,
+    ) -> Result<(), AccountError> {
+        user_address.require_auth();
+
+        let key_a = AccountDataKey::UserCollateralTokensList(user_address.clone());
+        let mut collateral_tokens_list: Vec<Symbol> = env
+            .storage()
+            .persistent()
+            .get(&key_a)
+            .unwrap_or_else(|| Vec::new(&env));
+        let index = collateral_tokens_list
+            .first_index_of(token_symbol.clone())
+            .unwrap_or_else(|| panic!("Collateral token doesn't exist in the list"));
+
+        let key_b =
+            AccountDataKey::UserCollateralBalance(user_address.clone(), token_symbol.clone());
+        let token_balance = env
+            .storage()
+            .persistent()
+            .get(&key_b)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
+        if token_amount > token_balance {
+            panic!("Insufficient Collateral balance for user in this token to deduct",);
+        }
+        let new_balance = token_balance.sub(&token_amount);
+        env.storage().persistent().set(&key_b, &new_balance);
+        Self::extend_ttl_margin_account(&env, key_b);
+
+        if token_amount == token_balance {
+            collateral_tokens_list.remove(index);
+            env.storage()
+                .persistent()
+                .set(&key_a, &collateral_tokens_list);
+
+            Self::extend_ttl_margin_account(&env, key_a);
+        }
+
+        Ok(())
+    }
+
     pub fn borrow(
         env: &Env,
         borrow_amount: U256,
@@ -63,6 +243,7 @@ impl BorrowLogicContract {
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
 
+        // !!!!!! wrong
         token_client.transfer(
             &pool_address,   // from
             &margin_account, // to
@@ -295,185 +476,23 @@ impl BorrowLogicContract {
         Ok(())
     }
 
-    pub fn is_borrow_allowed(
-        env: &Env,
-        symbol: Symbol,
-        borrow_amount: U256,
-        margin_account: Address,
-    ) -> Result<bool, BorrowError> {
-        //  Fetch price from oracle !!!!!!!!!!!!!!!!!!!!!!!!
-        let price = PriceConsumerContract::get_price_of(env, (symbol, Symbol::new(&env, "USD")));
-        let oracle_price = U256::from_u128(&env, price);
-        let borrow_value = borrow_amount.mul(&oracle_price);
-
-        let current_account_balance =
-            Self::get_current_total_balance(&env, margin_account.clone()).unwrap();
-        let current_account_debt =
-            Self::get_current_total_borrows(&env, margin_account.clone()).unwrap();
-        let res = Self::is_account_healthy(
-            env,
-            current_account_balance.add(&borrow_value),
-            current_account_debt.add(&borrow_value),
-        )
-        .unwrap();
-        Ok(res)
-    }
-
-    pub fn is_withdraw_allowed(
-        env: &Env,
-        symbol: Symbol,
-        withdraw_amount: U256,
-        margin_account: Address,
-    ) -> Result<bool, BorrowError> {
-        if !AccountLogicContract::has_debt(&env, margin_account.clone()) {
-            return Ok(true);
-        }
-
-        //  Fetch price from oracle !!!!!!!!!!!!!!!!!!!!!!!!
-        let price = PriceConsumerContract::get_price_of(env, (symbol, Symbol::new(&env, "USD")));
-        let oracle_price = U256::from_u128(&env, price);
-        let withdraw_value = withdraw_amount.mul(&oracle_price);
-
-        let current_account_balance =
-            Self::get_current_total_balance(&env, margin_account.clone()).unwrap();
-        let current_account_debt =
-            Self::get_current_total_borrows(&env, margin_account.clone()).unwrap();
-
-        let res = Self::is_account_healthy(
-            env,
-            current_account_balance.sub(&withdraw_value),
-            current_account_debt,
-        )
-        .unwrap();
-
-        Ok(res)
-    }
-
-    pub fn is_account_healthy(
-        env: &Env,
-        total_account_balance: U256,
-        total_account_debt: U256,
-    ) -> Result<bool, BorrowError> {
-        if total_account_debt == U256::from_u128(&env, 0) {
-            return Ok(true);
-        } else {
-            let res = total_account_balance.div(&total_account_debt)
-                > U256::from_u128(&env, BALANCE_TO_BORROW_THRESHOLD);
-            return Ok(res);
-        }
-    }
-
-    pub fn get_current_total_balance(
-        env: &Env,
-        margin_account: Address,
-    ) -> Result<U256, BorrowError> {
-        let collateral_token_symbols: Vec<Symbol> = env
-            .storage()
-            .persistent()
-            .get(&MarginAccountDataKey::UserCollateralTokensList(
-                margin_account.clone(),
-            ))
-            .unwrap_or_else(|| panic!("User doesn't have any collateral assets"));
-
-        let mut total_account_balance: U256 = U256::from_u128(&env, 0);
-
-        for token in collateral_token_symbols.iter() {
-            let token_balance = AccountLogicContract::get_collateral_token_balance(
-                &env,
-                margin_account.clone(),
-                token.clone(),
-            )
-            .unwrap();
-
-            let oracle_price_usd =
-                PriceConsumerContract::get_price_of(&env, (token, Symbol::new(&env, "USD")));
-
-            total_account_balance = total_account_balance
-                .add(&token_balance.mul(&U256::from_u128(&env, oracle_price_usd)));
-            // token_balance * token_value in usd
-        }
-        Ok(total_account_balance)
-    }
-
-    pub fn get_current_total_borrows(
-        env: &Env,
-        margin_account: Address,
-    ) -> Result<U256, BorrowError> {
-        let borrowed_token_symbols =
-            AccountLogicContract::get_all_borrowed_tokens(&env, margin_account.clone()).unwrap();
-
-        let mut total_account_debt: U256 = U256::from_u128(&env, 0);
-
-        for tokenx in borrowed_token_symbols.iter() {
-            let token_balance = AccountLogicContract::get_borrowed_token_debt(
-                &env,
-                margin_account.clone(),
-                tokenx.clone(),
-            )
-            .unwrap();
-
-            let oracle_price_usd =
-                PriceConsumerContract::get_price_of(&env, (tokenx, Symbol::new(&env, "USD")));
-
-            total_account_debt = total_account_debt
-                .add(&token_balance.mul(&U256::from_u128(&env, oracle_price_usd)));
-        }
-        Ok(total_account_debt)
-    }
-
-    pub fn get_token_client_and_pool_address(
-        env: &Env,
-        token_symbol: Symbol,
-    ) -> (Address, Address) {
-        let xlm_symbol = Symbol::new(&env, "XLM");
-        let usdc_symbol = Symbol::new(&env, "USDC");
-        let eurc_symbol = Symbol::new(&env, "EURC");
-        let client_address: Address;
-        let pool_address: Address;
-        if token_symbol.clone().eq(&xlm_symbol) {
-            client_address = LiquidityPoolXLM::get_native_xlm_client_address(&env);
-            pool_address = LiquidityPoolXLM::get_xlm_pool_address(&env);
-        } else if token_symbol.clone().eq(&usdc_symbol) {
-            client_address = LiquidityPoolUSDC::get_usdc_client_address(&env);
-            pool_address = LiquidityPoolUSDC::get_usdc_pool_address(&env);
-        } else if token_symbol.clone().eq(&eurc_symbol) {
-            client_address = LiquidityPoolEURC::get_eurc_client_address(&env);
-            pool_address = LiquidityPoolEURC::get_eurc_pool_address(&env);
-        } else {
-            panic!("Pool doesn't exist for this token to repay");
-        }
-        (client_address, pool_address)
-    }
-
-    pub fn set_last_updated_time(env: &Env, token_symbol: Symbol) {
-        env.storage().persistent().set(
-            &BorrowDataKey::LastUpdatedTime(token_symbol.clone()),
-            &env.ledger().timestamp(),
-        );
-        Self::extend_ttl_borrowdatakey(&env, BorrowDataKey::LastUpdatedTime(token_symbol));
-    }
-
-    pub fn get_last_updated_time(env: &Env, token_symbol: Symbol) -> u64 {
-        env.storage()
-            .persistent()
-            .get(&BorrowDataKey::LastUpdatedTime(token_symbol.clone()))
-            .unwrap_or_else(|| env.ledger().timestamp())
-    }
-
-    /// For future integration of trading
-    pub fn approve(env: Env, margin_account: Address) -> Result<(), BorrowError> {
-        Ok(())
-    }
-
-    fn extend_ttl_pooldatakey(env: &Env, key: PoolDataKey) {
+    fn extend_ttl_margin_account(env: &Env, key: AccountDataKey) {
         env.storage()
             .persistent()
             .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 
-    fn extend_ttl_borrowdatakey(env: &Env, key: BorrowDataKey) {
+    pub fn set_max_asset_cap(env: &Env, cap: U256) {
+        let key = AccountDataKey::AssetCap;
+        env.storage().persistent().set(&key, &cap);
+        Self::extend_ttl_margin_account(env, key);
+    }
+
+    pub fn get_max_asset_cap(env: &Env) -> U256 {
+        let key = AccountDataKey::AssetCap;
         env.storage()
             .persistent()
-            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
+            .get(&key)
+            .unwrap_or_else(|| panic!("Asset cap not set"))
     }
 }

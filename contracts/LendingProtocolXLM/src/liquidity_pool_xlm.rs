@@ -9,6 +9,11 @@ use soroban_sdk::{
     Address, Env, String, Symbol, U256, Vec, contract, contractimpl, panic_with_error, token,
 };
 
+pub mod rate_model_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/rate_model_contract.wasm"
+    );
+}
 #[contract]
 pub struct LiquidityPoolXLM;
 
@@ -303,6 +308,7 @@ impl LiquidityPoolXLM {
         amount: U256,
     ) -> Result<bool, LendingError> {
         // account_manager.require_auth();
+        Self::update_state(env);
         let borrow_shares = Self::convert_asset_borrow_shares(env, amount.clone());
         let mut is_first_borrow: bool = false;
 
@@ -350,6 +356,8 @@ impl LiquidityPoolXLM {
         trader: Address,
     ) -> Result<bool, LendingError> {
         // account_manager.require_auth();
+        Self::update_state(env);
+
         let borrow_shares = Self::convert_asset_borrow_shares(env, amount.clone());
         if borrow_shares == U256::from_u32(&env, 0) {
             panic!("Zero borrow shares");
@@ -742,6 +750,7 @@ impl LiquidityPoolXLM {
         resx
     }
 
+    /// !!!! This function is moved to RateModelCOntract
     pub fn get_borrow_rate_per_sec(
         env: &Env,
         liquidity: U256,
@@ -763,6 +772,7 @@ impl LiquidityPoolXLM {
         Ok(res)
     }
 
+    /// !!!! This function is moved to RateModelCOntract
     pub fn get_utilisation_ratio(
         env: &Env,
         liquidity: U256,

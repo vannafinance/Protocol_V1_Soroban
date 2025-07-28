@@ -617,3 +617,8 @@ impl AccountLogicContract {
             .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 }
+    fn extend_ttl_margin_account(env: &Env, key: MarginAccountDataKey) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
+    }
