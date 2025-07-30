@@ -1,3 +1,4 @@
+use soroban_sdk::contractimpl;
 use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract, contracterror};
 
 use crate::types::AccountDataKey;
@@ -37,9 +38,12 @@ pub mod lending_protocol_eurc {
     );
 }
 
+const BALANCE_TO_BORROW_THRESHOLD: u128 = 1100000000000000000;
+
 #[contract]
 pub struct RiskEngineContract;
 
+#[contractimpl]
 impl RiskEngineContract {
     pub fn init_risk_engine() {}
 
@@ -52,9 +56,9 @@ impl RiskEngineContract {
         //  Fetch price from oracle !!!!!!!!!!!!!!!!!!!!!!!!
 
         // !! We should fetch oracle contract address from registry
-        let oracle_contract_address: Address = "";
-
-        let oracle_client = oracle_contract::Client::new(env, &oracle_contract_address);
+        let oracle_contract_address: Address;
+        // !! flaw
+        let oracle_client = oracle_contract::Client::new(env, &margin_account);
 
         let price = oracle_client.get_price_of(&(symbol, Symbol::new(&env, "USD")));
         let oracle_price = U256::from_u128(&env, price);
@@ -79,15 +83,17 @@ impl RiskEngineContract {
         withdraw_amount: U256,
         margin_account: Address,
     ) -> Result<bool, RiskEngineError> {
-        if !AccountLogicContract::has_debt(&env, margin_account.clone()) {
+        // !! flaw
+        let account_contract_client = account_contract::Client::new(&env, &margin_account.clone());
+        if !account_contract_client.has_debt(&margin_account.clone()) {
             return Ok(true);
         }
 
         //  Fetch price from oracle !!!!!!!!!!!!!!!!!!!!!!!!
         // !! We should fetch oracle contract address from registry
         let oracle_contract_address: Address;
-
-        let oracle_client = oracle_contract::Client::new(env, &oracle_contract_address);
+        // !! flaw
+        let oracle_client = oracle_contract::Client::new(env, &margin_account.clone());
 
         let price = oracle_client.get_price_of(&(symbol, Symbol::new(&env, "USD")));
         let oracle_price = U256::from_u128(&env, price);
@@ -136,18 +142,16 @@ impl RiskEngineContract {
 
         // !! We should fetch oracle contract address from registry
         let oracle_contract_address: Address;
-
-        let oracle_client = oracle_contract::Client::new(env, &oracle_contract_address);
+        // !! flaw
+        let oracle_client = oracle_contract::Client::new(env, &margin_account.clone());
 
         let mut total_account_balance: U256 = U256::from_u128(&env, 0);
+        // !! flaw
+        let account_contract_client = account_contract::Client::new(&env, &margin_account.clone());
 
         for token in collateral_token_symbols.iter() {
-            let token_balance = AccountLogicContract::get_collateral_token_balance(
-                &env,
-                margin_account.clone(),
-                token.clone(),
-            )
-            .unwrap();
+            let token_balance = account_contract_client
+                .get_collateral_token_balance(&margin_account.clone(), &token.clone());
 
             let oracle_price_usd = oracle_client.get_price_of(&(token, Symbol::new(&env, "USD")));
 
@@ -162,8 +166,11 @@ impl RiskEngineContract {
         env: &Env,
         margin_account: Address,
     ) -> Result<U256, RiskEngineError> {
+        // !! flaw
+        let account_contract_client = account_contract::Client::new(&env, &margin_account.clone());
+
         let borrowed_token_symbols =
-            AccountLogicContract::get_all_borrowed_tokens(&env, margin_account.clone()).unwrap();
+            account_contract_client.get_all_borrowed_tokens(&margin_account.clone());
 
         let mut total_account_debt: U256 = U256::from_u128(&env, 0);
 

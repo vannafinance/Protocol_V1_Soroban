@@ -1,15 +1,35 @@
 use core::panic;
 
-use soroban_sdk::{Address, Env, Symbol, Vec, contract};
+use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract, contractimpl};
 
 use crate::types::{AccountDataKey, AccountDeactivationEvent, AccountError};
 
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 
+// pub trait AccountContractTrait {
+//     fn deactivate_account(env: Env, user_address: Address) -> Result<(), AccountError>;
+//     fn activate_account(env: Env, user_address: Address) -> Result<(), AccountError>;
+//     fn has_debt(env: &Env, user_address: Address) -> bool;
+//     fn set_has_debt(env: &Env, user_address: Address, has_debt: bool) -> Result<(), AccountError>;
+
+//     fn get_all_borrowed_tokens(
+//         env: &Env,
+//         user_address: Address,
+//     ) -> Result<Vec<Symbol>, AccountError>;
+
+//     fn get_all_collateral_tokens(
+//         env: &Env,
+//         user_address: Address,
+//     ) -> Result<Vec<Symbol>, AccountError>;
+
+//     fn extend_ttl_margin_account(env: &Env, key: AccountDataKey);
+// }
+
 #[contract]
 pub struct AccountContract;
 
+#[contractimpl]
 impl AccountContract {
     pub fn deactivate_account(env: Env, user_address: Address) -> Result<(), AccountError> {
         user_address.require_auth();
@@ -87,6 +107,35 @@ impl AccountContract {
             ))
             .unwrap_or_else(|| Vec::new(&env));
         Ok(collateral_tokens_list)
+    }
+
+    pub fn get_collateral_token_balance(
+        env: &Env,
+        user_address: Address,
+        token_symbol: Symbol,
+    ) -> Result<U256, AccountError> {
+        let key_a =
+            AccountDataKey::UserCollateralBalance(user_address.clone(), token_symbol.clone());
+        let token_balance = env
+            .storage()
+            .persistent()
+            .get(&key_a)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
+        Ok(token_balance)
+    }
+
+    pub fn get_borrowed_token_debt(
+        env: &Env,
+        user_address: Address,
+        token_symbol: Symbol,
+    ) -> Result<U256, AccountError> {
+        let key_b = AccountDataKey::UserBorrowedDebt(user_address.clone(), token_symbol.clone());
+        let token_debt = env
+            .storage()
+            .persistent()
+            .get(&key_b)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
+        Ok(token_debt)
     }
 
     fn extend_ttl_margin_account(env: &Env, key: AccountDataKey) {

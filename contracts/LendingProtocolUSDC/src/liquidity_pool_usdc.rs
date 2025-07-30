@@ -38,7 +38,10 @@ impl LiquidityPoolUSDC {
         } else {
             self::panic!("Admin key has already been set");
         }
-        Ok(String::from_str(&env, "Adminkey set successfully"))
+        Ok(String::from_str(
+            &env,
+            "Adminkey set successfully for Lending pool xlm",
+        ))
     }
 
     pub fn get_admin(env: Env) -> Result<String, LendingError> {

@@ -1,10 +1,10 @@
 use core::panic;
 
-use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract, panic_with_error};
+use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract, contractimpl, panic_with_error};
 
 use crate::types::{
-    AccountDataKey, AccountDeletionEvent, AccountError, TraderBorrowEvent, TraderLiquidateEvent,
-    TraderRepayEvent, TraderSettleAccountEvent,
+    AccountDataKey, AccountDeletionEvent, AccountManagerError, TraderBorrowEvent,
+    TraderLiquidateEvent, TraderRepayEvent, TraderSettleAccountEvent,
 };
 
 const TLL_LEDGERS_YEAR: u32 = 6307200;
@@ -14,14 +14,24 @@ pub mod account_contract {
     soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/account_contract.wasm");
 }
 
+pub mod risk_engine_contract {
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/account_contract.wasm");
+}
+
 #[contract]
 pub struct AccountManagerContract;
 
+#[contractimpl]
 impl AccountManagerContract {
-    pub fn delete_account(env: &Env, user_address: Address) -> Result<(), AccountError> {
+    pub fn delete_account(env: &Env, user_address: Address) -> Result<(), AccountManagerError> {
         user_address.require_auth();
+        let account_contract_address: Address = Address::from_str(&env, "strkey");
+        let account_contract_client =
+            account_contract::Client::new(&env, &account_contract_address);
 
-        if Self::has_debt(env, user_address.clone()) {
+        let has_debt = account_contract_client.has_debt(&user_address.clone());
+
+        if has_debt {
             panic!("Cannot delete account with debt, please repay debt first");
         }
 
@@ -117,7 +127,7 @@ impl AccountManagerContract {
         user_address: Address,
         token_symbol: Symbol,
         token_amount: U256,
-    ) -> Result<(), AccountError> {
+    ) -> Result<(), AccountManagerError> {
         user_address.require_auth();
 
         if !Self::get_iscollateral_allowed(&env, token_symbol.clone()) {
@@ -163,7 +173,7 @@ impl AccountManagerContract {
         user_address: Address,
         token_symbol: Symbol,
         token_amount: U256,
-    ) -> Result<(), AccountError> {
+    ) -> Result<(), AccountManagerError> {
         user_address.require_auth();
 
         let key_a = AccountDataKey::UserCollateralTokensList(user_address.clone());
@@ -207,7 +217,7 @@ impl AccountManagerContract {
         borrow_amount: U256,
         token_symbol: Symbol,
         margin_account: Address,
-    ) -> Result<(), BorrowError> {
+    ) -> Result<(), AccountManagerError> {
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
         // This function is faulty, most logic shall be handled by lending pool contract
         // We should only do checks before calling lending pool contract to lend money to trader
@@ -233,28 +243,28 @@ impl AccountManagerContract {
         if pool_balance < borrow_amount {
             panic!("Pool balance is not enough to borrow");
         }
-        let (client_address, pool_address) =
-            Self::get_token_client_and_pool_address(&env, token_symbol.clone());
-        let token_client = token::Client::new(&env, &client_address);
+        // let (client_address, pool_address) =
+        //     Self::get_token_client_and_pool_address(&env, token_symbol.clone());
+        // let token_client = token::Client::new(&env, &client_address);
 
         // Allow user to borrow
         // Transfer borrow amount from pool to user
-        let borrow_amount_u128 = borrow_amount
-            .to_u128()
-            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+        let borrow_amount_u128 = borrow_amount.to_u128().unwrap_or_else(|| {
+            panic_with_error!(&env, AccountManagerError::IntegerConversionError)
+        });
 
         // !!!!!! wrong
-        token_client.transfer(
-            &pool_address,   // from
-            &margin_account, // to
-            &(borrow_amount_u128 as i128),
-        );
+        // token_client.transfer(
+        //     &pool_address,   // from
+        //     &margin_account, // to
+        //     &(borrow_amount_u128 as i128),
+        // );
 
-        let new_pool_balance = pool_balance.sub(&borrow_amount.clone());
-        env.storage()
-            .persistent()
-            .set(&PoolDataKey::Pool(token_symbol.clone()), &new_pool_balance);
-        Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(token_symbol.clone()));
+        // let new_pool_balance = pool_balance.sub(&borrow_amount.clone());
+        // env.storage()
+        //     .persistent()
+        //     .set(&PoolDataKey::Pool(token_symbol.clone()), &new_pool_balance);
+        // Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(token_symbol.clone()));
 
         AccountLogicContract::add_borrowed_token_balance(
             &env,
@@ -286,13 +296,17 @@ impl AccountManagerContract {
         repay_amount: U256,
         token_symbol: Symbol,
         margin_account: Address,
-    ) -> Result<(), BorrowError> {
+    ) -> Result<(), AccountManagerError> {
         margin_account.require_auth();
 
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
         // This function is faulty, most logic shall be handled by lending pool contract
         // We should only do checks before calling lending pool contract to receive repay money from trader
         // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+        let account_contract_address: Address;
+        let client = account_contract::Client::new(&env, &account_contract_address);
+        let account_contract = client.get_all_borrowed_tokens(&env, margin_account.clone());
 
         let borrowed_tokens =
             AccountLogicContract::get_all_borrowed_tokens(&env, margin_account.clone())
@@ -357,7 +371,12 @@ impl AccountManagerContract {
         Ok(())
     }
 
-    pub fn liquidate(env: Env, margin_account: Address) -> Result<(), BorrowError> {
+    pub fn liquidate(env: Env, margin_account: Address) -> Result<(), AccountManagerError> {
+        let account_contract_address: Address;
+
+        let account_contract_client =
+            account_contract::Client::new(&env, &account_contract_address);
+        // account_contract_client.
         let all_borrowed_tokens =
             AccountLogicContract::get_all_borrowed_tokens(&env.clone(), margin_account.clone())
                 .unwrap();
@@ -447,11 +466,17 @@ impl AccountManagerContract {
         Ok(())
     }
 
-    pub fn settle_account(env: Env, margin_account: Address) -> Result<(), BorrowError> {
+    pub fn settle_account(env: Env, margin_account: Address) -> Result<(), AccountManagerError> {
         margin_account.require_auth();
-        let borrowed_tokens =
-            AccountLogicContract::get_all_borrowed_tokens(&env, margin_account.clone())
-                .expect("Failed to fetch borrowed tokens list");
+        let account_contract_address: Address;
+        let account_contract_client =
+            account_contract::Client::new(&env, &account_contract_address);
+        let borrowed_tokens = account_contract_client
+            .get_all_borrowed_tokens(&env, margin_account.clone())
+            .expect("Failed to fetch borrowed tokens list");
+        // let borrowed_tokens =
+        //     AccountLogicContract::get_all_borrowed_tokens(&env, margin_account.clone())
+        //         .expect("Failed to fetch borrowed tokens list");
         for tokenx in borrowed_tokens.iter() {
             let token_debt = AccountLogicContract::get_borrowed_token_debt(
                 &env,
@@ -494,5 +519,10 @@ impl AccountManagerContract {
             .persistent()
             .get(&key)
             .unwrap_or_else(|| panic!("Asset cap not set"))
+    }
+
+    pub fn get_iscollateral_allowed(env: &Env, token_symbol: Symbol) -> bool {
+        let key = AccountDataKey::IsCollateralAllowed(token_symbol);
+        env.storage().persistent().get(&key).unwrap_or(false)
     }
 }
