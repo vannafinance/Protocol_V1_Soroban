@@ -7,25 +7,6 @@ use crate::types::{AccountDataKey, AccountDeactivationEvent, AccountError};
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 
-// pub trait AccountContractTrait {
-//     fn deactivate_account(env: Env, user_address: Address) -> Result<(), AccountError>;
-//     fn activate_account(env: Env, user_address: Address) -> Result<(), AccountError>;
-//     fn has_debt(env: &Env, user_address: Address) -> bool;
-//     fn set_has_debt(env: &Env, user_address: Address, has_debt: bool) -> Result<(), AccountError>;
-
-//     fn get_all_borrowed_tokens(
-//         env: &Env,
-//         user_address: Address,
-//     ) -> Result<Vec<Symbol>, AccountError>;
-
-//     fn get_all_collateral_tokens(
-//         env: &Env,
-//         user_address: Address,
-//     ) -> Result<Vec<Symbol>, AccountError>;
-
-//     fn extend_ttl_margin_account(env: &Env, key: AccountDataKey);
-// }
-
 #[contract]
 pub struct AccountContract;
 

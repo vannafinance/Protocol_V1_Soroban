@@ -34,7 +34,8 @@ impl Deployer {
         let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
         admin.require_auth();
 
-        let salt = Self::generate_salt(&env);
+        let salt =
+            Self::generate_predictable_salt(&env, &native_token_address, &vxlm_token_address);
 
         // Convert all constructor arguments to Val and add to vector
         let mut constructor_args = Vec::new(&env);
@@ -57,8 +58,33 @@ impl Deployer {
             .deployer()
             .with_address(env.current_contract_address(), salt)
             .deploy_v2(lending_pool_xlm_wasm_hash, constructor_args);
-
         deployed_address
+    }
+
+    fn generate_predictable_salt(
+        env: &Env,
+        native_token: &Address,
+        vxlm_token: &Address,
+    ) -> BytesN<32> {
+        let mut salt_bytes = [0u8; 32];
+
+        // Use hash of token addresses for deterministic salt
+        let native_xdr = native_token.to_xdr(env);
+        let vxlm_xdr = vxlm_token.to_xdr(env);
+
+        // Copy first 16 bytes from each address
+        let native_len = (native_xdr.len() as usize).min(16);
+        let vxlm_len = (vxlm_xdr.len() as usize).min(16);
+
+        for i in 0..native_len {
+            salt_bytes[i] = native_xdr.get(i as u32).unwrap_or(0);
+        }
+
+        for i in 0..vxlm_len {
+            salt_bytes[16 + i] = vxlm_xdr.get(i as u32).unwrap_or(0);
+        }
+
+        BytesN::from_array(env, &salt_bytes)
     }
 
     fn generate_salt(env: &Env) -> BytesN<32> {

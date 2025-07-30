@@ -38,28 +38,35 @@ impl LiquidityPoolXLM {
         account_manager: Address,
         rate_model: Address,
         token_issuer: Address,
-    ) -> Result<String, LendingError> {
+    ) {
         let key = DataKey::Admin;
 
         env.storage().persistent().set(&DataKey::Admin, &admin);
         Self::extend_ttl_datakey(&env, key);
 
+        env.events().publish(("constructor", "admin_set"), &admin);
         let vxlm_symbol = Symbol::new(&env, "VXLM");
 
         env.storage()
             .persistent()
             .set(&ContractDetails::RegistryContract, &registry_contract);
         Self::extend_ttl_contractdatakey(&env, ContractDetails::RegistryContract);
+        env.events()
+            .publish(("constructor", "registry_set"), &registry_contract);
 
         env.storage()
             .persistent()
             .set(&ContractDetails::AccountManager, &account_manager);
         Self::extend_ttl_contractdatakey(&env, ContractDetails::AccountManager);
+        env.events()
+            .publish(("constructor", "account_manager_set"), &account_manager);
 
         env.storage()
             .persistent()
             .set(&ContractDetails::RateModel, &rate_model);
         Self::extend_ttl_contractdatakey(&env, ContractDetails::RateModel);
+        env.events()
+            .publish(("constructor", "rate_model_set"), &rate_model);
 
         env.storage().persistent().set(
             &TokenDataKey::VTokenClientAddress(vxlm_symbol.clone()),
@@ -71,15 +78,15 @@ impl LiquidityPoolXLM {
             .persistent()
             .set(&TokenDataKey::NativeXLMClientAddress, &native_token_address);
         Self::extend_ttl_tokendatakey(&env, TokenDataKey::NativeXLMClientAddress);
+        env.events()
+            .publish(("constructor", "native_xlm_set"), &native_token_address);
 
         env.storage()
             .persistent()
             .set(&TokenDataKey::TokenIssuerAddress, &token_issuer);
         Self::extend_ttl_tokendatakey(&env, TokenDataKey::TokenIssuerAddress);
-        Ok(String::from_str(
-            &env,
-            "XLM Lendingpool deployed successfully",
-        ))
+        env.events()
+            .publish(("constructor", "token_issuer_set"), &token_issuer);
     }
 
     pub fn set_admin(env: Env, admin: Address) -> Result<String, LendingError> {
