@@ -86,7 +86,7 @@ impl SmartAccountContract {
     pub fn withdraw_balance(
         env: Env,
         token_symbol: Symbol,
-        amount: u64,
+        amount: u128,
     ) -> Result<(), SmartAccountError> {
         let registry_address = env
             .storage()

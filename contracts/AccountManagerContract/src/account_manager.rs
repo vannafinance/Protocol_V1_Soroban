@@ -358,30 +358,6 @@ impl AccountManagerContract {
             panic!("No lending pool available for given token_symbol");
         }
 
-        // let pool_balance: U256 = env
-        //     .storage()
-        //     .persistent()
-        //     .get(&PoolDataKey::Pool(token_symbol.clone()))
-        //     .unwrap_or_else(|| panic!("Pool doesn't exist"));
-
-        // if pool_balance < borrow_amount {
-        //     panic!("Pool balance is not enough to borrow");
-        // }
-
-        // let new_pool_balance = pool_balance.sub(&borrow_amount.clone());
-        // env.storage()
-        //     .persistent()
-        //     .set(&PoolDataKey::Pool(token_symbol.clone()), &new_pool_balance);
-        // Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(token_symbol.clone()));
-
-        // AccountLogicContract::add_borrowed_token_balance(
-        //     &env,
-        //     margin_account.clone(),
-        //     token_symbol.clone(),
-        //     borrow_amount.clone(),
-        // )
-        // .unwrap();
-
         env.events().publish(
             (
                 Symbol::new(&env, "Trader Borrow Event"),
@@ -406,11 +382,6 @@ impl AccountManagerContract {
         user_account: Address,
     ) -> Result<(), AccountManagerError> {
         user_account.require_auth();
-
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        // This function is faulty, most logic shall be handled by lending pool contract
-        // We should only do checks before calling lending pool contract to receive repay money from trader
-        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
         let registry_address: Address = env
             .storage()
