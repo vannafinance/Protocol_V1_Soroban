@@ -1,42 +1,8 @@
 use soroban_sdk::contractimpl;
 use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract, contracterror};
 
-use crate::types::AccountDataKey;
 use crate::types::RiskEngineError;
-
-pub mod oracle_contract {
-    // soroban_sdk::contractimport!(file = "../../dist/std_reference.wasm");
-    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/oracle_contract.wasm");
-}
-
-pub mod account_contract {
-    // soroban_sdk::contractimport!(file = "../../dist/std_reference.wasm");
-    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/account_contract.wasm");
-}
-
-pub mod rate_model_contract {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/rate_model_contract.wasm"
-    );
-}
-
-pub mod lending_protocol_xlm {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/lending_protocol_xlm.wasm"
-    );
-}
-
-pub mod lending_protocol_usdc {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/lending_protocol_usdc.wasm"
-    );
-}
-
-pub mod lending_protocol_eurc {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/lending_protocol_eurc.wasm"
-    );
-}
+use crate::types::{AccountDataKey, RiskEngineKey};
 
 const BALANCE_TO_BORROW_THRESHOLD: u128 = 1100000000000000000;
 
@@ -45,7 +11,14 @@ pub struct RiskEngineContract;
 
 #[contractimpl]
 impl RiskEngineContract {
-    pub fn init_risk_engine() {}
+    pub fn __constructor(env: &Env, admin: Address, registry_contract: Address) {
+        env.storage()
+            .persistent()
+            .set(&RiskEngineKey::Admin, &admin);
+        env.storage()
+            .persistent()
+            .set(&RiskEngineKey::RegistryContract, &registry_contract);
+    }
 
     pub fn is_borrow_allowed(
         env: &Env,
@@ -53,12 +26,16 @@ impl RiskEngineContract {
         borrow_amount: U256,
         margin_account: Address,
     ) -> Result<bool, RiskEngineError> {
-        //  Fetch price from oracle !!!!!!!!!!!!!!!!!!!!!!!!
+        //  Fetch price from oracle
 
-        // !! We should fetch oracle contract address from registry
-        let oracle_contract_address: Address;
-        // !! flaw
-        let oracle_client = oracle_contract::Client::new(env, &margin_account);
+        let registry_contract: Address = env
+            .storage()
+            .persistent()
+            .get(&RiskEngineKey::RegistryContract)
+            .expect("Failed to get registry contract address !");
+        let registry_client = registry_contract::Client::new(&env, &registry_contract);
+        let oracle_contract_address: Address = registry_client.get_oracle_contract_address();
+        let oracle_client = oracle_contract::Client::new(env, &oracle_contract_address);
 
         let price = oracle_client.get_price_of(&(symbol, Symbol::new(&env, "USD")));
         let oracle_price = U256::from_u128(&env, price);
@@ -83,18 +60,23 @@ impl RiskEngineContract {
         withdraw_amount: U256,
         margin_account: Address,
     ) -> Result<bool, RiskEngineError> {
-        // !! flaw
-        let account_contract_client = account_contract::Client::new(&env, &margin_account.clone());
-        if !account_contract_client.has_debt(&margin_account.clone()) {
+        let registry_contract: Address = env
+            .storage()
+            .persistent()
+            .get(&RiskEngineKey::RegistryContract)
+            .expect("Failed to get registry contract address !");
+        let registry_client = registry_contract::Client::new(&env, &registry_contract);
+
+        // check has debt
+        let smart_account_contract_client =
+            smart_account_contract::Client::new(&env, &margin_account.clone());
+        if !smart_account_contract_client.has_debt() {
             return Ok(true);
         }
 
-        //  Fetch price from oracle !!!!!!!!!!!!!!!!!!!!!!!!
-        // !! We should fetch oracle contract address from registry
-        let oracle_contract_address: Address;
-        // !! flaw
-        let oracle_client = oracle_contract::Client::new(env, &margin_account.clone());
+        let oracle_contract_address: Address = registry_client.get_oracle_contract_address();
 
+        let oracle_client = oracle_contract::Client::new(&env, &oracle_contract_address);
         let price = oracle_client.get_price_of(&(symbol, Symbol::new(&env, "USD")));
         let oracle_price = U256::from_u128(&env, price);
         let withdraw_value = withdraw_amount.mul(&oracle_price);
@@ -147,11 +129,12 @@ impl RiskEngineContract {
 
         let mut total_account_balance: U256 = U256::from_u128(&env, 0);
         // !! flaw
-        let account_contract_client = account_contract::Client::new(&env, &margin_account.clone());
+        let smart_account_contract_client =
+            smart_account_contract::Client::new(&env, &margin_account.clone());
 
         for token in collateral_token_symbols.iter() {
-            let token_balance = account_contract_client
-                .get_collateral_token_balance(&margin_account.clone(), &token.clone());
+            let token_balance =
+                smart_account_contract_client.get_collateral_token_balance(&token.clone());
 
             let oracle_price_usd = oracle_client.get_price_of(&(token, Symbol::new(&env, "USD")));
 
@@ -167,23 +150,33 @@ impl RiskEngineContract {
         margin_account: Address,
     ) -> Result<U256, RiskEngineError> {
         // !! flaw
-        let account_contract_client = account_contract::Client::new(&env, &margin_account.clone());
+        let smart_account_contract_client =
+            smart_account_contract::Client::new(&env, &margin_account.clone());
 
-        let borrowed_token_symbols =
-            account_contract_client.get_all_borrowed_tokens(&margin_account.clone());
+        let borrowed_token_symbols = smart_account_contract_client.get_all_borrowed_tokens();
+        let registry_address: Address = env
+            .storage()
+            .persistent()
+            .get(&RiskEngineKey::RegistryContract)
+            .unwrap();
+
+        let registry_client = registry_contract::Client::new(&env, &registry_address);
 
         let mut total_account_debt: U256 = U256::from_u128(&env, 0);
 
         for tokenx in borrowed_token_symbols.iter() {
-            let token_balance = AccountLogicContract::get_borrowed_token_debt(
-                &env,
-                margin_account.clone(),
-                tokenx.clone(),
-            )
-            .unwrap();
+            let token_balance =
+                smart_account_contract_client.get_borrowed_token_debt(&tokenx.clone());
+            // let token_balance = AccountLogicContract::get_borrowed_token_debt(
+            //     &env,
+            //     margin_account.clone(),
+            //     tokenx.clone(),
+            // )
+            // .unwrap();
 
             // !! We should fetch oracle contract address from registry
-            let oracle_contract_address: Address;
+
+            let oracle_contract_address: Address = registry_client.get_oracle_contract_address();
 
             let oracle_client = oracle_contract::Client::new(env, &oracle_contract_address);
 
@@ -194,4 +187,46 @@ impl RiskEngineContract {
         }
         Ok(total_account_debt)
     }
+}
+
+pub mod oracle_contract {
+    // soroban_sdk::contractimport!(file = "../../dist/std_reference.wasm");
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/oracle_contract.wasm");
+}
+
+pub mod smart_account_contract {
+    // soroban_sdk::contractimport!(file = "../../dist/std_reference.wasm");
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/smart_account_contract.wasm"
+    );
+}
+
+pub mod rate_model_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/rate_model_contract.wasm"
+    );
+}
+
+pub mod lending_protocol_xlm {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/lending_protocol_xlm.wasm"
+    );
+}
+
+pub mod lending_protocol_usdc {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/lending_protocol_usdc.wasm"
+    );
+}
+
+pub mod lending_protocol_eurc {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/lending_protocol_eurc.wasm"
+    );
+}
+
+pub mod registry_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/registry_contract.wasm"
+    );
 }

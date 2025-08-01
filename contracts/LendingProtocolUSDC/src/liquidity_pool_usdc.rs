@@ -14,7 +14,6 @@ pub mod rate_model_contract {
         file = "../../target/wasm32v1-none/release/rate_model_contract.wasm"
     );
 }
-
 #[contract]
 pub struct LiquidityPoolUSDC;
 
@@ -30,68 +29,44 @@ const SECS_PER_YEAR: u128 = 31556952 * 1000000000000000000;
 
 #[contractimpl]
 impl LiquidityPoolUSDC {
-    pub fn set_admin(env: Env, admin: Address) -> Result<String, LendingError> {
-        let key = DataKey::Admin;
-        if !env.storage().persistent().has(&key) {
-            env.storage().persistent().set(&DataKey::Admin, &admin);
-            Self::extend_ttl_datakey(&env, key);
-        } else {
-            self::panic!("Admin key has already been set");
-        }
-        Ok(String::from_str(
-            &env,
-            "Adminkey set successfully for Lending pool xlm",
-        ))
-    }
-
-    pub fn get_admin(env: Env) -> Result<String, LendingError> {
-        let key = DataKey::Admin;
-        let admin_address: Address = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or_else(|| panic!("Admin key has not been set"));
-        Ok(admin_address.to_string())
-    }
-
-    pub fn initialize_pool_usdc(
+    pub fn __constructor(
         env: Env,
+        admin: Address,
         native_token_address: Address,
         vusdc_token_address: Address,
         registry_contract: Address,
-        treasury_address: Address,
         account_manager: Address,
         rate_model: Address,
-    ) -> Result<String, LendingError> {
-        let admin: Address = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Admin)
-            .expect("Admin not set");
+        token_issuer: Address,
+    ) {
+        let key = DataKey::Admin;
 
-        admin.require_auth();
-        let usdc_symbol = Symbol::new(&env, "USDC");
-        let vusdc_symbol = Symbol::new(&env, "vUSDC");
+        env.storage().persistent().set(&DataKey::Admin, &admin);
+        Self::extend_ttl_datakey(&env, key);
+
+        env.events().publish(("constructor", "admin_set"), &admin);
+        let vusdc_symbol = Symbol::new(&env, "VUSDC");
 
         env.storage()
             .persistent()
             .set(&ContractDetails::RegistryContract, &registry_contract);
         Self::extend_ttl_contractdatakey(&env, ContractDetails::RegistryContract);
+        env.events()
+            .publish(("constructor", "registry_set"), &registry_contract);
 
         env.storage()
             .persistent()
             .set(&ContractDetails::AccountManager, &account_manager);
         Self::extend_ttl_contractdatakey(&env, ContractDetails::AccountManager);
+        env.events()
+            .publish(("constructor", "account_manager_set"), &account_manager);
 
         env.storage()
             .persistent()
             .set(&ContractDetails::RateModel, &rate_model);
         Self::extend_ttl_contractdatakey(&env, ContractDetails::RateModel);
-
-        env.storage()
-            .persistent()
-            .set(&ContractDetails::Treasury, &treasury_address);
-        Self::extend_ttl_contractdatakey(&env, ContractDetails::Treasury);
+        env.events()
+            .publish(("constructor", "rate_model_set"), &rate_model);
 
         env.storage().persistent().set(
             &TokenDataKey::VTokenClientAddress(vusdc_symbol.clone()),
@@ -106,6 +81,80 @@ impl LiquidityPoolUSDC {
             .persistent()
             .set(&TokenDataKey::UsdcClientAddress, &native_token_address);
         Self::extend_ttl_tokendatakey(&env, TokenDataKey::UsdcClientAddress);
+        env.events()
+            .publish(("constructor", "native_usdc_set"), &native_token_address);
+
+        env.storage()
+            .persistent()
+            .set(&TokenDataKey::TokenIssuerAddress, &token_issuer);
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::TokenIssuerAddress);
+        env.events()
+            .publish(("constructor", "token_issuer_set"), &token_issuer);
+    }
+
+    pub fn set_admin(env: Env, admin: Address) -> Result<String, LendingError> {
+        // Resetting the admin, can be done only by exisiting admin
+        let admin_existing = Self::get_admin(&env).unwrap();
+        admin_existing.require_auth();
+
+        let key = DataKey::Admin;
+
+        env.storage().persistent().set(&DataKey::Admin, &admin);
+        Self::extend_ttl_datakey(&env, key);
+        Ok(String::from_str(&env, "Adminkey set successfully"))
+    }
+
+    pub fn get_admin(env: &Env) -> Result<Address, LendingError> {
+        let key = DataKey::Admin;
+        let admin_address: Address = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| panic!("Admin key has not been set"));
+        Ok(admin_address)
+    }
+
+    pub fn initialize_pool_usdc(env: Env) -> Result<String, LendingError> {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .expect("Admin not set");
+
+        admin.require_auth();
+        let usdc_symbol = Symbol::new(&env, "USDC");
+        let vusdc_symbol = Symbol::new(&env, "VUSDC");
+
+        // env.storage()
+        //     .persistent()
+        //     .get(&ContractDetails::RegistryContract);
+        // Self::extend_ttl_contractdatakey(&env, ContractDetails::RegistryContract);
+
+        // env.storage()
+        //     .persistent()
+        //     .set(&ContractDetails::AccountManager, &account_manager);
+        // Self::extend_ttl_contractdatakey(&env, ContractDetails::AccountManager);
+
+        // env.storage()
+        //     .persistent()
+        //     .set(&ContractDetails::RateModel, &rate_model);
+        // Self::extend_ttl_contractdatakey(&env, ContractDetails::RateModel);
+
+        // env.storage()
+        //     .persistent()
+        //     .set(&ContractDetails::Treasury, &treasury_address);
+        // Self::extend_ttl_contractdatakey(&env, ContractDetails::Treasury);
+
+        // env.storage().persistent().set(
+        //     &TokenDataKey::VTokenClientAddress(vusdc_symbol.clone()),
+        //     &vusdc_token_address,
+        // );
+        // Self::extend_ttl_tokendatakey(&env, TokenDataKey::VTokenClientAddress(vusdc_symbol.clone()));
+
+        // env.storage()
+        //     .persistent()
+        //     .set(&TokenDataKey::NativeUSDCClientAddress, &native_token_address);
+        // Self::extend_ttl_tokendatakey(&env, TokenDataKey::NativeUSDCClientAddress);
 
         // env.storage().persistent().set(
         //     &PoolDataKey::PoolAddress(usdc_symbol.clone()),
@@ -197,7 +246,7 @@ impl LiquidityPoolUSDC {
         let token_value: U256 = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "vUSDC")))
+            .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "VUSDC")))
             .unwrap();
 
         // Making sure token_value is not zero before dividing
@@ -208,7 +257,7 @@ impl LiquidityPoolUSDC {
 
         // let vtokens_to_be_minted = amount.div(&token_value);
 
-        // Now Mint the vUSDC tokens that were created for the lender
+        // Now Mint the VUSDC tokens that were created for the lender
         Self::mint_vusdc_tokens(&env, lender.clone(), vtokens_to_be_minted, token_value);
 
         env.events().publish(
@@ -233,7 +282,7 @@ impl LiquidityPoolUSDC {
             panic!("Lender not registered");
         }
 
-        let key_k = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "vUSDC"));
+        let key_k = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "VUSDC"));
         let vusdc_balance = env
             .storage()
             .persistent()
@@ -286,7 +335,7 @@ impl LiquidityPoolUSDC {
         let token_value: U256 = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "vUSDC")))
+            .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "VUSDC")))
             .unwrap();
 
         // Making sure token_value is not zero before dividing
@@ -308,13 +357,15 @@ impl LiquidityPoolUSDC {
         );
     }
 
-    pub fn lend_to(
-        env: &Env,
-        account_manager: Address,
-        trader: Address,
-        amount: U256,
-    ) -> Result<bool, LendingError> {
-        // account_manager.require_auth();
+    pub fn lend_to(env: &Env, trader: Address, amount: U256) -> Result<bool, LendingError> {
+        let account_manager: Address = env
+            .storage()
+            .persistent()
+            .get(&ContractDetails::AccountManager)
+            .expect("Account manager contract address not set !");
+        account_manager.require_auth();
+
+        Self::update_state(env);
         let borrow_shares = Self::convert_asset_borrow_shares(env, amount.clone());
         let mut is_first_borrow: bool = false;
 
@@ -355,13 +406,15 @@ impl LiquidityPoolUSDC {
         Ok(is_first_borrow)
     }
 
-    pub fn collect_from(
-        env: &Env,
-        account_manager: Address,
-        amount: U256,
-        trader: Address,
-    ) -> Result<bool, LendingError> {
-        // account_manager.require_auth();
+    pub fn collect_from(env: &Env, amount: U256, trader: Address) -> Result<bool, LendingError> {
+        let account_manager: Address = env
+            .storage()
+            .persistent()
+            .get(&ContractDetails::AccountManager)
+            .expect("Account manager contract address not set !");
+        account_manager.require_auth();
+        Self::update_state(env);
+
         let borrow_shares = Self::convert_asset_borrow_shares(env, amount.clone());
         if borrow_shares == U256::from_u32(&env, 0) {
             panic!("Zero borrow shares");
@@ -382,7 +435,7 @@ impl LiquidityPoolUSDC {
     }
 
     fn mint_vusdc_tokens(env: &Env, lender: Address, tokens_to_mint: U256, token_value: U256) {
-        let key = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "vUSDC"));
+        let key = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "VUSDC"));
 
         // Check if user has balance initialised, else initialise key for user
         if !env.storage().persistent().has(&key) {
@@ -395,7 +448,7 @@ impl LiquidityPoolUSDC {
         let tokens_to_mint_u128: u128 = tokens_to_mint
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
-        let vusdc_symbol = Symbol::new(&env, "vUSDC");
+        let vusdc_symbol = Symbol::new(&env, "VUSDC");
 
         let token_address: Address = env
             .storage()
@@ -416,7 +469,7 @@ impl LiquidityPoolUSDC {
         // Update total token balance available right now
         let current_total_token_balance = Self::get_current_total_vusdc_balance(env);
         let new_total_token_balance = current_total_token_balance.add(&tokens_to_mint);
-        let key_x = TokenDataKey::CurrentVTokenBalance(Symbol::new(&env, "vUSDC"));
+        let key_x = TokenDataKey::CurrentVTokenBalance(Symbol::new(&env, "VUSDC"));
         env.storage()
             .persistent()
             .set(&key_x, &new_total_token_balance);
@@ -424,7 +477,7 @@ impl LiquidityPoolUSDC {
 
         let total_minted = Self::get_total_vusdc_minted(env);
         let new_total_minted = total_minted.add(&tokens_to_mint);
-        let key_y = TokenDataKey::TotalTokensMinted(Symbol::new(&env, "vUSDC"));
+        let key_y = TokenDataKey::TotalTokensMinted(Symbol::new(&env, "VUSDC"));
         env.storage().persistent().set(&key_y, &new_total_minted);
         Self::extend_ttl_tokendatakey(&env, key_y);
 
@@ -434,14 +487,14 @@ impl LiquidityPoolUSDC {
                 lender: lender.clone(),
                 token_amount: tokens_to_mint,
                 timestamp: env.ledger().timestamp(),
-                token_symbol: Symbol::new(&env, "vUSDC"),
+                token_symbol: Symbol::new(&env, "VUSDC"),
                 token_value: token_value,
             },
         );
     }
 
     fn burn_vusdc_tokens(env: &Env, lender: Address, tokens_to_burn: U256, token_value: U256) {
-        let key = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "vUSDC"));
+        let key = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "VUSDC"));
         if !env.storage().persistent().has(&key) {
             panic_with_error!(&env, LendingTokenError::TokenBalanceNotInitialised);
         }
@@ -459,7 +512,7 @@ impl LiquidityPoolUSDC {
         let tokens_to_burn_u128: u128 = tokens_to_burn
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
-        let vusdc_symbol = Symbol::new(&env, "vUSDC");
+        let vusdc_symbol = Symbol::new(&env, "VUSDC");
 
         let token_address: Address = env
             .storage()
@@ -475,17 +528,17 @@ impl LiquidityPoolUSDC {
         let current_total_token_balance = Self::get_current_total_vusdc_balance(env);
         let new_total_token_balance = current_total_token_balance.sub(&tokens_to_burn);
         env.storage().persistent().set(
-            &TokenDataKey::CurrentVTokenBalance(Symbol::new(&env, "vUSDC")),
+            &TokenDataKey::CurrentVTokenBalance(Symbol::new(&env, "VUSDC")),
             &new_total_token_balance,
         );
         Self::extend_ttl_tokendatakey(
             &env,
-            TokenDataKey::CurrentVTokenBalance(Symbol::new(&env, "vUSDC")),
+            TokenDataKey::CurrentVTokenBalance(Symbol::new(&env, "VUSDC")),
         );
 
         let total_burnt = Self::get_total_vusdc_burnt(env);
         let new_total_burnt = total_burnt.add(&tokens_to_burn);
-        let key_a = TokenDataKey::TotalTokensBurnt(Symbol::new(&env, "vUSDC"));
+        let key_a = TokenDataKey::TotalTokensBurnt(Symbol::new(&env, "VUSDC"));
         env.storage().persistent().set(&key_a, &new_total_burnt);
         Self::extend_ttl_tokendatakey(&env, key_a);
 
@@ -495,7 +548,7 @@ impl LiquidityPoolUSDC {
                 lender: lender.clone(),
                 token_amount: tokens_to_burn,
                 timestamp: env.ledger().timestamp(),
-                token_symbol: Symbol::new(&env, "vUSDC"),
+                token_symbol: Symbol::new(&env, "VUSDC"),
                 token_value,
             },
         );
@@ -642,7 +695,7 @@ impl LiquidityPoolUSDC {
         env.storage()
             .persistent()
             .get(&TokenDataKey::CurrentVTokenBalance(Symbol::new(
-                &env, "vUSDC",
+                &env, "VUSDC",
             )))
             .unwrap_or_else(|| U256::from_u128(&env, 0))
     }
@@ -650,14 +703,14 @@ impl LiquidityPoolUSDC {
     pub fn get_total_vusdc_minted(env: &Env) -> U256 {
         env.storage()
             .persistent()
-            .get(&TokenDataKey::TotalTokensMinted(Symbol::new(&env, "vUSDC")))
+            .get(&TokenDataKey::TotalTokensMinted(Symbol::new(&env, "VUSDC")))
             .unwrap_or_else(|| U256::from_u128(&env, 0))
     }
 
     pub fn get_total_vusdc_burnt(env: &Env) -> U256 {
         env.storage()
             .persistent()
-            .get(&TokenDataKey::TotalTokensBurnt(Symbol::new(&env, "vUSDC")))
+            .get(&TokenDataKey::TotalTokensBurnt(Symbol::new(&env, "VUSDC")))
             .unwrap_or_else(|| U256::from_u128(&env, 0))
     }
 
@@ -709,7 +762,7 @@ impl LiquidityPoolUSDC {
             .unwrap_or_else(|| panic!("Native USDC client address not set"))
     }
 
-    // Converts USDC to vUSDC
+    // Converts USDC to VUSDC
     pub fn convert_usdc_to_vtoken(env: &Env, amount: U256) -> U256 {
         let pool_balance = Self::get_usdc_pool_balance(env);
         let minted = Self::get_total_vusdc_minted(env);
@@ -726,18 +779,18 @@ impl LiquidityPoolUSDC {
 
             let vtoken_value = amount.div(&resx);
             env.storage().persistent().set(
-                &TokenDataKey::VTokenValue(Symbol::new(&env, "vUSDC")),
+                &TokenDataKey::VTokenValue(Symbol::new(&env, "VUSDC")),
                 &vtoken_value,
             );
             Self::extend_ttl_tokendatakey(
                 &env,
-                TokenDataKey::VTokenValue(Symbol::new(&env, "vUSDC")),
+                TokenDataKey::VTokenValue(Symbol::new(&env, "VUSDC")),
             );
             resx
         }
     }
 
-    //  Converting vUSDC to USDC
+    //  Converting VUSDC to USDC
     pub fn convert_vtoken_to_asset(env: &Env, vtokens_to_be_burnt: U256) -> U256 {
         let pool_balance = Self::get_usdc_pool_balance(env);
         let v_token_supply = Self::get_current_total_vusdc_balance(env);
@@ -746,14 +799,15 @@ impl LiquidityPoolUSDC {
 
         let vtoken_value = resx.div(&vtokens_to_be_burnt);
         env.storage().persistent().set(
-            &TokenDataKey::VTokenValue(Symbol::new(&env, "vUSDC")),
+            &TokenDataKey::VTokenValue(Symbol::new(&env, "VUSDC")),
             &vtoken_value,
         );
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::VTokenValue(Symbol::new(&env, "vUSDC")));
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::VTokenValue(Symbol::new(&env, "VUSDC")));
 
         resx
     }
 
+    /// !!!! This function is moved to RateModelCOntract
     pub fn get_borrow_rate_per_sec(
         env: &Env,
         liquidity: U256,
@@ -774,6 +828,8 @@ impl LiquidityPoolUSDC {
 
         Ok(res)
     }
+
+    /// !!!! This function is moved to RateModelCOntract
     pub fn get_utilisation_ratio(
         env: &Env,
         liquidity: U256,

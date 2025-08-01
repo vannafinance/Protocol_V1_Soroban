@@ -354,13 +354,14 @@ impl LiquidityPoolXLM {
         );
     }
 
-    pub fn lend_to(
-        env: &Env,
-        account_manager: Address,
-        trader: Address,
-        amount: U256,
-    ) -> Result<bool, LendingError> {
-        // account_manager.require_auth();
+    pub fn lend_to(env: &Env, trader: Address, amount: U256) -> Result<bool, LendingError> {
+        let account_manager: Address = env
+            .storage()
+            .persistent()
+            .get(&ContractDetails::AccountManager)
+            .expect("Account manager contract address not set !");
+        account_manager.require_auth();
+
         Self::update_state(env);
         let borrow_shares = Self::convert_asset_borrow_shares(env, amount.clone());
         let mut is_first_borrow: bool = false;
@@ -387,7 +388,7 @@ impl LiquidityPoolXLM {
         Self::extend_ttl_pooldatakey(env, key_b);
         Self::extend_ttl_pooldatakey(env, key_c);
 
-        // Now transfer amount to trader address
+        // Now transfer amount to trader's smart account address
         let native_token_address: Address = Self::get_native_xlm_client_address(&env);
         let xlm_token = token::Client::new(&env, &native_token_address);
         let amount_u128: u128 = amount
@@ -402,13 +403,13 @@ impl LiquidityPoolXLM {
         Ok(is_first_borrow)
     }
 
-    pub fn collect_from(
-        env: &Env,
-        account_manager: Address,
-        amount: U256,
-        trader: Address,
-    ) -> Result<bool, LendingError> {
-        // account_manager.require_auth();
+    pub fn collect_from(env: &Env, amount: U256, trader: Address) -> Result<bool, LendingError> {
+        let account_manager: Address = env
+            .storage()
+            .persistent()
+            .get(&ContractDetails::AccountManager)
+            .expect("Account manager contract address not set !");
+        account_manager.require_auth();
         Self::update_state(env);
 
         let borrow_shares = Self::convert_asset_borrow_shares(env, amount.clone());

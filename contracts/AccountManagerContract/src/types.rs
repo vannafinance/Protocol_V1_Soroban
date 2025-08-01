@@ -2,8 +2,9 @@ use soroban_sdk::{Address, String, Symbol, U256, Vec, contracterror, contracttyp
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[contracttype]
-pub enum AccountDataKey {
-    UserAddresses,                          // List of all user addresses
+pub enum AccountManagerKey {
+    UsersList,                              // List of all unique users
+    SmartAccountAddress(Address),           // User's smart account address
     UserCollateralBalance(Address, Symbol), // Collateral balance for a specific user address, collateral asset symbol
     UserCollateralTokensList(Address),      // All collateral tokens symbols held by user address
     UserBorrowedDebt(Address, Symbol),      // User debt balance in a specific asset symbol
@@ -16,6 +17,8 @@ pub enum AccountDataKey {
     AccountDeletedTime(Address),            // Time when account is deleted
     IsCollateralAllowed(Symbol),
     AssetCap,
+    Admin,
+    RegistryContract,
 }
 
 #[contracterror]

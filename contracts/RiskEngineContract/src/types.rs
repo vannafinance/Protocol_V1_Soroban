@@ -18,6 +18,13 @@ pub enum AccountDataKey {
     AssetCap,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[contracttype]
+pub enum RiskEngineKey {
+    RegistryContract,
+    Admin,
+}
+
 #[contracterror]
 #[derive(Copy, Clone, Debug)]
 pub enum RiskEngineError {
