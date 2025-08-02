@@ -31,14 +31,14 @@ pub enum AccountManagerError {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AccountDeletionEvent {
-    pub margin_account: Address,
+    pub smart_account: Address,
     pub deletion_time: u64,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TraderBorrowEvent {
-    pub margin_account: Address,
+    pub smart_account: Address,
     pub token_amount: U256,
     pub timestamp: u64,
     pub token_symbol: Symbol,
@@ -48,7 +48,7 @@ pub struct TraderBorrowEvent {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TraderRepayEvent {
-    pub margin_account: Address,
+    pub smart_account: Address,
     pub token_amount: U256,
     pub timestamp: u64,
     pub token_symbol: Symbol,
@@ -57,13 +57,13 @@ pub struct TraderRepayEvent {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TraderLiquidateEvent {
-    pub margin_account: Address,
+    pub smart_account: Address,
     pub timestamp: u64,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TraderSettleAccountEvent {
-    pub margin_account: Address,
+    pub smart_account: Address,
     pub timestamp: u64,
 }

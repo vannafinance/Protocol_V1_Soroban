@@ -4,7 +4,7 @@ use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract};
 use crate::types::RiskEngineError;
 use crate::types::{AccountDataKey, RiskEngineKey};
 
-const BALANCE_TO_BORROW_THRESHOLD: u128 = 1100000000000000000;
+const BALANCE_TO_BORROW_THRESHOLD: u128 = 11000000;
 
 #[contract]
 pub struct RiskEngineContract;

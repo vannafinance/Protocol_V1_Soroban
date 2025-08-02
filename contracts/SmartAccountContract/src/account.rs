@@ -165,9 +165,6 @@ impl SmartAccountContract {
     }
 
     pub fn has_debt(env: &Env) -> bool {
-        let account_manager: Address = Self::get_account_manager(env);
-        account_manager.require_auth();
-
         let has_debt = env
             .storage()
             .persistent()
@@ -225,6 +222,11 @@ impl SmartAccountContract {
             let index = borrowed_tokens_list.first_index_of(token_symbol).unwrap();
             borrowed_tokens_list.remove(index);
         }
+
+        if borrowed_tokens_list.is_empty() {
+            Self::set_has_debt(&env, false).unwrap();
+        }
+
         env.storage().persistent().set(
             &SmartAccountDataKey::BorrowedTokensList,
             &borrowed_tokens_list,

@@ -14,6 +14,25 @@ pub mod rate_model_contract {
         file = "../../target/wasm32v1-none/release/rate_model_contract.wasm"
     );
 }
+
+pub mod registry_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/registry_contract.wasm"
+    );
+}
+
+pub mod smart_account_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/smart_account_contract.wasm"
+    );
+}
+
+pub mod risk_engine_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/risk_engine_contract.wasm"
+    );
+}
+
 #[contract]
 pub struct LiquidityPoolUSDC;
 
@@ -21,11 +40,6 @@ pub struct LiquidityPoolUSDC;
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 const _TLL_LEDGERS_MONTH: u32 = 518400;
-
-const C1: u128 = 100000000000000000;
-const C2: u128 = 3 * 100000000000000000;
-const C3: u128 = 35 * 100000000000000000;
-const SECS_PER_YEAR: u128 = 31556952 * 1000000000000000000;
 
 #[contractimpl]
 impl LiquidityPoolUSDC {
@@ -79,8 +93,8 @@ impl LiquidityPoolUSDC {
 
         env.storage()
             .persistent()
-            .set(&TokenDataKey::UsdcClientAddress, &native_token_address);
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::UsdcClientAddress);
+            .set(&TokenDataKey::EurcClientAddress, &native_token_address);
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::EurcClientAddress);
         env.events()
             .publish(("constructor", "native_usdc_set"), &native_token_address);
 
@@ -199,12 +213,6 @@ impl LiquidityPoolUSDC {
             panic_with_error!(&env, LendingError::InsufficientBalance);
         }
 
-        let usdc_pool_address: Address = env
-            .storage()
-            .persistent()
-            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "USDC")))
-            .unwrap_or_else(|| panic!("Failed to fetch USDC pool address"));
-
         // Transfer USDC from user to this contract
         usdc_token.transfer(
             &lender,                         // from
@@ -248,14 +256,6 @@ impl LiquidityPoolUSDC {
             .persistent()
             .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "VUSDC")))
             .unwrap();
-
-        // Making sure token_value is not zero before dividing
-        if token_value == U256::from_u128(&env, 0) {
-            panic!("InvalidVTokenValue");
-            // panic_with_error!(&env, LendingTokenError::InvalidVTokenValue);
-        }
-
-        // let vtokens_to_be_minted = amount.div(&token_value);
 
         // Now Mint the VUSDC tokens that were created for the lender
         Self::mint_vusdc_tokens(&env, lender.clone(), vtokens_to_be_minted, token_value);
@@ -357,7 +357,11 @@ impl LiquidityPoolUSDC {
         );
     }
 
-    pub fn lend_to(env: &Env, trader: Address, amount: U256) -> Result<bool, LendingError> {
+    pub fn lend_to(
+        env: &Env,
+        trader_smart_account: Address,
+        amount: U256,
+    ) -> Result<bool, LendingError> {
         let account_manager: Address = env
             .storage()
             .persistent()
@@ -369,7 +373,7 @@ impl LiquidityPoolUSDC {
         let borrow_shares = Self::convert_asset_borrow_shares(env, amount.clone());
         let mut is_first_borrow: bool = false;
 
-        let key_a = PoolDataKey::UserBorrowShares(trader.clone());
+        let key_a = PoolDataKey::UserBorrowShares(trader_smart_account.clone());
         let key_b = PoolDataKey::TotalBorrowShares;
         let key_c = PoolDataKey::Borrows;
         let user_borrow_shares: U256 = env.storage().persistent().get(&key_a).unwrap();
@@ -391,7 +395,7 @@ impl LiquidityPoolUSDC {
         Self::extend_ttl_pooldatakey(env, key_b);
         Self::extend_ttl_pooldatakey(env, key_c);
 
-        // Now transfer amount to trader address
+        // Now transfer amount to trader's smart account address
         let native_token_address: Address = Self::get_native_usdc_client_address(&env);
         let usdc_token = token::Client::new(&env, &native_token_address);
         let amount_u128: u128 = amount
@@ -399,14 +403,22 @@ impl LiquidityPoolUSDC {
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
         usdc_token.transfer(
             &env.current_contract_address(), // from
-            &trader,                         // to
+            &trader_smart_account,           // to
             &(amount_u128 as i128),
         );
+
+        let smart_account_client = smart_account_contract::Client::new(&env, &trader_smart_account);
+        smart_account_client.add_borrowed_token(&Symbol::new(&env, "USDC"));
+        smart_account_client.set_has_debt(&true);
 
         Ok(is_first_borrow)
     }
 
-    pub fn collect_from(env: &Env, amount: U256, trader: Address) -> Result<bool, LendingError> {
+    pub fn collect_from(
+        env: &Env,
+        amount: U256,
+        trader_smart_account: Address,
+    ) -> Result<bool, LendingError> {
         let account_manager: Address = env
             .storage()
             .persistent()
@@ -420,15 +432,29 @@ impl LiquidityPoolUSDC {
             panic!("Zero borrow shares");
         }
 
-        let user_borrow_shares: U256 = Self::get_user_borrow_shares(env, trader.clone());
+        let user_borrow_shares: U256 =
+            Self::get_user_borrow_shares(env, trader_smart_account.clone());
         let total_borrow_shares: U256 = Self::get_total_borrow_shares(env);
         let key_c = PoolDataKey::Borrows;
         let borrows: U256 = env.storage().persistent().get(&key_c).unwrap();
 
+        let amount_u128: u128 = amount
+            .to_u128()
+            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+
+        let smart_account_client = smart_account_contract::Client::new(&env, &trader_smart_account);
+        smart_account_client
+            .remove_borrowed_token_balance(&Symbol::new(&env, "USDC"), &amount_u128);
+
         let res1 = user_borrow_shares.sub(&borrow_shares);
         let res2 = total_borrow_shares.sub(&borrow_shares);
         let res3 = borrows.sub(&amount);
-        Self::set_user_borrow_shares(env, trader.clone(), res1.clone());
+
+        if res1 == U256::from_u32(&env, 0) {
+            smart_account_client.remove_borrowed_token(&Symbol::new(&env, "USDC"));
+        }
+
+        Self::set_user_borrow_shares(env, trader_smart_account.clone(), res1.clone());
         Self::set_total_borrow_shares(env, res2);
         env.storage().persistent().set(&key_c, &res3);
         return Ok(res1 == U256::from_u32(&env, 0));
@@ -659,6 +685,11 @@ impl LiquidityPoolUSDC {
     }
 
     pub fn get_rate_factor(env: &Env) -> Result<U256, InterestRateError> {
+        let registy_address = Self::get_registry_address(env);
+        let registry_client = registry_contract::Client::new(&env, &registy_address);
+        let rate_model_address = registry_client.get_rate_model_address();
+        let rate_model_client = rate_model_contract::Client::new(&env, &rate_model_address);
+
         let lastupdatetime = Self::get_last_updated_time(&env);
         let blocktimestamp = env.ledger().timestamp();
         if lastupdatetime == blocktimestamp {
@@ -672,7 +703,7 @@ impl LiquidityPoolUSDC {
         let liquidity = Self::get_total_liquidity_in_pool(&env, token.clone());
 
         let res = U256::from_u128(&env, (blocktimestamp - lastupdatetime) as u128)
-            .mul(&(Self::get_borrow_rate_per_sec(&env, liquidity, borrows).unwrap()));
+            .mul(&(rate_model_client.get_borrow_rate_per_sec(&liquidity, &borrows)));
 
         Ok(res)
     }
@@ -758,7 +789,7 @@ impl LiquidityPoolUSDC {
     pub fn get_native_usdc_client_address(env: &Env) -> Address {
         env.storage()
             .persistent()
-            .get(&TokenDataKey::UsdcClientAddress)
+            .get(&TokenDataKey::EurcClientAddress)
             .unwrap_or_else(|| panic!("Native USDC client address not set"))
     }
 
@@ -807,41 +838,11 @@ impl LiquidityPoolUSDC {
         resx
     }
 
-    /// !!!! This function is moved to RateModelCOntract
-    pub fn get_borrow_rate_per_sec(
-        env: &Env,
-        liquidity: U256,
-        borrows: U256,
-    ) -> Result<U256, InterestRateError> {
-        let util = Self::get_utilisation_ratio(env, liquidity, borrows)
-            .expect("Panicked to get utilization ratio");
-        let c1_u256 = U256::from_u128(&env, C1);
-        let c2_u256 = U256::from_u128(&env, C2);
-        let c3_u256 = U256::from_u128(&env, C3);
-        let secs_per_year = U256::from_u128(&env, SECS_PER_YEAR);
-
-        let x = (util.pow(32)).mul(&c1_u256);
-        let y = (util.pow(64)).mul(&c2_u256);
-        let rhs = util.mul(&c1_u256).add(&(x.add(&y)));
-        let result = c3_u256.mul(&rhs);
-        let res = result.div(&secs_per_year);
-
-        Ok(res)
-    }
-
-    /// !!!! This function is moved to RateModelCOntract
-    pub fn get_utilisation_ratio(
-        env: &Env,
-        liquidity: U256,
-        borrows: U256,
-    ) -> Result<U256, InterestRateError> {
-        let total_assets = liquidity.add(&borrows);
-
-        if total_assets == U256::from_u128(&env, 0) {
-            Ok(U256::from_u128(&env, 0))
-        } else {
-            Ok(borrows.div(&total_assets))
-        }
+    fn get_registry_address(env: &Env) -> Address {
+        env.storage()
+            .persistent()
+            .get(&ContractDetails::RegistryContract)
+            .expect("Failed to fetch registry contract")
     }
 
     fn extend_ttl_datakey(env: &Env, key: DataKey) {

@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Env, U256, contract, contracterror, contracttype};
+use soroban_sdk::{Address, Env, U256, contract, contracterror, contractimpl, contracttype};
 
 #[contract]
 pub struct RateModelContract;
@@ -21,11 +21,12 @@ pub enum RateModelKey {
     IsInitialised,
 }
 
-const C1: u128 = 100000000000000000;
-const C2: u128 = 3 * 100000000000000000;
-const C3: u128 = 35 * 100000000000000000;
-const SECS_PER_YEAR: u128 = 31556952 * 1000000000000000000;
+const C1: u128 = 10000000;
+const C2: u128 = 3 * 10000000;
+const C3: u128 = 35 * 10000000;
+const SECS_PER_YEAR: u128 = 31556952 * 10000000;
 
+#[contractimpl]
 impl RateModelContract {
     pub fn __constructor(env: &Env, admin: Address, registry_contract: Address) {
         env.storage().persistent().set(&RateModelKey::Admin, &admin);

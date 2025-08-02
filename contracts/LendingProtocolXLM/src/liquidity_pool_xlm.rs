@@ -15,11 +15,24 @@ pub mod rate_model_contract {
     );
 }
 
+pub mod registry_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/registry_contract.wasm"
+    );
+}
+
 pub mod smart_account_contract {
     soroban_sdk::contractimport!(
         file = "../../target/wasm32v1-none/release/smart_account_contract.wasm"
     );
 }
+
+pub mod risk_engine_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/risk_engine_contract.wasm"
+    );
+}
+
 #[contract]
 pub struct LiquidityPoolXLM;
 
@@ -27,11 +40,6 @@ pub struct LiquidityPoolXLM;
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 const _TLL_LEDGERS_MONTH: u32 = 518400;
-
-const C1: u128 = 100000000000000000;
-const C2: u128 = 3 * 100000000000000000;
-const C3: u128 = 35 * 100000000000000000;
-const SECS_PER_YEAR: u128 = 31556952 * 1000000000000000000;
 
 #[contractimpl]
 impl LiquidityPoolXLM {
@@ -82,8 +90,8 @@ impl LiquidityPoolXLM {
 
         env.storage()
             .persistent()
-            .set(&TokenDataKey::NativeXLMClientAddress, &native_token_address);
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::NativeXLMClientAddress);
+            .set(&TokenDataKey::EurcClientAddress, &native_token_address);
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::EurcClientAddress);
         env.events()
             .publish(("constructor", "native_xlm_set"), &native_token_address);
 
@@ -398,6 +406,7 @@ impl LiquidityPoolXLM {
 
         let smart_account_client = smart_account_contract::Client::new(&env, &trader_smart_account);
         smart_account_client.add_borrowed_token(&Symbol::new(&env, "XLM"));
+        smart_account_client.set_has_debt(&true);
 
         Ok(is_first_borrow)
     }
@@ -672,6 +681,11 @@ impl LiquidityPoolXLM {
     }
 
     pub fn get_rate_factor(env: &Env) -> Result<U256, InterestRateError> {
+        let registy_address = Self::get_registry_address(env);
+        let registry_client = registry_contract::Client::new(&env, &registy_address);
+        let rate_model_address = registry_client.get_rate_model_address();
+        let rate_model_client = rate_model_contract::Client::new(&env, &rate_model_address);
+
         let lastupdatetime = Self::get_last_updated_time(&env);
         let blocktimestamp = env.ledger().timestamp();
         if lastupdatetime == blocktimestamp {
@@ -685,7 +699,7 @@ impl LiquidityPoolXLM {
         let liquidity = Self::get_total_liquidity_in_pool(&env, token.clone());
 
         let res = U256::from_u128(&env, (blocktimestamp - lastupdatetime) as u128)
-            .mul(&(Self::get_borrow_rate_per_sec(&env, liquidity, borrows).unwrap()));
+            .mul(&(rate_model_client.get_borrow_rate_per_sec(&liquidity, &borrows)));
 
         Ok(res)
     }
@@ -771,7 +785,7 @@ impl LiquidityPoolXLM {
     pub fn get_native_xlm_client_address(env: &Env) -> Address {
         env.storage()
             .persistent()
-            .get(&TokenDataKey::NativeXLMClientAddress)
+            .get(&TokenDataKey::EurcClientAddress)
             .unwrap_or_else(|| panic!("Native XLM client address not set"))
     }
 
@@ -820,41 +834,11 @@ impl LiquidityPoolXLM {
         resx
     }
 
-    /// !!!! This function is moved to RateModelCOntract
-    pub fn get_borrow_rate_per_sec(
-        env: &Env,
-        liquidity: U256,
-        borrows: U256,
-    ) -> Result<U256, InterestRateError> {
-        let util = Self::get_utilisation_ratio(env, liquidity, borrows)
-            .expect("Panicked to get utilization ratio");
-        let c1_u256 = U256::from_u128(&env, C1);
-        let c2_u256 = U256::from_u128(&env, C2);
-        let c3_u256 = U256::from_u128(&env, C3);
-        let secs_per_year = U256::from_u128(&env, SECS_PER_YEAR);
-
-        let x = (util.pow(32)).mul(&c1_u256);
-        let y = (util.pow(64)).mul(&c2_u256);
-        let rhs = util.mul(&c1_u256).add(&(x.add(&y)));
-        let result = c3_u256.mul(&rhs);
-        let res = result.div(&secs_per_year);
-
-        Ok(res)
-    }
-
-    /// !!!! This function is moved to RateModelCOntract
-    pub fn get_utilisation_ratio(
-        env: &Env,
-        liquidity: U256,
-        borrows: U256,
-    ) -> Result<U256, InterestRateError> {
-        let total_assets = liquidity.add(&borrows);
-
-        if total_assets == U256::from_u128(&env, 0) {
-            Ok(U256::from_u128(&env, 0))
-        } else {
-            Ok(borrows.div(&total_assets))
-        }
+    fn get_registry_address(env: &Env) -> Address {
+        env.storage()
+            .persistent()
+            .get(&ContractDetails::RegistryContract)
+            .expect("Failed to fetch registry contract")
     }
 
     fn extend_ttl_datakey(env: &Env, key: DataKey) {

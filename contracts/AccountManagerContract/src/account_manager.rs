@@ -209,7 +209,7 @@ impl AccountManagerContract {
         env.events().publish(
             (Symbol::new(&env, "Account_Deleted"), user_address.clone()),
             AccountDeletionEvent {
-                margin_account: user_address,
+                smart_account: user_address,
                 deletion_time: env.ledger().timestamp(),
             },
         );
@@ -394,7 +394,7 @@ impl AccountManagerContract {
                 smart_account_address.clone(),
             ),
             TraderBorrowEvent {
-                margin_account: smart_account_address,
+                smart_account: smart_account_address,
                 token_amount: borrow_amount,
                 timestamp: env.ledger().timestamp(),
                 token_symbol,
@@ -457,7 +457,7 @@ impl AccountManagerContract {
                 smart_account_address.clone(),
             ),
             TraderRepayEvent {
-                margin_account: smart_account_address,
+                smart_account: smart_account_address,
                 token_amount: repay_amount,
                 timestamp: env.ledger().timestamp(),
                 token_symbol,
@@ -475,11 +475,11 @@ impl AccountManagerContract {
 
         let risk_engine_address = registry_client.get_risk_engine_address();
         let risk_engine_client = risk_engine_contract::Client::new(&env, &risk_engine_address);
-        if !risk_engine_client.is_account_healthy(
+        if risk_engine_client.is_account_healthy(
             &risk_engine_client.get_current_total_balance(&smart_account_address),
             &risk_engine_client.get_current_total_borrows(&smart_account_address),
         ) {
-            panic!("Cannot liquidate when account is unhealthy!!");
+            panic!("Cannot liquidate when account is healthy!!");
         }
 
         let smart_account_contract_client =
@@ -534,7 +534,7 @@ impl AccountManagerContract {
                 smart_account_address.clone(),
             ),
             TraderLiquidateEvent {
-                margin_account: smart_account_address,
+                smart_account: smart_account_address,
                 timestamp: env.ledger().timestamp(),
             },
         );
@@ -543,7 +543,7 @@ impl AccountManagerContract {
 
     pub fn settle_account(
         env: Env,
-        margin_account: Address,
+        smart_account: Address,
         user_account: Address,
     ) -> Result<(), AccountManagerError> {
         let smart_account_contract_address: Address =
@@ -553,16 +553,16 @@ impl AccountManagerContract {
         let borrowed_tokens = smart_account_contract_client.get_all_borrowed_tokens();
         for tokenx in borrowed_tokens.iter() {
             let token_debt = smart_account_contract_client.get_borrowed_token_debt(&tokenx.clone());
-            Self::repay(env.clone(), token_debt, tokenx, margin_account.clone())
+            Self::repay(env.clone(), token_debt, tokenx, smart_account.clone())
                 .expect("Failed to repay while settling the account");
         }
         env.events().publish(
             (
                 Symbol::new(&env, "Trader SettleAccount Event"),
-                margin_account.clone(),
+                user_account.clone(),
             ),
             TraderSettleAccountEvent {
-                margin_account,
+                smart_account,
                 timestamp: env.ledger().timestamp(),
             },
         );
@@ -635,4 +635,10 @@ impl AccountManagerContract {
 
         BytesN::from_array(env, &salt_bytes)
     }
+
+    pub fn approve() {}
+
+    pub fn execute() {}
+
+    pub fn sweepto() {}
 }
