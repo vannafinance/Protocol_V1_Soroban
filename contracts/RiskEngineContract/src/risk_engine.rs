@@ -2,7 +2,7 @@ use soroban_sdk::contractimpl;
 use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract};
 
 use crate::types::RiskEngineError;
-use crate::types::{AccountDataKey, RiskEngineKey};
+use crate::types::RiskEngineKey;
 
 const BALANCE_TO_BORROW_THRESHOLD: u128 = 11000000;
 

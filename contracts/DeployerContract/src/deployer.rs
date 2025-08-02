@@ -1,10 +1,9 @@
-#![no_std]
 use soroban_sdk::xdr::ToXdr;
-use soroban_sdk::{Address, Env, String, Symbol, U256, Vec, contract, contracterror};
+use soroban_sdk::{Address, Env, Symbol, Vec, contract};
 
 /// This example demonstrates the 'factory' pattern for programmatically
 /// deploying the contracts via `env.deployer()`.
-use soroban_sdk::{BytesN, Val, contractimpl, symbol_short};
+use soroban_sdk::{BytesN, contractimpl, symbol_short};
 
 #[contract]
 pub struct Deployer;

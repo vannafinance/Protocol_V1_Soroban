@@ -106,7 +106,7 @@ impl LiquidityPoolEURC {
             .publish(("constructor", "token_issuer_set"), &token_issuer);
     }
 
-    pub fn set_admin(env: Env, admin: Address) -> Result<String, LendingError> {
+    pub fn reset_admin(env: Env, admin: Address) -> Result<String, LendingError> {
         // Resetting the admin, can be done only by exisiting admin
         let admin_existing = Self::get_admin(&env).unwrap();
         admin_existing.require_auth();
@@ -115,7 +115,7 @@ impl LiquidityPoolEURC {
 
         env.storage().persistent().set(&DataKey::Admin, &admin);
         Self::extend_ttl_datakey(&env, key);
-        Ok(String::from_str(&env, "Adminkey set successfully"))
+        Ok(String::from_str(&env, "Adminkey set successfully reset"))
     }
 
     pub fn get_admin(env: &Env) -> Result<Address, LendingError> {
@@ -137,49 +137,6 @@ impl LiquidityPoolEURC {
 
         admin.require_auth();
         let eurc_symbol = Symbol::new(&env, "EURC");
-        let veurc_symbol = Symbol::new(&env, "VEURC");
-
-        // env.storage()
-        //     .persistent()
-        //     .get(&ContractDetails::RegistryContract);
-        // Self::extend_ttl_contractdatakey(&env, ContractDetails::RegistryContract);
-
-        // env.storage()
-        //     .persistent()
-        //     .set(&ContractDetails::AccountManager, &account_manager);
-        // Self::extend_ttl_contractdatakey(&env, ContractDetails::AccountManager);
-
-        // env.storage()
-        //     .persistent()
-        //     .set(&ContractDetails::RateModel, &rate_model);
-        // Self::extend_ttl_contractdatakey(&env, ContractDetails::RateModel);
-
-        // env.storage()
-        //     .persistent()
-        //     .set(&ContractDetails::Treasury, &treasury_address);
-        // Self::extend_ttl_contractdatakey(&env, ContractDetails::Treasury);
-
-        // env.storage().persistent().set(
-        //     &TokenDataKey::VTokenClientAddress(veurc_symbol.clone()),
-        //     &veurc_token_address,
-        // );
-        // Self::extend_ttl_tokendatakey(&env, TokenDataKey::VTokenClientAddress(veurc_symbol.clone()));
-
-        // env.storage()
-        //     .persistent()
-        //     .set(&TokenDataKey::NativeEURCClientAddress, &native_token_address);
-        // Self::extend_ttl_tokendatakey(&env, TokenDataKey::NativeEURCClientAddress);
-
-        // env.storage().persistent().set(
-        //     &PoolDataKey::PoolAddress(eurc_symbol.clone()),
-        //     &eurc_pool_address,
-        // );
-        // Self::extend_ttl_pooldatakey(&env, PoolDataKey::PoolAddress(eurc_symbol.clone()));
-
-        env.storage()
-            .persistent()
-            .set(&TokenDataKey::TokenIssuerAddress, &admin.clone());
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::TokenIssuerAddress);
 
         env.storage().persistent().set(
             &PoolDataKey::Pool(eurc_symbol.clone()),

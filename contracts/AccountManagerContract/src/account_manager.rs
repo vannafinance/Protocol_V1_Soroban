@@ -110,11 +110,7 @@ impl AccountManagerContract {
         Ok(deployed_address)
     }
 
-    pub fn delete_account(
-        env: &Env,
-        smart_account_address: Address,
-        user_address: Address,
-    ) -> Result<(), AccountManagerError> {
+    pub fn delete_account(env: &Env, user_address: Address) -> Result<(), AccountManagerError> {
         user_address.require_auth();
 
         let smart_account_address: Address =
@@ -426,7 +422,7 @@ impl AccountManagerContract {
             panic!("User doen't have debt in the token symbol passed");
         }
 
-        let debt = smart_account_client.get_borrowed_token_debt(&token_symbol.clone());
+        let _debt = smart_account_client.get_borrowed_token_debt(&token_symbol.clone());
         // !! Should we check if the repay amount is greater than the debt amount?
 
         if token_symbol == Symbol::new(&env, "XLM") {

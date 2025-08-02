@@ -1,5 +1,3 @@
-#![no_std]
-
 use crate::types::OracleDataKey;
 use soroban_sdk::{Address, Env, Symbol, Vec, contract, contractimpl};
 

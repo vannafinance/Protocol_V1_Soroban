@@ -103,7 +103,7 @@ impl LiquidityPoolXLM {
             .publish(("constructor", "token_issuer_set"), &token_issuer);
     }
 
-    pub fn set_admin(env: Env, admin: Address) -> Result<String, LendingError> {
+    pub fn reset_admin(env: Env, admin: Address) -> Result<String, LendingError> {
         // Resetting the admin, can be done only by exisiting admin
         let admin_existing = Self::get_admin(&env).unwrap();
         admin_existing.require_auth();
@@ -112,7 +112,7 @@ impl LiquidityPoolXLM {
 
         env.storage().persistent().set(&DataKey::Admin, &admin);
         Self::extend_ttl_datakey(&env, key);
-        Ok(String::from_str(&env, "Adminkey set successfully"))
+        Ok(String::from_str(&env, "Adminkey set successfully reset"))
     }
 
     pub fn get_admin(env: &Env) -> Result<Address, LendingError> {
@@ -134,49 +134,6 @@ impl LiquidityPoolXLM {
 
         admin.require_auth();
         let xlm_symbol = Symbol::new(&env, "XLM");
-        let vxlm_symbol = Symbol::new(&env, "VXLM");
-
-        // env.storage()
-        //     .persistent()
-        //     .get(&ContractDetails::RegistryContract);
-        // Self::extend_ttl_contractdatakey(&env, ContractDetails::RegistryContract);
-
-        // env.storage()
-        //     .persistent()
-        //     .set(&ContractDetails::AccountManager, &account_manager);
-        // Self::extend_ttl_contractdatakey(&env, ContractDetails::AccountManager);
-
-        // env.storage()
-        //     .persistent()
-        //     .set(&ContractDetails::RateModel, &rate_model);
-        // Self::extend_ttl_contractdatakey(&env, ContractDetails::RateModel);
-
-        // env.storage()
-        //     .persistent()
-        //     .set(&ContractDetails::Treasury, &treasury_address);
-        // Self::extend_ttl_contractdatakey(&env, ContractDetails::Treasury);
-
-        // env.storage().persistent().set(
-        //     &TokenDataKey::VTokenClientAddress(vxlm_symbol.clone()),
-        //     &vxlm_token_address,
-        // );
-        // Self::extend_ttl_tokendatakey(&env, TokenDataKey::VTokenClientAddress(vxlm_symbol.clone()));
-
-        // env.storage()
-        //     .persistent()
-        //     .set(&TokenDataKey::NativeXLMClientAddress, &native_token_address);
-        // Self::extend_ttl_tokendatakey(&env, TokenDataKey::NativeXLMClientAddress);
-
-        // env.storage().persistent().set(
-        //     &PoolDataKey::PoolAddress(xlm_symbol.clone()),
-        //     &xlm_pool_address,
-        // );
-        // Self::extend_ttl_pooldatakey(&env, PoolDataKey::PoolAddress(xlm_symbol.clone()));
-
-        env.storage()
-            .persistent()
-            .set(&TokenDataKey::TokenIssuerAddress, &admin.clone());
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::TokenIssuerAddress);
 
         env.storage().persistent().set(
             &PoolDataKey::Pool(xlm_symbol.clone()),
@@ -769,7 +726,6 @@ impl LiquidityPoolXLM {
 
     pub fn is_xlm_pool_initialised(env: &Env, asset: Symbol) -> bool {
         if !env.storage().persistent().has(&PoolDataKey::Pool(asset)) {
-            // panic!("Pool not initialised");
             panic_with_error!(&env, LendingError::PoolNotInitialized);
         }
         true
