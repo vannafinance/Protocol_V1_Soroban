@@ -138,6 +138,52 @@ impl RegistryContract {
         Ok(())
     }
 
+    pub fn set_xlm_token_contract_adddress(
+        env: &Env,
+        xlm_contract_adddress: Address,
+    ) -> Result<(), RegistryContractError> {
+        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        admin.require_auth();
+
+        env.storage().persistent().set(
+            &RegistryKey::NativeXlmContractAddress,
+            &xlm_contract_adddress,
+        );
+        Self::extend_ttl_registry(env, RegistryKey::NativeXlmContractAddress);
+
+        Ok(())
+    }
+
+    pub fn set_usdc_contract_address(
+        env: &Env,
+        usdc_contract_address: Address,
+    ) -> Result<(), RegistryContractError> {
+        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        admin.require_auth();
+
+        env.storage()
+            .persistent()
+            .set(&RegistryKey::UsdcContractAddress, &usdc_contract_address);
+        Self::extend_ttl_registry(env, RegistryKey::UsdcContractAddress);
+
+        Ok(())
+    }
+
+    pub fn set_eurc_contract_address(
+        env: &Env,
+        eurc_contract_address: Address,
+    ) -> Result<(), RegistryContractError> {
+        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        admin.require_auth();
+
+        env.storage()
+            .persistent()
+            .set(&RegistryKey::EurcContractAddress, &eurc_contract_address);
+        Self::extend_ttl_registry(env, RegistryKey::EurcContractAddress);
+
+        Ok(())
+    }
+
     pub fn get_lendingpool_xlm(env: &Env) -> Result<Address, RegistryContractError> {
         let res: Address = env
             .storage()
@@ -208,6 +254,45 @@ impl RegistryContract {
             .get(&RegistryKey::OracleContract)
             .unwrap_or_else(|| panic!("Failed to get address"));
         Ok(res)
+    }
+
+    pub fn get_xlm_token_contract_adddress(env: &Env) -> Result<Address, RegistryContractError> {
+        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        admin.require_auth();
+
+        let token_contract_address: Address = env
+            .storage()
+            .persistent()
+            .get(&RegistryKey::NativeXlmContractAddress)
+            .expect("Failed to fetch token contract address for XLM");
+
+        Ok(token_contract_address)
+    }
+
+    pub fn get_usdc_contract_address(env: &Env) -> Result<Address, RegistryContractError> {
+        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        admin.require_auth();
+
+        let token_contract_address: Address = env
+            .storage()
+            .persistent()
+            .get(&RegistryKey::UsdcContractAddress)
+            .expect("Failed to fetch token contract address for USDC");
+
+        Ok(token_contract_address)
+    }
+
+    pub fn get_eurc_contract_address(env: &Env) -> Result<Address, RegistryContractError> {
+        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        admin.require_auth();
+
+        let token_contract_address: Address = env
+            .storage()
+            .persistent()
+            .get(&RegistryKey::EurcContractAddress)
+            .expect("Failed to fetch token contract address for EURC");
+
+        Ok(token_contract_address)
     }
 
     fn extend_ttl_registry(env: &Env, key: RegistryKey) {

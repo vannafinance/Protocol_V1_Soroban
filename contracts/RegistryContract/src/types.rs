@@ -19,4 +19,7 @@ pub enum RegistryKey {
     RiskEngineContract,
     SmartAccountContractHash,
     AccountManagerContract,
+    NativeXlmContractAddress,
+    UsdcContractAddress,
+    EurcContractAddress,
 }

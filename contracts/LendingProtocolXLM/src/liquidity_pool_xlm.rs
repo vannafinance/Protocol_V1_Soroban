@@ -202,12 +202,6 @@ impl LiquidityPoolXLM {
             panic_with_error!(&env, LendingError::InsufficientBalance);
         }
 
-        let xlm_pool_address: Address = env
-            .storage()
-            .persistent()
-            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "XLM")))
-            .unwrap_or_else(|| panic!("Failed to fetch XLM pool address"));
-
         // Transfer XLM from user to this contract
         xlm_token.transfer(
             &lender,                         // from
@@ -251,14 +245,6 @@ impl LiquidityPoolXLM {
             .persistent()
             .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "VXLM")))
             .unwrap();
-
-        // Making sure token_value is not zero before dividing
-        if token_value == U256::from_u128(&env, 0) {
-            panic!("InvalidVTokenValue");
-            // panic_with_error!(&env, LendingTokenError::InvalidVTokenValue);
-        }
-
-        // let vtokens_to_be_minted = amount.div(&token_value);
 
         // Now Mint the VXLM tokens that were created for the lender
         Self::mint_vxlm_tokens(&env, lender.clone(), vtokens_to_be_minted, token_value);
@@ -360,7 +346,11 @@ impl LiquidityPoolXLM {
         );
     }
 
-    pub fn lend_to(env: &Env, trader: Address, amount: U256) -> Result<bool, LendingError> {
+    pub fn lend_to(
+        env: &Env,
+        trader_smart_account: Address,
+        amount: U256,
+    ) -> Result<bool, LendingError> {
         let account_manager: Address = env
             .storage()
             .persistent()
@@ -372,7 +362,7 @@ impl LiquidityPoolXLM {
         let borrow_shares = Self::convert_asset_borrow_shares(env, amount.clone());
         let mut is_first_borrow: bool = false;
 
-        let key_a = PoolDataKey::UserBorrowShares(trader.clone());
+        let key_a = PoolDataKey::UserBorrowShares(trader_smart_account.clone());
         let key_b = PoolDataKey::TotalBorrowShares;
         let key_c = PoolDataKey::Borrows;
         let user_borrow_shares: U256 = env.storage().persistent().get(&key_a).unwrap();
@@ -402,9 +392,12 @@ impl LiquidityPoolXLM {
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
         xlm_token.transfer(
             &env.current_contract_address(), // from
-            &trader,                         // to
+            &trader_smart_account,           // to
             &(amount_u128 as i128),
         );
+
+        let smart_account_client = smart_account_contract::Client::new(&env, &trader_smart_account);
+        smart_account_client.add_borrowed_token(&Symbol::new(&env, "XLM"));
 
         Ok(is_first_borrow)
     }
@@ -438,11 +431,16 @@ impl LiquidityPoolXLM {
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
 
         let smart_account_client = smart_account_contract::Client::new(&env, &trader_smart_account);
-        smart_account_client.withdraw_balance(&Symbol::new(&env, "XLM"), &amount_u128);
+        smart_account_client.remove_borrowed_token_balance(&Symbol::new(&env, "XLM"), &amount_u128);
 
         let res1 = user_borrow_shares.sub(&borrow_shares);
         let res2 = total_borrow_shares.sub(&borrow_shares);
         let res3 = borrows.sub(&amount);
+
+        if res1 == U256::from_u32(&env, 0) {
+            smart_account_client.remove_borrowed_token(&Symbol::new(&env, "XLM"));
+        }
+
         Self::set_user_borrow_shares(env, trader_smart_account.clone(), res1.clone());
         Self::set_total_borrow_shares(env, res2);
         env.storage().persistent().set(&key_c, &res3);

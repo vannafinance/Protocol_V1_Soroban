@@ -1,4 +1,4 @@
-use soroban_sdk::{Env, U256, contract, contracterror};
+use soroban_sdk::{Address, Env, U256, contract, contracterror, contracttype};
 
 #[contract]
 pub struct RateModelContract;
@@ -9,12 +9,37 @@ pub enum InterestRateError {
     InterestRateNotInitialized = 1,
 }
 
+const TLL_LEDGERS_YEAR: u32 = 6307200;
+const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
+const _TLL_LEDGERS_MONTH: u32 = 518400;
+
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[contracttype]
+pub enum RateModelKey {
+    RegistryContract,
+    Admin,
+    IsInitialised,
+}
+
 const C1: u128 = 100000000000000000;
 const C2: u128 = 3 * 100000000000000000;
 const C3: u128 = 35 * 100000000000000000;
 const SECS_PER_YEAR: u128 = 31556952 * 1000000000000000000;
 
 impl RateModelContract {
+    pub fn __constructor(env: &Env, admin: Address, registry_contract: Address) {
+        env.storage().persistent().set(&RateModelKey::Admin, &admin);
+        env.storage()
+            .persistent()
+            .set(&RateModelKey::RegistryContract, &registry_contract);
+        env.storage()
+            .persistent()
+            .set(&RateModelKey::IsInitialised, &true);
+        Self::extend_ttl(&env, RateModelKey::Admin);
+        Self::extend_ttl(&env, RateModelKey::RegistryContract);
+        Self::extend_ttl(&env, RateModelKey::IsInitialised);
+    }
+
     pub fn get_borrow_rate_per_sec(
         env: &Env,
         liquidity: U256,
@@ -48,5 +73,11 @@ impl RateModelContract {
         } else {
             Ok(borrows.div(&total_assets))
         }
+    }
+
+    fn extend_ttl(env: &Env, key: RateModelKey) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 }

@@ -1,5 +1,5 @@
 use soroban_sdk::contractimpl;
-use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract, contracterror};
+use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract};
 
 use crate::types::RiskEngineError;
 use crate::types::{AccountDataKey, RiskEngineKey};
@@ -114,24 +114,18 @@ impl RiskEngineContract {
         env: &Env,
         margin_account: Address,
     ) -> Result<U256, RiskEngineError> {
-        let collateral_token_symbols: Vec<Symbol> = env
-            .storage()
-            .persistent()
-            .get(&AccountDataKey::UserCollateralTokensList(
-                margin_account.clone(),
-            ))
-            .unwrap_or_else(|| panic!("User doesn't have any collateral assets"));
+        let registry_address: Address = Self::get_registry_address(env);
+        let registry_client = registry_contract::Client::new(&env, &registry_address);
 
-        // !! We should fetch oracle contract address from registry
-        let oracle_contract_address: Address;
-        // !! flaw
-        let oracle_client = oracle_contract::Client::new(env, &margin_account.clone());
-
-        let mut total_account_balance: U256 = U256::from_u128(&env, 0);
-        // !! flaw
         let smart_account_contract_client =
             smart_account_contract::Client::new(&env, &margin_account.clone());
+        let collateral_token_symbols: Vec<Symbol> =
+            smart_account_contract_client.get_all_collateral_tokens();
 
+        let oracle_address = registry_client.get_oracle_contract_address();
+        let oracle_client = oracle_contract::Client::new(env, &oracle_address);
+
+        let mut total_account_balance: U256 = U256::from_u128(&env, 0);
         for token in collateral_token_symbols.iter() {
             let token_balance =
                 smart_account_contract_client.get_collateral_token_balance(&token.clone());
@@ -140,7 +134,6 @@ impl RiskEngineContract {
 
             total_account_balance = total_account_balance
                 .add(&token_balance.mul(&U256::from_u128(&env, oracle_price_usd)));
-            // token_balance * token_value in usd
         }
         Ok(total_account_balance)
     }
@@ -149,43 +142,35 @@ impl RiskEngineContract {
         env: &Env,
         margin_account: Address,
     ) -> Result<U256, RiskEngineError> {
-        // !! flaw
+        let registry_address: Address = Self::get_registry_address(env);
+        let registry_client = registry_contract::Client::new(&env, &registry_address);
+
         let smart_account_contract_client =
             smart_account_contract::Client::new(&env, &margin_account.clone());
 
         let borrowed_token_symbols = smart_account_contract_client.get_all_borrowed_tokens();
-        let registry_address: Address = env
-            .storage()
-            .persistent()
-            .get(&RiskEngineKey::RegistryContract)
-            .unwrap();
-
-        let registry_client = registry_contract::Client::new(&env, &registry_address);
 
         let mut total_account_debt: U256 = U256::from_u128(&env, 0);
 
         for tokenx in borrowed_token_symbols.iter() {
             let token_balance =
                 smart_account_contract_client.get_borrowed_token_debt(&tokenx.clone());
-            // let token_balance = AccountLogicContract::get_borrowed_token_debt(
-            //     &env,
-            //     margin_account.clone(),
-            //     tokenx.clone(),
-            // )
-            // .unwrap();
-
-            // !! We should fetch oracle contract address from registry
 
             let oracle_contract_address: Address = registry_client.get_oracle_contract_address();
-
             let oracle_client = oracle_contract::Client::new(env, &oracle_contract_address);
-
             let oracle_price_usd = oracle_client.get_price_of(&(tokenx, Symbol::new(&env, "USD")));
 
             total_account_debt = total_account_debt
                 .add(&token_balance.mul(&U256::from_u128(&env, oracle_price_usd)));
         }
         Ok(total_account_debt)
+    }
+
+    fn get_registry_address(env: &Env) -> Address {
+        env.storage()
+            .persistent()
+            .get(&RiskEngineKey::RegistryContract)
+            .expect("Failed to fetch registry contract address")
     }
 }
 
