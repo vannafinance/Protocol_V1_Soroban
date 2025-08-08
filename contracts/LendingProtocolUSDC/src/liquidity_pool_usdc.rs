@@ -366,7 +366,7 @@ impl LiquidityPoolUSDC {
 
         let smart_account_client = smart_account_contract::Client::new(&env, &trader_smart_account);
         smart_account_client.add_borrowed_token(&Symbol::new(&env, "USDC"));
-        smart_account_client.set_has_debt(&true);
+        smart_account_client.set_has_debt(&true, &Symbol::new(&env, "USDC"));
 
         Ok(is_first_borrow)
     }

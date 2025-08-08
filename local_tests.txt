@@ -1,0 +1,30 @@
+hemanth_local   GALKT5BOHX5QKZVOQFJZENOQ62P2Q7LPQSLTX27WAVCAAZNZVSQWSS2I
+
+
+
+
+stellar contract deploy   --wasm   /home/hemanth/Desktop/WORK/VANNA/Protocol_v1_rust/target/wasm32v1-none/release/deployer_contract.wasm   --source hemanth_local   --network local -- --admin GALKT5BOHX5QKZVOQFJZENOQ62P2Q7LPQSLTX27WAVCAAZNZVSQWSS2I
+CBAQ5TTSEYQ3I6WJMUOQ6XAJSVK5WATRJHOOUPX72U3LF2TAGZDG33GV
+
+
+  /home/hemanth/Desktop/WORK/VANNA/Protocol_v1_rust/target/wasm32v1-none/release/liquidity_protocol_xlm.wasm
+  /home/hemanth/Desktop/WORK/VANNA/Protocol_v1_rust/target/wasm32v1-none/release/deployer_contract.wasm
+
+
+token_distributor_abcd:
+  GBHY7RSRDYV2MT6K6HUMFYVXDFEXLNQ3EKOFWUFRQUZ5X35RQWY54TC6
+
+token_issuer_abcd
+  GDIGWPEDJQKB4FDWBXD7MKWJJNF4PA6YPBSRAMPRPYRKRFM25YVGTCKO
+
+
+  # Set variables for easier use
+export ISSUER_ADDRESS=$(stellar keys address token_issuer_abcd)
+export DISTRIBUTOR_ADDRESS=$(stellar keys address token_distributor_abcd)
+
+# Create trustline from distributor to issuer for your custom token
+stellar account trust \
+  --asset-code VXLM \
+  --issuer $ISSUER_ADDRESS \
+  --source-account token_distributor_abcd \
+  --network localtest

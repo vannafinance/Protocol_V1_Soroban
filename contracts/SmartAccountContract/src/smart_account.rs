@@ -67,6 +67,8 @@ impl SmartAccountContract {
         token_symbol: Symbol,
         amount: u128,
     ) -> Result<(), SmartAccountError> {
+        Self::check_auth(&env, token_symbol.clone()).unwrap();
+
         let registry_address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
 
@@ -173,7 +175,12 @@ impl SmartAccountContract {
         has_debt
     }
 
-    pub fn set_has_debt(env: &Env, has_debt: bool) -> Result<(), SmartAccountError> {
+    pub fn set_has_debt(
+        env: &Env,
+        has_debt: bool,
+        token_symbol: Symbol,
+    ) -> Result<(), SmartAccountError> {
+        Self::check_auth(&env, token_symbol).unwrap();
         let account_manager: Address = Self::get_account_manager(env);
         account_manager.require_auth();
         env.storage()
@@ -196,6 +203,7 @@ impl SmartAccountContract {
     }
 
     pub fn add_borrowed_token(env: &Env, token_symbol: Symbol) -> Result<(), SmartAccountError> {
+        Self::check_auth(&env, token_symbol.clone()).unwrap();
         let mut borrowed_tokens_list: Vec<Symbol> = env
             .storage()
             .persistent()
@@ -213,18 +221,21 @@ impl SmartAccountContract {
     }
 
     pub fn remove_borrowed_token(env: &Env, token_symbol: Symbol) -> Result<(), SmartAccountError> {
+        Self::check_auth(&env, token_symbol.clone()).unwrap();
         let mut borrowed_tokens_list: Vec<Symbol> = env
             .storage()
             .persistent()
             .get(&SmartAccountDataKey::BorrowedTokensList)
             .unwrap_or_else(|| Vec::new(&env));
         if borrowed_tokens_list.contains(&token_symbol.clone()) {
-            let index = borrowed_tokens_list.first_index_of(token_symbol).unwrap();
+            let index = borrowed_tokens_list
+                .first_index_of(token_symbol.clone())
+                .unwrap();
             borrowed_tokens_list.remove(index);
         }
 
         if borrowed_tokens_list.is_empty() {
-            Self::set_has_debt(&env, false).unwrap();
+            Self::set_has_debt(&env, false, token_symbol).unwrap();
         }
 
         env.storage().persistent().set(
@@ -332,6 +343,26 @@ impl SmartAccountContract {
         //     .get(&key_b)
         //     .unwrap_or_else(|| U256::from_u128(&env, 0));
         // Ok(token_debt)
+    }
+
+    fn check_auth(env: &Env, token_symbol: Symbol) -> Result<(), SmartAccountError> {
+        let registry_address = Self::get_registry_address(&env);
+        let registry_client = registry_contract::Client::new(&env, &registry_address);
+
+        if token_symbol == Symbol::new(&env, "XLM") {
+            let pool_xlm_address = registry_client.get_lendingpool_xlm();
+            // make sure only the lending pool has auth to call this function by adding authorization
+            pool_xlm_address.require_auth();
+        } else if token_symbol == Symbol::new(&env, "USDC") {
+            let pool_usdc_address = registry_client.get_lendingpool_usdc();
+            // make sure only the lending pool has auth to call this function by adding authorization
+            pool_usdc_address.require_auth();
+        } else if token_symbol == Symbol::new(&env, "EURC") {
+            let pool_eurc_address = registry_client.get_lendingpool_eurc();
+            // make sure only the lending pool has auth to call this function by adding authorization
+            pool_eurc_address.require_auth();
+        }
+        Ok(())
     }
 
     fn extend_ttl_smart_account(env: &Env, key: SmartAccountDataKey) {
