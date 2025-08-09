@@ -136,13 +136,10 @@ impl LiquidityPoolUSDC {
             .expect("Admin not set");
 
         admin.require_auth();
-        let usdc_symbol = Symbol::new(&env, "USDC");
 
-        env.storage().persistent().set(
-            &PoolDataKey::Pool(usdc_symbol.clone()),
-            &U256::from_u128(&env, 0),
-        ); // Store the USDC this contract handles
-        Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(usdc_symbol.clone()));
+        env.storage()
+            .persistent()
+            .set(&PoolDataKey::Initialised, &true); // Store the USDC this contract handles
         Ok(String::from_str(&env, "USDC pool initialised"))
     }
 
@@ -152,7 +149,8 @@ impl LiquidityPoolUSDC {
             panic!("Deposit amount must be positive");
         }
         // Check if pool is initialised
-        Self::is_usdc_pool_initialised(&env, Symbol::new(&env, "USDC"));
+        Self::is_usdc_pool_initialised(&env);
+        Self::before_deposit(&env);
 
         let amount_u128: u128 = amount
             .to_u128()
@@ -180,34 +178,6 @@ impl LiquidityPoolUSDC {
         // Update lender list
         Self::add_lender_to_list_usdc(&env, &lender);
 
-        let key = PoolDataKey::LenderBalance(lender.clone(), Symbol::new(&env, "USDC"));
-
-        // Adding amount to Lenders balance, first check current balance, if no balance start with 0
-        let current_balance: U256 = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(U256::from_u128(&env, 0)); // Use U256::from_u128 or U256::zero to initialize U256
-
-        let new_balance = current_balance.add(&amount);
-
-        env.storage().persistent().set(&key, &new_balance);
-        Self::extend_ttl_pooldatakey(&env, key);
-
-        // Adding same amount to Total Pool balance
-        let current_pool: U256 = env
-            .storage()
-            .persistent()
-            .get(&PoolDataKey::Pool(Symbol::new(&env, "USDC")))
-            .unwrap_or(U256::from_u128(&env, 0));
-
-        let new_pool = current_pool.add(&amount);
-
-        env.storage()
-            .persistent()
-            .set(&PoolDataKey::Pool(Symbol::new(&env, "USDC")), &(new_pool));
-        Self::extend_ttl_pooldatakey(&env, PoolDataKey::Pool(Symbol::new(&env, "USDC")));
-
         let token_value: U256 = env
             .storage()
             .persistent()
@@ -231,13 +201,8 @@ impl LiquidityPoolUSDC {
     pub fn redeem_vusdc(env: &Env, lender: Address, tokens_to_redeem: U256) {
         lender.require_auth();
         // Check if pool is initialised
-        Self::is_usdc_pool_initialised(&env, Symbol::new(&env, "USDC"));
-        let key = PoolDataKey::LenderBalance(lender.clone(), Symbol::new(&env, "USDC"));
-
-        // Check if lender has registered
-        if !env.storage().persistent().has(&key) {
-            panic!("Lender not registered");
-        }
+        Self::is_usdc_pool_initialised(&env);
+        Self::before_withdraw(env);
 
         let key_k = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "VUSDC"));
         let vusdc_balance = env
@@ -246,19 +211,24 @@ impl LiquidityPoolUSDC {
             .get(&key_k)
             .unwrap_or_else(|| U256::from_u32(&env, 0));
 
+        // Check if lender has enough token balance to redeem
         if tokens_to_redeem > vusdc_balance {
             panic!("Insufficient Token Balance to redeem");
         }
 
-        let usdc_value = Self::convert_vtoken_to_asset(env, tokens_to_redeem.clone());
-
-        // Check if lender has enough balance to deduct
-        let current_balance: U256 = env.storage().persistent().get(&key).unwrap();
+        let usdc_value_to_transfer = Self::convert_vtoken_to_usdc(env, tokens_to_redeem.clone());
 
         let native_token_address: Address = Self::get_native_usdc_client_address(&env);
         let usdc_token = token::Client::new(&env, &native_token_address);
 
-        let amount_u128: u128 = usdc_value
+        let current_pool_balance = Self::get_total_liquidity_in_pool(&env);
+
+        // Check if there is enough balance in the pool to redeem
+        if current_pool_balance < usdc_value_to_transfer {
+            panic_with_error!(&env, LendingError::InsufficientPoolBalance);
+        }
+
+        let amount_u128: u128 = usdc_value_to_transfer
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
 
@@ -268,37 +238,11 @@ impl LiquidityPoolUSDC {
             &(amount_u128 as i128),
         );
 
-        // First deduct amount from Lenders balance
-        let new_balance = current_balance.sub(&usdc_value);
-        env.storage().persistent().set(&key, &new_balance);
-        Self::extend_ttl_pooldatakey(&env, key);
-
-        let pool_key = PoolDataKey::Pool(Symbol::new(&env, "USDC"));
-        // Deduct same amount from total pool balance
-        let current_pool_balance: U256 = env
-            .storage()
-            .persistent()
-            .get(&pool_key)
-            .unwrap_or_else(|| panic_with_error!(&env, LendingError::PoolNotInitialized));
-        if current_pool_balance < usdc_value {
-            panic_with_error!(&env, LendingError::InsufficientPoolBalance);
-        }
-
-        env.storage()
-            .persistent()
-            .set(&pool_key, &(current_pool_balance.sub(&usdc_value)));
-        Self::extend_ttl_pooldatakey(&env, pool_key);
-
         let token_value: U256 = env
             .storage()
             .persistent()
             .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "VUSDC")))
             .unwrap();
-
-        // Making sure token_value is not zero before dividing
-        if token_value == U256::from_u128(&env, 0) {
-            panic_with_error!(&env, LendingTokenError::InvalidVTokenValue);
-        }
 
         Self::burn_vusdc_tokens(&env, lender.clone(), tokens_to_redeem.clone(), token_value);
 
@@ -478,19 +422,10 @@ impl LiquidityPoolUSDC {
 
     fn burn_vusdc_tokens(env: &Env, lender: Address, tokens_to_burn: U256, token_value: U256) {
         let key = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "VUSDC"));
-        if !env.storage().persistent().has(&key) {
-            panic_with_error!(&env, LendingTokenError::TokenBalanceNotInitialised);
-        }
-
         let current_vusdc_balance: U256 = env.storage().persistent().get(&key).unwrap();
-        // Check if user has enough tokens to burn
-        if current_vusdc_balance < tokens_to_burn {
-            panic_with_error!(&env, LendingTokenError::InsufficientTokenBalance);
-        }
-
         let new_vusdc_balance = current_vusdc_balance.sub(&tokens_to_burn);
         env.storage().persistent().set(&key, &new_vusdc_balance);
-        Self::extend_ttl_tokendatakey(&env, key);
+        Self::extend_ttl_tokendatakey(&env, key.clone());
 
         let tokens_to_burn_u128: u128 = tokens_to_burn
             .to_u128()
@@ -535,15 +470,6 @@ impl LiquidityPoolUSDC {
                 token_value,
             },
         );
-    }
-
-    pub fn get_usdc_pool_balance(env: &Env) -> U256 {
-        Self::is_usdc_pool_initialised(&env, Symbol::new(&env, "USDC"));
-
-        env.storage()
-            .persistent()
-            .get(&PoolDataKey::Pool(Symbol::new(&env, "USDC")))
-            .unwrap_or(U256::from_u128(&env, 0))
     }
 
     pub fn convert_asset_borrow_shares(env: &Env, amount: U256) -> U256 {
@@ -625,8 +551,7 @@ impl LiquidityPoolUSDC {
     }
 
     pub fn total_assets(env: &Env) -> U256 {
-        let token = Symbol::new(&env, "USDC");
-        let assets = Self::get_total_liquidity_in_pool(&env, token.clone());
+        let assets = Self::get_total_liquidity_in_pool(&env);
         let borrows = Self::get_borrows(env);
         let total_assets = assets.add(&borrows);
         total_assets
@@ -652,12 +577,10 @@ impl LiquidityPoolUSDC {
         if lastupdatetime == blocktimestamp {
             return Ok(U256::from_u32(&env, 0));
         }
-        let token = Symbol::new(&env, "USDC");
-
         let key_c = PoolDataKey::Borrows;
 
         let borrows: U256 = env.storage().persistent().get(&key_c).unwrap();
-        let liquidity = Self::get_total_liquidity_in_pool(&env, token.clone());
+        let liquidity = Self::get_total_liquidity_in_pool(&env);
 
         let res = U256::from_u128(&env, (blocktimestamp - lastupdatetime) as u128)
             .mul(&(rate_model_client.get_borrow_rate_per_sec(&liquidity, &borrows)));
@@ -665,11 +588,11 @@ impl LiquidityPoolUSDC {
         Ok(res)
     }
 
-    pub fn get_total_liquidity_in_pool(env: &Env, token_symbol: Symbol) -> U256 {
-        env.storage()
-            .persistent()
-            .get(&PoolDataKey::Pool(token_symbol))
-            .unwrap_or(U256::from_u128(&env, 0))
+    pub fn get_total_liquidity_in_pool(env: &Env) -> U256 {
+        let native_token_address: Address = Self::get_native_usdc_client_address(&env);
+        let usdc_token = token::Client::new(&env, &native_token_address);
+        let current_pool_balance = usdc_token.balance(&env.current_contract_address());
+        U256::from_u128(&env, current_pool_balance as u128)
     }
 
     pub fn get_last_updated_time(env: &Env) -> u64 {
@@ -728,12 +651,15 @@ impl LiquidityPoolUSDC {
         list_address
     }
 
-    pub fn is_usdc_pool_initialised(env: &Env, asset: Symbol) -> bool {
-        if !env.storage().persistent().has(&PoolDataKey::Pool(asset)) {
-            // panic!("Pool not initialised");
-            panic_with_error!(&env, LendingError::PoolNotInitialized);
+    pub fn is_usdc_pool_initialised(env: &Env) -> bool {
+        if env.storage().persistent().has(&PoolDataKey::Initialised) {
+            env.storage()
+                .persistent()
+                .get(&PoolDataKey::Initialised)
+                .unwrap()
+        } else {
+            panic!("Lending pool not initialised")
         }
-        true
     }
 
     pub fn get_usdc_pool_address(env: &Env) -> Address {
@@ -752,15 +678,14 @@ impl LiquidityPoolUSDC {
 
     // Converts USDC to VUSDC
     pub fn convert_usdc_to_vtoken(env: &Env, amount: U256) -> U256 {
-        let pool_balance = Self::get_usdc_pool_balance(env);
+        let pool_balance = Self::get_total_liquidity_in_pool(env);
         let minted = Self::get_total_vusdc_minted(env);
 
         if pool_balance == U256::from_u128(&env, 0) || minted == U256::from_u128(&env, 0) {
             amount
         } else {
             let supply = Self::get_current_total_vusdc_balance(env);
-            let total_liquidity_pool =
-                Self::get_total_liquidity_in_pool(env, Symbol::new(&env, "USDC"));
+            let total_liquidity_pool = Self::get_total_liquidity_in_pool(env);
 
             let res = amount.mul(&supply);
             let resx = res.div(&total_liquidity_pool);
@@ -779,8 +704,8 @@ impl LiquidityPoolUSDC {
     }
 
     //  Converting VUSDC to USDC
-    pub fn convert_vtoken_to_asset(env: &Env, vtokens_to_be_burnt: U256) -> U256 {
-        let pool_balance = Self::get_usdc_pool_balance(env);
+    pub fn convert_vtoken_to_usdc(env: &Env, vtokens_to_be_burnt: U256) -> U256 {
+        let pool_balance = Self::get_total_liquidity_in_pool(env);
         let v_token_supply = Self::get_current_total_vusdc_balance(env);
         let res = vtokens_to_be_burnt.mul(&pool_balance);
         let resx = res.div(&v_token_supply);

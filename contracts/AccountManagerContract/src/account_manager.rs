@@ -110,6 +110,7 @@ impl AccountManagerContract {
         Ok(deployed_address)
     }
 
+    // !! What to do with the collateral? send it back?
     pub fn delete_account(env: &Env, user_address: Address) -> Result<(), AccountManagerError> {
         user_address.require_auth();
 
@@ -122,6 +123,22 @@ impl AccountManagerContract {
 
         if has_debt {
             panic!("Cannot delete account with debt, please repay debt first");
+        }
+
+        let all_collateral_tokens = smart_account_client.get_all_collateral_tokens();
+        for coltoken in all_collateral_tokens.iter() {
+            let coltokenbalance =
+                smart_account_client.get_collateral_token_balance(&coltoken.clone());
+
+            let col_token_amount = coltokenbalance.to_u128().unwrap_or_else(|| {
+                panic_with_error!(&env, AccountManagerError::IntegerConversionError)
+            });
+
+            smart_account_client.remove_collateral_token_balance(
+                &user_address,
+                &coltoken,
+                &col_token_amount,
+            );
         }
 
         smart_account_client.deactivate_account(&user_address);
@@ -138,62 +155,6 @@ impl AccountManagerContract {
             .unwrap_or_else(|| panic!("User account not found in list"));
         user_addresses.remove(index);
         env.storage().persistent().set(&key_d, &user_addresses);
-        Self::extend_ttl_account_manager(&env, key_d);
-
-        // let borrowed_tokens_symbols: Vec<Symbol> = env
-        //     .storage()
-        //     .persistent()
-        //     .get(&AccountManagerKey::UserBorrowedTokensList(
-        //         user_address.clone(),
-        //     ))
-        //     .unwrap_or_else(|| Vec::new(&env));
-        // // Remove balance for each borrowed token
-        // for symbol in borrowed_tokens_symbols {
-        //     env.storage()
-        //         .persistent()
-        //         .remove(&AccountManagerKey::UserBorrowedDebt(
-        //             user_address.clone(),
-        //             symbol,
-        //         ));
-        // }
-        // // Then remove all borrowed tokens from the list
-        // env.storage()
-        //     .persistent()
-        //     .remove(&AccountManagerKey::UserBorrowedTokensList(
-        //         user_address.clone(),
-        //     ));
-
-        // let collateral_tokens: Vec<Symbol> = env
-        //     .storage()
-        //     .persistent()
-        //     .get(&AccountManagerKey::UserCollateralTokensList(
-        //         user_address.clone(),
-        //     ))
-        //     .unwrap_or_else(|| Vec::new(&env));
-
-        // // Remove balance for each collateral token
-        // for symbolx in collateral_tokens {
-        //     env.storage()
-        //         .persistent()
-        //         .remove(&AccountManagerKey::UserCollateralBalance(
-        //             user_address.clone(),
-        //             symbolx,
-        //         ));
-        // }
-
-        // // Then remove all collateral tokens from the list
-        // env.storage()
-        //     .persistent()
-        //     .remove(&AccountManagerKey::UserCollateralTokensList(
-        //         user_address.clone(),
-        //     ));
-
-        let key_c = AccountManagerKey::IsAccountActive(user_address.clone());
-        env.storage().persistent().set(&key_c, &false);
-        Self::extend_ttl_account_manager(&env, key_c);
-
-        let key_d = AccountManagerKey::HasDebt(user_address.clone());
-        env.storage().persistent().set(&key_d, &false);
         Self::extend_ttl_account_manager(&env, key_d);
 
         // Set account deletion time
@@ -221,13 +182,7 @@ impl AccountManagerContract {
     ) -> Result<(), AccountManagerError> {
         user_address.require_auth();
 
-        if !env
-            .storage()
-            .persistent()
-            .has(&AccountManagerKey::SmartAccountAddress(
-                user_address.clone(),
-            ))
-        {
+        if !Self::has_smart_account(&env, user_address.clone()) {
             panic!("User doesn't have a smart account address, Create smart account first");
         }
 
@@ -300,6 +255,10 @@ impl AccountManagerContract {
         token_amount: U256,
     ) -> Result<(), AccountManagerError> {
         user_address.require_auth();
+
+        if !Self::has_smart_account(&env, user_address.clone()) {
+            panic!("User doesn't have a smart account address, Create smart account first");
+        }
 
         let smart_account_address: Address =
             Self::get_smart_account_address(&env, user_address.clone());
@@ -572,6 +531,13 @@ impl AccountManagerContract {
     }
 
     pub fn set_max_asset_cap(env: &Env, cap: U256) {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&AccountManagerKey::Admin)
+            .unwrap();
+        admin.require_auth();
+
         let key = AccountManagerKey::AssetCap;
         env.storage().persistent().set(&key, &cap);
         Self::extend_ttl_account_manager(env, key);
@@ -630,6 +596,14 @@ impl AccountManagerContract {
         }
 
         BytesN::from_array(env, &salt_bytes)
+    }
+
+    fn has_smart_account(env: &Env, user_address: Address) -> bool {
+        env.storage()
+            .persistent()
+            .has(&AccountManagerKey::SmartAccountAddress(
+                user_address.clone(),
+            ))
     }
 
     pub fn approve() {}

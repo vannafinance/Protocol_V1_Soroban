@@ -125,17 +125,17 @@ impl RiskEngineContract {
         let oracle_address = registry_client.get_oracle_contract_address();
         let oracle_client = oracle_contract::Client::new(env, &oracle_address);
 
-        let mut total_account_balance: U256 = U256::from_u128(&env, 0);
+        let mut total_account_balance_usd: U256 = U256::from_u128(&env, 0);
         for token in collateral_token_symbols.iter() {
             let token_balance =
                 smart_account_contract_client.get_collateral_token_balance(&token.clone());
 
             let oracle_price_usd = oracle_client.get_price_of(&(token, Symbol::new(&env, "USD")));
 
-            total_account_balance = total_account_balance
+            total_account_balance_usd = total_account_balance_usd
                 .add(&token_balance.mul(&U256::from_u128(&env, oracle_price_usd)));
         }
-        Ok(total_account_balance)
+        Ok(total_account_balance_usd)
     }
 
     pub fn get_current_total_borrows(
@@ -150,7 +150,7 @@ impl RiskEngineContract {
 
         let borrowed_token_symbols = smart_account_contract_client.get_all_borrowed_tokens();
 
-        let mut total_account_debt: U256 = U256::from_u128(&env, 0);
+        let mut total_account_debt_usd: U256 = U256::from_u128(&env, 0);
 
         for tokenx in borrowed_token_symbols.iter() {
             let token_balance =
@@ -160,10 +160,10 @@ impl RiskEngineContract {
             let oracle_client = oracle_contract::Client::new(env, &oracle_contract_address);
             let oracle_price_usd = oracle_client.get_price_of(&(tokenx, Symbol::new(&env, "USD")));
 
-            total_account_debt = total_account_debt
+            total_account_debt_usd = total_account_debt_usd
                 .add(&token_balance.mul(&U256::from_u128(&env, oracle_price_usd)));
         }
-        Ok(total_account_debt)
+        Ok(total_account_debt_usd)
     }
 
     fn get_registry_address(env: &Env) -> Address {

@@ -9,8 +9,6 @@ pub enum AccountManagerKey {
     // UserBorrowedTokensList(Address),   // All borrowed tokens symbols held by user address
     // TotalDebtInPool(Symbol), // Total debt in pool for a specific asset symbol
     IsAccountInitialised(Address), // Flag to check if account is initialized
-    IsAccountActive(Address),      // Flag to check if account is active
-    HasDebt(Address),              // Flag to check if account has debt
     AccountCreatedTime(Address),   // Time when account was created
     AccountDeletedTime(Address),   // Time when account is deleted
     IsCollateralAllowed(Symbol),

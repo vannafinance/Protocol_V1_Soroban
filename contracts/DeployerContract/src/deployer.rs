@@ -14,7 +14,7 @@ const RATE_MODEL_WASM: &[u8] =
 const RISK_ENGINE_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/release/risk_engine_contract.wasm");
 
-const SMART_ACCOUNT_WASM: &[u8] =
+const _SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/release/smart_account_contract.wasm");
 
 const ORACLE_WASM: &[u8] =
@@ -23,10 +23,10 @@ const ORACLE_WASM: &[u8] =
 const LENDING_POOL_XLM_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/release/lending_protocol_xlm.wasm");
 
-const LENDING_POOL_USDC_WASM: &[u8] =
+const _LENDING_POOL_USDC_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/release/lending_protocol_usdc.wasm");
 
-const LENDING_POOL_EURC_WASM: &[u8] =
+const _LENDING_POOL_EURC_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/release/lending_protocol_eurc.wasm");
 
 const ACCOUNT_MANAGER_WASM: &[u8] =
@@ -88,9 +88,9 @@ impl Deployer {
         log!(&env, "Deployed risk engine contract: {}", risk_engine);
         let oracle = Self::deploy_oracle_contract(&env);
         log!(&env, "Deployed oracle contract: {}", oracle);
-        let smart_account_hash = Self::upload_smart_account(&env);
-        let registry_client = registry_contract::Client::new(&env, &registry_address);
-        registry_client.set_smart_account_hash(&smart_account_hash);
+        // let smart_account_hash = Self::upload_smart_account(&env);
+        // let registry_client = registry_contract::Client::new(&env, &registry_address);
+        // registry_client.set_smart_account_hash(&smart_account_hash);
         let account_manager_contract =
             Self::deploy_account_manager_contract(&env, registry_address.clone());
         log!(
@@ -130,11 +130,11 @@ impl Deployer {
         // );
     }
 
-    pub fn upload_smart_account(env: &Env) -> BytesN<32> {
-        let smart_contract_wasm_hash: BytesN<32> =
-            env.deployer().upload_contract_wasm(SMART_ACCOUNT_WASM);
-        smart_contract_wasm_hash
-    }
+    // pub fn upload_smart_account(env: &Env) -> BytesN<32> {
+    //     let smart_contract_wasm_hash: BytesN<32> =
+    //         env.deployer().upload_contract_wasm(SMART_ACCOUNT_WASM);
+    //     smart_contract_wasm_hash
+    // }
 
     pub fn deploy_registry_contract(env: &Env) -> Address {
         let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
@@ -277,89 +277,89 @@ impl Deployer {
         deployed_address
     }
 
-    pub fn deploy_usdc_pool(
-        env: &Env,
-        native_token_address: Address,
-        vusdc_token_address: Address,
-        registry_contract: Address,
-        account_manager: Address,
-        rate_model: Address,
-        token_issuer: Address,
-    ) -> Address {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
-        admin.require_auth();
+    // pub fn deploy_usdc_pool(
+    //     env: &Env,
+    //     native_token_address: Address,
+    //     vusdc_token_address: Address,
+    //     registry_contract: Address,
+    //     account_manager: Address,
+    //     rate_model: Address,
+    //     token_issuer: Address,
+    // ) -> Address {
+    //     let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+    //     admin.require_auth();
 
-        let salt =
-            Self::generate_predictable_salt(&env, &native_token_address, &vusdc_token_address);
+    //     let salt =
+    //         Self::generate_predictable_salt(&env, &native_token_address, &vusdc_token_address);
 
-        // Convert all constructor arguments to Val and add to vector
-        let mut constructor_args = Vec::new(&env);
-        constructor_args.push_back(admin.to_val());
-        constructor_args.push_back(native_token_address.to_val());
-        constructor_args.push_back(vusdc_token_address.to_val());
-        constructor_args.push_back(registry_contract.to_val());
-        constructor_args.push_back(account_manager.to_val());
-        constructor_args.push_back(rate_model.to_val());
-        constructor_args.push_back(token_issuer.to_val());
+    //     // Convert all constructor arguments to Val and add to vector
+    //     let mut constructor_args = Vec::new(&env);
+    //     constructor_args.push_back(admin.to_val());
+    //     constructor_args.push_back(native_token_address.to_val());
+    //     constructor_args.push_back(vusdc_token_address.to_val());
+    //     constructor_args.push_back(registry_contract.to_val());
+    //     constructor_args.push_back(account_manager.to_val());
+    //     constructor_args.push_back(rate_model.to_val());
+    //     constructor_args.push_back(token_issuer.to_val());
 
-        let lending_pool_usdc_wasm_hash =
-            env.deployer().upload_contract_wasm(LENDING_POOL_USDC_WASM);
+    //     let lending_pool_usdc_wasm_hash =
+    //         env.deployer().upload_contract_wasm(LENDING_POOL_USDC_WASM);
 
-        // Deploy the contract using the uploaded Wasm with given hash on behalf
-        // of the current contract.
-        // Note, that not deploying on behalf of the admin provides more
-        // consistent address space for the deployer contracts - the admin could
-        // change or it could be a completely separate contract with complex
-        // authorization rules, but all the contracts will still be deployed
-        // by the same `Deployer` contract address.
-        let deployed_address = env
-            .deployer()
-            .with_address(env.current_contract_address(), salt)
-            .deploy_v2(lending_pool_usdc_wasm_hash, constructor_args);
-        deployed_address
-    }
+    //     // Deploy the contract using the uploaded Wasm with given hash on behalf
+    //     // of the current contract.
+    //     // Note, that not deploying on behalf of the admin provides more
+    //     // consistent address space for the deployer contracts - the admin could
+    //     // change or it could be a completely separate contract with complex
+    //     // authorization rules, but all the contracts will still be deployed
+    //     // by the same `Deployer` contract address.
+    //     let deployed_address = env
+    //         .deployer()
+    //         .with_address(env.current_contract_address(), salt)
+    //         .deploy_v2(lending_pool_usdc_wasm_hash, constructor_args);
+    //     deployed_address
+    // }
 
-    pub fn deploy_eurc_pool(
-        env: &Env,
-        native_token_address: Address,
-        veurc_token_address: Address,
-        registry_contract: Address,
-        account_manager: Address,
-        rate_model: Address,
-        token_issuer: Address,
-    ) -> Address {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
-        admin.require_auth();
+    // pub fn deploy_eurc_pool(
+    //     env: &Env,
+    //     native_token_address: Address,
+    //     veurc_token_address: Address,
+    //     registry_contract: Address,
+    //     account_manager: Address,
+    //     rate_model: Address,
+    //     token_issuer: Address,
+    // ) -> Address {
+    //     let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+    //     admin.require_auth();
 
-        let salt =
-            Self::generate_predictable_salt(&env, &native_token_address, &veurc_token_address);
+    //     let salt =
+    //         Self::generate_predictable_salt(&env, &native_token_address, &veurc_token_address);
 
-        // Convert all constructor arguments to Val and add to vector
-        let mut constructor_args = Vec::new(&env);
-        constructor_args.push_back(admin.to_val());
-        constructor_args.push_back(native_token_address.to_val());
-        constructor_args.push_back(veurc_token_address.to_val());
-        constructor_args.push_back(registry_contract.to_val());
-        constructor_args.push_back(account_manager.to_val());
-        constructor_args.push_back(rate_model.to_val());
-        constructor_args.push_back(token_issuer.to_val());
+    //     // Convert all constructor arguments to Val and add to vector
+    //     let mut constructor_args = Vec::new(&env);
+    //     constructor_args.push_back(admin.to_val());
+    //     constructor_args.push_back(native_token_address.to_val());
+    //     constructor_args.push_back(veurc_token_address.to_val());
+    //     constructor_args.push_back(registry_contract.to_val());
+    //     constructor_args.push_back(account_manager.to_val());
+    //     constructor_args.push_back(rate_model.to_val());
+    //     constructor_args.push_back(token_issuer.to_val());
 
-        let lending_pool_eurc_wasm_hash =
-            env.deployer().upload_contract_wasm(LENDING_POOL_EURC_WASM);
+    //     let lending_pool_eurc_wasm_hash =
+    //         env.deployer().upload_contract_wasm(LENDING_POOL_EURC_WASM);
 
-        // Deploy the contract using the uploaded Wasm with given hash on behalf
-        // of the current contract.
-        // Note, that not deploying on behalf of the admin provides more
-        // consistent address space for the deployer contracts - the admin could
-        // change or it could be a completely separate contract with complex
-        // authorization rules, but all the contracts will still be deployed
-        // by the same `Deployer` contract address.
-        let deployed_address = env
-            .deployer()
-            .with_address(env.current_contract_address(), salt)
-            .deploy_v2(lending_pool_eurc_wasm_hash, constructor_args);
-        deployed_address
-    }
+    //     // Deploy the contract using the uploaded Wasm with given hash on behalf
+    //     // of the current contract.
+    //     // Note, that not deploying on behalf of the admin provides more
+    //     // consistent address space for the deployer contracts - the admin could
+    //     // change or it could be a completely separate contract with complex
+    //     // authorization rules, but all the contracts will still be deployed
+    //     // by the same `Deployer` contract address.
+    //     let deployed_address = env
+    //         .deployer()
+    //         .with_address(env.current_contract_address(), salt)
+    //         .deploy_v2(lending_pool_eurc_wasm_hash, constructor_args);
+    //     deployed_address
+    // }
 
     fn generate_predictable_salt(
         env: &Env,
