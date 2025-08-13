@@ -1,0 +1,362 @@
+To create a **Stellar Classic Asset token** on the Stellar network using **Stellar Laboratory** and the **Stellar SDK**, and to incorporate metadata like `name`, `symbol`, and other details, as well as obtain the token contract address for minting, follow this step-by-step guide. This process involves creating accounts, issuing the asset, setting up metadata, and getting the Stellar Asset Contract (SAC) ID for use in Soroban smart contracts. I’ll also provide Rust code to align with your original `soroban contract deploy` context and address your goal of minting tokens.
+
+Since you want to create a Stellar Classic Asset and use it in a Soroban contract (as implied by your original `soroban` command), I’ll cover both the asset creation process and how to get the SAC contract ID for minting. I’ll also explain how to handle metadata like `name` and `symbol`, which are stored off-chain for Stellar Classic Assets.
+
+---
+
+### Overview of the Process
+1. **Set Up Accounts**: Create an issuing account (to create and manage the asset) and a distribution account (to hold and distribute the tokens).
+2. **Create the Asset**: Use Stellar Laboratory or the Stellar SDK to:
+   - Establish a trustline from the distribution account to the issuing account.
+   - Issue the initial token supply via a payment operation.
+3. **Set Metadata**: Publish `name`, `symbol`, and other details in a Stellar TOML file hosted on a domain linked to the issuing account.
+4. **Get the SAC Contract ID**: Use the `soroban contract id asset` command to obtain the contract ID for the Stellar Asset Contract (SAC) to interact with the asset in Soroban.
+5. **Mint Tokens**: Use the SAC’s `mint` function to issue additional tokens.
+6. **Integrate with Rust**: Extend your Rust code to automate the SAC contract ID retrieval and minting.
+
+---
+
+### Step-by-Step Guide
+
+#### Step 1: Set Up Accounts in Stellar Laboratory
+Stellar Classic Assets require two accounts: an **issuing account** (which creates the asset) and a **distribution account** (which holds and distributes the tokens). Both need to be funded with XLM (Stellar Lumens).
+
+1. **Access Stellar Laboratory**:
+   - Go to [Stellar Laboratory](https://laboratory.stellar.org/#account-creator?network=testnet) and select the **Testnet** network for testing (or **Public** for mainnet).
+
+2. **Create the Issuing Account**:
+   - Navigate to the **Account Creator** tab.
+   - Click **Generate Keypair** to create a new keypair. Save the **public key** (starts with `G`) and **secret key** (starts with `S`).
+   - Fund the account with XLM:
+     - On testnet, use the **Friendbot** (click “Fund this account with Friendbot” to get 10,000 XLM).
+     - On mainnet, purchase XLM from an exchange and send it to the public key.
+   - Minimum balance: ~2 XLM (1 XLM base reserve + fees).
+
+3. **Create the Distribution Account**:
+   - Repeat the process to create another keypair for the distribution account.
+   - Fund it with ~2.5 XLM (1 XLM base reserve + 0.5 XLM for the trustline entry + fees).
+
+4. **Save Keypairs**:
+   - Example:
+     - Issuing Account: `Public Key: GA...`, `Secret Key: SA...`
+     - Distribution Account: `Public Key: GB...`, `Secret Key: SB...`
+
+#### Step 2: Create the Stellar Classic Asset in Stellar Laboratory
+To issue the asset, you need to:
+- Establish a trustline from the distribution account to the issuing account.
+- Send a payment from the issuing account to the distribution account to create the asset.
+
+1. **Establish a Trustline**:
+   - In Stellar Laboratory, go to the **Transaction Builder** tab.
+   - **Source Account**: Enter the distribution account’s public key (e.g., `GB...`).
+   - Click **Fetch next sequence number** to populate the sequence number.
+   - **Operation Type**: Select **Change Trust**.
+   - **Asset**:
+     - Select **Alphanumeric 4** (for 1-4 character codes, e.g., `MTK`) or **Alphanumeric 12** (for 5-12 character codes, e.g., `MYTOKEN`).
+     - **Asset Code**: Enter your token’s code (e.g., `MTK`).
+     - **Issuer Account ID**: Enter the issuing account’s public key (e.g., `GA...`).
+     - **Trust Limit**: Set the maximum tokens the distribution account can hold (e.g., `1000000` for 1,000,000 tokens or `max` for unlimited).
+   - Scroll to the bottom, click **Sign in Transaction Signer**, and paste the distribution account’s secret key.
+   - Click **Submit to Network** to submit the transaction.
+
+2. **Issue the Asset (Payment)**:
+   - In the **Transaction Builder** tab:
+   - **Source Account**: Enter the issuing account’s public key (e.g., `GA...`).
+   - Click **Fetch next sequence number**.
+   - **Operation Type**: Select **Payment**.
+   - **Destination**: Enter the distribution account’s public key (e.g., `GB...`).
+   - **Asset**:
+     - Select **Alphanumeric 4** or **Alphanumeric 12**.
+     - **Asset Code**: `MTK` (same as above).
+     - **Issuer Account ID**: `GA...` (issuing account’s public key).
+   - **Amount**: Enter the initial supply (e.g., `1000000` for 1,000,000 tokens). Note: Amounts use 7 decimals (e.g., `1000000` = 1,000,000 tokens).
+   - Sign the transaction with the issuing account’s secret key and submit it.
+   - This creates the asset `MTK:GA...` and transfers the initial supply to the distribution account.
+
+3. **Verify the Asset**:
+   - Go to [Stellar.expert](https://stellar.expert/explorer/testnet) (or mainnet version), search for the distribution account, and confirm it holds `MTK:GA...`.
+
+#### Step 3: Set Metadata (Name, Symbol, etc.)
+Stellar Classic Assets do not store `name`, `symbol`, or `decimals` on-chain. Instead, you publish this metadata in a **Stellar TOML file** hosted on a domain linked to the issuing account.
+
+1. **Create a Stellar TOML File**:
+   - Create a file named `stellar.toml` with the following content:
+     ```toml
+     [[CURRENCIES]]
+     code = "MTK"
+     issuer = "<ISSUING_ACCOUNT_PUBLIC_KEY>" # e.g., GA...
+     display_decimals = 7
+     name = "My Token"
+     symbol = "MTK"
+     desc = "A custom token for my project"
+     image = "https://your-domain.com/token.png"
+     ```
+   - Host this file at `https://your-domain.com/.well-known/stellar.toml`.
+
+2. **Link the Issuing Account to the Domain**:
+   - In Stellar Laboratory, go to the **Transaction Builder** tab.
+   - **Source Account**: Issuing account’s public key.
+   - **Operation Type**: Select **Set Options**.
+   - **Home Domain**: Enter your domain (e.g., `your-domain.com`).
+   - Sign with the issuing account’s secret key and submit.
+   - This links the TOML file to the account, allowing wallets and exchanges to read the metadata.
+
+3. **Notes on Metadata**:
+   - `decimals` is fixed at 7 for Stellar Classic Assets.
+   - `name` and `symbol` are informational and used by wallets/exchanges.
+   - Additional fields like `desc` and `image` enhance visibility on platforms like Stellar.expert.
+
+#### Step 4: Get the SAC Contract ID
+To interact with the asset in Soroban (e.g., for minting), you need the Stellar Asset Contract (SAC) ID. Use the `soroban contract id asset` command.
+
+**CLI Command**:
+```bash
+soroban contract id asset --network testnet --asset MTK:<ISSUING_ACCOUNT_PUBLIC_KEY>
+```
+- This returns a contract ID (e.g., `C...`) for the SAC.
+- The SAC is a built-in contract that implements the SEP-41 Token Interface, allowing you to mint, transfer, or burn tokens.
+
+**Rust Code** (integrating with your original code):
+```rust
+use std::process::Command;
+use std::string::String;
+
+// Get the SAC contract ID
+let asset_code = "MTK";
+let issuer_account = "<ISSUING_ACCOUNT_PUBLIC_KEY>"; // e.g., GA...
+let network = &self.config.network;
+
+let contract_id_output = Command::new("soroban")
+    .args(&[
+        "contract",
+        "id",
+        "asset",
+        "--network",
+        network,
+        "--asset",
+        &format!("{}:{}", asset_code, issuer_account),
+    ])
+    .output()
+    .map_err(|e| format!("Failed to execute contract id command: {}", e))?;
+
+if !contract_id_output.status.success() {
+    let error = String::from_utf8_lossy(&contract_id_output.stderr);
+    return Err(format!("Failed to get contract ID: {}", error).into());
+}
+
+let contract_id = String::from_utf8(contract_id_output.stdout)
+    .map_err(|_| "Failed to parse contract ID output")?
+    .trim()
+    .to_string();
+
+println!("SAC Contract ID: {}", contract_id);
+```
+
+#### Step 5: Mint Tokens
+To mint additional tokens, use the SAC’s `mint` function via the `soroban contract invoke` command. The issuer account must sign the transaction.
+
+**CLI Command**:
+```bash
+soroban contract invoke \
+  --id <CONTRACT_ID> \
+  --source-account <ISSUER_ACCOUNT_SECRET_KEY> \
+  --network testnet \
+  -- \
+  mint \
+  --to <RECIPIENT_ADDRESS> \
+  --amount 1000000000
+```
+- `<CONTRACT_ID>`: The SAC contract ID from Step 4.
+- `<ISSUER_ACCOUNT_SECRET_KEY>`: The issuing account’s secret key (e.g., `SA...`).
+- `<RECIPIENT_ADDRESS>`: The Stellar account (e.g., `GB...`) or contract address (e.g., `C...`) to receive the tokens.
+- `--amount`: The amount to mint (e.g., `1000000000` = 1,000 tokens with 7 decimals).
+
+**Rust Code**:
+```rust
+// Mint tokens using the SAC
+let recipient = "<RECIPIENT_ADDRESS>"; // e.g., GB... or C...
+let amount = "1000000000"; // 1,000 tokens (7 decimals)
+
+let mint_output = Command::new("soroban")
+    .args(&[
+        "contract",
+        "invoke",
+        "--id",
+        &contract_id,
+        "--network",
+        &self.config.network,
+        "--source-account",
+        &self.config.source_account, // Must be the issuer account
+        "--",
+        "mint",
+        "--to",
+        recipient,
+        "--amount",
+        amount,
+    ])
+    .output()
+    .map_err(|e| format!("Failed to execute mint command: {}", e))?;
+
+if !mint_output.status.success() {
+    let error = String::from_utf8_lossy(&mint_output.stderr);
+    return Err(format!("Failed to mint tokens: {}", error).into());
+}
+
+Ok(contract_id) // Return the contract ID
+```
+
+#### Step 6: Optional - Deploy the SAC (if Needed)
+The SAC is a built-in contract reserved for each Stellar asset. It doesn’t require deployment unless you need to interact with it in Soroban and it hasn’t been deployed yet. Anyone can deploy it to its reserved address:
+
+**CLI Command**:
+```bash
+soroban contract deploy \
+  --source-account <ISSUER_ACCOUNT_SECRET_KEY> \
+  --network testnet \
+  --asset MTK:<ISSUING_ACCOUNT_PUBLIC_KEY>
+```
+
+**Rust Code** (similar to your original deploy command):
+```rust
+let deploy_output = Command::new("soroban")
+    .args(&[
+        "contract",
+        "deploy",
+        "--asset",
+        &format!("{}:{}", asset_code, issuer_account),
+        "--network",
+        &self.config.network,
+        "--source-account",
+        &self.config.source_account,
+    ])
+    .output()
+    .map_err(|e| format!("Failed to deploy SAC: {}", e))?;
+
+let contract_id = String::from_utf8(deploy_output.stdout)
+    .map_err(|_| "Failed to parse deploy output")?
+    .trim()
+    .to_string();
+```
+
+---
+
+### Using the Stellar SDK (Python Example)
+If you prefer automating the asset creation process using the Stellar SDK (e.g., Python), here’s an example to create the asset, set the TOML file, and get the SAC contract ID.
+
+1. **Install the Stellar SDK**:
+   ```bash
+   pip install stellar-sdk
+   ```
+
+2. **Python Code**:
+```python
+from stellar_sdk import Keypair, Network, Server, TransactionBuilder, Asset
+
+# Network and server
+server = Server("https://horizon-testnet.stellar.org")
+network_passphrase = Network.TESTNET_NETWORK_PASSPHRASE
+
+# Keypairs
+issuing_keypair = Keypair.from_secret("<ISSUER_SECRET_KEY>")  # e.g., SA...
+distributor_keypair = Keypair.from_secret("<DISTRIBUTOR_SECRET_KEY>")  # e.g., SB...
+
+# Load accounts
+issuing_account = server.load_account(issuing_keypair.public_key)
+distributor_account = server.load_account(distributor_keypair.public_key)
+
+# Create asset
+asset = Asset("MTK", issuing_keypair.public_key)
+
+# Step 1: Establish trustline
+trust_transaction = (
+    TransactionBuilder(
+        source_account=distributor_account,
+        network_passphrase=network_passphrase,
+        base_fee=100,
+    )
+    .append_change_trust_op(asset=asset)
+    .set_timeout(100)
+    .build()
+)
+trust_transaction.sign(distributor_keypair)
+server.submit_transaction(trust_transaction)
+
+# Step 2: Issue initial supply
+payment_transaction = (
+    TransactionBuilder(
+        source_account=issuing_account,
+        network_passphrase=network_passphrase,
+        base_fee=100,
+    )
+    .append_payment_op(
+        destination=distributor_keypair.public_key,
+        asset=asset,
+        amount="1000000"  # 1,000,000 tokens
+    )
+    .set_timeout(100)
+    .build()
+)
+payment_transaction.sign(issuing_keypair)
+server.submit_transaction(payment_transaction)
+
+# Step 3: Set home domain for TOML
+transaction = (
+    TransactionBuilder(
+        source_account=issuing_account,
+        network_passphrase=network_passphrase,
+        base_fee=100,
+    )
+    .append_set_options_op(home_domain="your-domain.com")
+    .build()
+)
+transaction.sign(issuing_keypair)
+server.submit_transaction(transaction)
+
+print(f"Asset created: {asset.code}:{asset.issuer}")
+```
+
+3. **Get SAC Contract ID**:
+   - Use the `soroban` CLI as shown in Step 4, as the Stellar SDK does not directly provide SAC contract ID generation. Alternatively, compute the contract ID programmatically (requires advanced XDR handling, not covered here).
+
+---
+
+### Handling Metadata
+- **Name and Symbol**: Stored in the `stellar.toml` file (e.g., `name = "My Token"`, `symbol = "MTK"`).
+- **Decimals**: Fixed at 7 for Stellar Classic Assets. Specify `display_decimals = 7` in the TOML file.
+- **Other Details**: Include `desc`, `image`, or `conditions` in the TOML file for additional metadata.
+
+---
+
+### Notes and Best Practices
+- **Testnet vs. Mainnet**:
+  - Use the testnet (`--network testnet`) for testing to avoid spending real XLM.
+  - For mainnet, ensure accounts are funded with XLM from an exchange.
+- **Trustlines**:
+  - Accounts must establish a trustline to hold the asset. Ensure the recipient in the `mint` operation has a trustline.
+- **Authorization Flags**:
+  - Set flags like `AUTH_REQUIRED_FLAG` or `AUTH_CLAWBACK_ENABLED_FLAG` on the issuing account to control asset behavior (e.g., require authorization before holding or enable clawback).
+  - Example in Stellar Laboratory:
+    - **Operation Type**: **Set Options**.
+    - **Set Flags**: Check `Authorization required` or `Clawback enabled`.
+- **Error Handling**:
+  - Check for errors like missing trustlines, insufficient XLM, or invalid contract IDs.
+  - Verify the `soroban` CLI is installed (`npm install -g @stellar/stellar-cli`).
+- **Verification**:
+  - Use [Stellar.expert](https://stellar.expert/explorer/testnet) to verify account balances and asset details.
+  - Check the TOML file is accessible at `https://your-domain.com/.well-known/stellar.toml`.
+
+---
+
+### Why Not Use the Original Deploy Command?
+Your original code used `soroban contract deploy --wasm ...`, which is for deploying a custom Soroban contract. For Stellar Classic Assets, you don’t deploy a custom WASM contract; instead, you use the built-in SAC, which is why `soroban contract id asset` is appropriate. If you want a custom token contract with on-chain `name`, `symbol`, and `decimals`, let me know, and I can provide a guide for deploying a custom SEP-41 token contract.
+
+---
+
+### Sources
+- Stellar Laboratory: [https://laboratory.stellar.org](https://laboratory.stellar.org)[](https://stellar.org/blog/developers/tokens-on-stellar)
+- Stellar SDK for Python: [https://github.com/StellarCN/py-stellar-base](https://github.com/StellarCN/py-stellar-base)[](https://medium.com/python-pandemonium/how-to-create-a-custom-token-on-stellar-network-in-python-abf8b2f7a6f8)
+- Issuing Assets on Stellar: [https://developers.stellar.org/docs/issuing-assets](https://developers.stellar.org/docs/issuing-assets)[](https://developers.stellar.org/docs/tokens/how-to-issue-an-asset)
+- Stellar Asset Contract (SAC): [https://developers.stellar.org/docs/tokens/stellar-asset-contract](https://developers.stellar.org/docs/tokens/stellar-asset-contract)[](https://developers.stellar.org/docs/tokens/stellar-asset-contract)
+- Stellar TOML: [https://developers.stellar.org/docs/issuing-assets/publish-asset-information](https://developers.stellar.org/docs/issuing-assets/publish-asset-information)[](https://developers.stellar.org/docs/tokens/publishing-asset-info)
+
+If you need further assistance (e.g., deploying a custom token contract, handling specific errors, or additional SDK examples), please let me know!
