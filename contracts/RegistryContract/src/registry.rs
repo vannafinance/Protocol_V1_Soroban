@@ -12,16 +12,18 @@ const ADMIN: Symbol = symbol_short!("admin");
 
 #[contractimpl]
 impl RegistryContract {
-    pub fn __constructor(env: Env, admin: Address) -> Result<(), RegistryContractError> {
-        env.storage().instance().set(&ADMIN, &admin);
-        Ok(())
+    pub fn __constructor(env: Env, admin: Address) {
+        env.storage().persistent().set(&ADMIN, &admin);
+        env.storage()
+            .persistent()
+            .extend_ttl(&ADMIN, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 
     pub fn set_lendingpool_xlm(
         env: &Env,
         lendingpool_xlm: Address,
     ) -> Result<(), RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         env.storage()
@@ -35,7 +37,7 @@ impl RegistryContract {
         env: &Env,
         smart_account_hash: BytesN<32>,
     ) -> Result<(), RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         env.storage()
@@ -51,7 +53,7 @@ impl RegistryContract {
         env: &Env,
         account_manager_address: Address,
     ) -> Result<(), RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         env.storage().persistent().set(
@@ -67,7 +69,7 @@ impl RegistryContract {
         env: &Env,
         lendingpool_eurc_address: Address,
     ) -> Result<(), RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         env.storage()
@@ -82,7 +84,7 @@ impl RegistryContract {
         env: &Env,
         lendingpool_usdc_address: Address,
     ) -> Result<(), RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         env.storage()
@@ -97,7 +99,7 @@ impl RegistryContract {
         env: &Env,
         risk_engine_address: Address,
     ) -> Result<(), RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         env.storage()
@@ -112,7 +114,7 @@ impl RegistryContract {
         env: &Env,
         rate_model_address: Address,
     ) -> Result<(), RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         env.storage()
@@ -127,7 +129,7 @@ impl RegistryContract {
         env: &Env,
         oracle_contract_address: Address,
     ) -> Result<(), RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         env.storage()
@@ -142,7 +144,7 @@ impl RegistryContract {
         env: &Env,
         xlm_contract_adddress: Address,
     ) -> Result<(), RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         env.storage().persistent().set(
@@ -158,7 +160,7 @@ impl RegistryContract {
         env: &Env,
         usdc_contract_address: Address,
     ) -> Result<(), RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         env.storage()
@@ -173,7 +175,7 @@ impl RegistryContract {
         env: &Env,
         eurc_contract_address: Address,
     ) -> Result<(), RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         env.storage()
@@ -257,7 +259,7 @@ impl RegistryContract {
     }
 
     pub fn get_xlm_token_contract_adddress(env: &Env) -> Result<Address, RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         let token_contract_address: Address = env
@@ -270,7 +272,7 @@ impl RegistryContract {
     }
 
     pub fn get_usdc_contract_address(env: &Env) -> Result<Address, RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         let token_contract_address: Address = env
@@ -283,7 +285,7 @@ impl RegistryContract {
     }
 
     pub fn get_eurc_contract_address(env: &Env) -> Result<Address, RegistryContractError> {
-        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
         admin.require_auth();
 
         let token_contract_address: Address = env

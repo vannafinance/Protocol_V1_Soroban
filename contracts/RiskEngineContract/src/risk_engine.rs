@@ -37,7 +37,7 @@ impl RiskEngineContract {
         let oracle_contract_address: Address = registry_client.get_oracle_contract_address();
         let oracle_client = oracle_contract::Client::new(env, &oracle_contract_address);
 
-        let price = oracle_client.get_price_of(&(symbol, Symbol::new(&env, "USD")));
+        let price = oracle_client.get_price_latest(&symbol);
         let oracle_price = U256::from_u128(&env, price);
         let borrow_value = borrow_amount.mul(&oracle_price);
 
@@ -77,7 +77,7 @@ impl RiskEngineContract {
         let oracle_contract_address: Address = registry_client.get_oracle_contract_address();
 
         let oracle_client = oracle_contract::Client::new(&env, &oracle_contract_address);
-        let price = oracle_client.get_price_of(&(symbol, Symbol::new(&env, "USD")));
+        let price = oracle_client.get_price_latest(&symbol);
         let oracle_price = U256::from_u128(&env, price);
         let withdraw_value = withdraw_amount.mul(&oracle_price);
 
@@ -130,7 +130,7 @@ impl RiskEngineContract {
             let token_balance =
                 smart_account_contract_client.get_collateral_token_balance(&token.clone());
 
-            let oracle_price_usd = oracle_client.get_price_of(&(token, Symbol::new(&env, "USD")));
+            let oracle_price_usd = oracle_client.get_price_latest(&token);
 
             total_account_balance_usd = total_account_balance_usd
                 .add(&token_balance.mul(&U256::from_u128(&env, oracle_price_usd)));
@@ -158,7 +158,7 @@ impl RiskEngineContract {
 
             let oracle_contract_address: Address = registry_client.get_oracle_contract_address();
             let oracle_client = oracle_contract::Client::new(env, &oracle_contract_address);
-            let oracle_price_usd = oracle_client.get_price_of(&(tokenx, Symbol::new(&env, "USD")));
+            let oracle_price_usd = oracle_client.get_price_latest(&tokenx);
 
             total_account_debt_usd = total_account_debt_usd
                 .add(&token_balance.mul(&U256::from_u128(&env, oracle_price_usd)));

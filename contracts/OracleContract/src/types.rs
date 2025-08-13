@@ -9,5 +9,5 @@ pub enum OracleDataKey {
     User(Address),       // User account data
     Governance,          // Governance parameters
     StdReferenceAddress, // Oracle reference address
-    IsInitialised,
+    ReflectorAddress,
 }

@@ -1,6 +1,6 @@
 use core::panic;
 
-use crate::errors::{InterestRateError, LendingError, LendingTokenError};
+use crate::errors::{InterestRateError, LendingError};
 use crate::events::{
     LendingDepositEvent, LendingTokenBurnEvent, LendingTokenMintEvent, LendingWithdrawEvent,
 };
@@ -24,12 +24,6 @@ pub mod registry_contract {
 pub mod smart_account_contract {
     soroban_sdk::contractimport!(
         file = "../../target/wasm32v1-none/release/smart_account_contract.wasm"
-    );
-}
-
-pub mod risk_engine_contract {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/risk_engine_contract.wasm"
     );
 }
 
@@ -179,7 +173,7 @@ impl LiquidityPoolXLM {
             .storage()
             .persistent()
             .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "VXLM")))
-            .unwrap();
+            .unwrap_or_else(|| panic!("VTokenValue not set"));
 
         // Now Mint the VXLM tokens that were created for the lender
         Self::mint_vxlm_tokens(&env, lender.clone(), vtokens_to_be_minted, token_value);
@@ -568,8 +562,6 @@ impl LiquidityPoolXLM {
         if lastupdatetime == blocktimestamp {
             return Ok(U256::from_u32(&env, 0));
         }
-        let token = Symbol::new(&env, "XLM");
-
         let key_c = PoolDataKey::Borrows;
 
         let borrows: U256 = env.storage().persistent().get(&key_c).unwrap();
@@ -620,15 +612,15 @@ impl LiquidityPoolXLM {
 
     // Helper function to add lender to list
     fn add_lender_to_list_xlm(env: &Env, lender: &Address) {
+        let key_b = PoolDataKey::Lenders(Symbol::new(&env, "XLM"));
         let mut lenders: Vec<Address> = env
             .storage()
             .persistent()
-            .get(&PoolDataKey::Lenders(Symbol::new(&env, "XLM")))
+            .get(&key_b)
             .unwrap_or_else(|| Vec::new(&env));
 
         if !lenders.contains(lender) {
             lenders.push_back(lender.clone());
-            let key_b = PoolDataKey::Lenders(Symbol::new(&env, "XLM"));
             env.storage().persistent().set(&key_b, &lenders);
             Self::extend_ttl_pooldatakey(&env, key_b);
         }
