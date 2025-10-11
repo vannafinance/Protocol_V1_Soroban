@@ -1,6 +1,6 @@
 use core::panic;
 
-use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract, contractimpl, token};
+use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract, contractimpl, log, token};
 
 use crate::types::{SmartAccountDataKey, SmartAccountDeactivationEvent, SmartAccountError};
 
@@ -34,17 +34,18 @@ impl SmartAccountContract {
         Self::extend_ttl_smart_account(&env, SmartAccountDataKey::AccountManager);
         Self::extend_ttl_smart_account(&env, SmartAccountDataKey::RegistryContract);
         Self::extend_ttl_smart_account(&env, SmartAccountDataKey::OwnerAddress);
+        log!(&env, "Smart account created!");
     }
 
-    pub fn deactivate_account(env: Env, user_address: Address) -> Result<(), SmartAccountError> {
+    pub fn deactivate_account(env: &Env) -> Result<(), SmartAccountError> {
+        let account_manager: Address = Self::get_account_manager(&env);
+        account_manager.require_auth();
+
         let key = SmartAccountDataKey::IsAccountActive;
         env.storage().persistent().set(&key, &false);
         Self::extend_ttl_smart_account(&env, key);
         env.events().publish(
-            (
-                Symbol::new(&env, "Account_Deactivated"),
-                user_address.clone(),
-            ),
+            (Symbol::new(&env, "Smart Account_Deactivated"),),
             SmartAccountDeactivationEvent {
                 margin_account: env.current_contract_address(),
                 deactivate_time: env.ledger().timestamp(),
@@ -55,7 +56,7 @@ impl SmartAccountContract {
 
     pub fn activate_account(env: &Env) -> Result<(), SmartAccountError> {
         let account_manager: Address = Self::get_account_manager(&env);
-        account_manager.require_auth();
+        // account_manager.require_auth();
         let key = SmartAccountDataKey::IsAccountActive;
         env.storage().persistent().set(&key, &true);
         Self::extend_ttl_smart_account(&env, key);
@@ -67,17 +68,22 @@ impl SmartAccountContract {
         token_symbol: Symbol,
         amount: u128,
     ) -> Result<(), SmartAccountError> {
-        Self::check_auth(&env, token_symbol.clone()).unwrap();
+        // Auth is being handled at token level
+        // Self::check_auth(&env, token_symbol.clone()).unwrap();
 
         let registry_address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
 
         if token_symbol == Symbol::new(&env, "XLM") {
             let pool_xlm_address = registry_client.get_lendingpool_xlm();
-            let xlm_client = lending_protocol_xlm::Client::new(&env, &pool_xlm_address);
-            let native_xlm_address = xlm_client.get_native_xlm_client_address();
+            pool_xlm_address.require_auth();
+            log!(&env, "Auth done, transfering amount", amount);
+            let native_xlm_address = registry_client.get_xlm_contract_adddress();
 
             let xlm_token = token::Client::new(&env, &native_xlm_address);
+            let balance = xlm_token.balance(&env.current_contract_address());
+            log!(&env, "Current balance in margin account is ", balance);
+
             xlm_token.transfer(
                 &env.current_contract_address(),
                 &pool_xlm_address,
@@ -85,8 +91,8 @@ impl SmartAccountContract {
             );
         } else if token_symbol == Symbol::new(&env, "USDC") {
             let pool_usdc_address = registry_client.get_lendingpool_usdc();
-            let usdc_client = lending_protocol_usdc::Client::new(&env, &pool_usdc_address);
-            let native_usdc_address = usdc_client.get_native_usdc_client_address();
+            pool_usdc_address.require_auth();
+            let native_usdc_address = registry_client.get_usdc_contract_address();
 
             let usdc_token = token::Client::new(&env, &native_usdc_address);
             usdc_token.transfer(
@@ -96,8 +102,8 @@ impl SmartAccountContract {
             );
         } else if token_symbol == Symbol::new(&env, "EURC") {
             let pool_eurc_address = registry_client.get_lendingpool_eurc();
-            let eurc_client = lending_protocol_eurc::Client::new(&env, &pool_eurc_address);
-            let native_eurc_address = eurc_client.get_native_eurc_client_address();
+            pool_eurc_address.require_auth();
+            let native_eurc_address = registry_client.get_eurc_contract_address();
 
             let eurc_token = token::Client::new(&env, &native_eurc_address);
             eurc_token.transfer(
@@ -121,7 +127,7 @@ impl SmartAccountContract {
         account_manager.require_auth();
 
         if token_symbol == Symbol::new(&env, "XLM") {
-            let native_xlm_address = registry_client.get_xlm_token_contract_adddress();
+            let native_xlm_address = registry_client.get_xlm_contract_adddress();
 
             let xlm_token = token::Client::new(&env, &native_xlm_address);
             xlm_token.transfer(
@@ -181,8 +187,8 @@ impl SmartAccountContract {
         token_symbol: Symbol,
     ) -> Result<(), SmartAccountError> {
         Self::check_auth(&env, token_symbol).unwrap();
-        let account_manager: Address = Self::get_account_manager(env);
-        account_manager.require_auth();
+        // let account_manager: Address = Self::get_account_manager(env);
+        // account_manager.require_auth();
         env.storage()
             .persistent()
             .set(&SmartAccountDataKey::HasDebt, &has_debt);
@@ -192,8 +198,8 @@ impl SmartAccountContract {
 
     // flaw !! where is add borrowed tokens?
     pub fn get_all_borrowed_tokens(env: &Env) -> Result<Vec<Symbol>, SmartAccountError> {
-        let account_manager: Address = Self::get_account_manager(env);
-        account_manager.require_auth();
+        // let account_manager: Address = Self::get_account_manager(env);
+        // account_manager.require_auth();
         let borrowed_tokens_list: Vec<Symbol> = env
             .storage()
             .persistent()
@@ -235,6 +241,7 @@ impl SmartAccountContract {
         }
 
         if borrowed_tokens_list.is_empty() {
+            // AUth might fail here, since this is an internal call, Check!!!
             Self::set_has_debt(&env, false, token_symbol).unwrap();
         }
 
@@ -247,8 +254,6 @@ impl SmartAccountContract {
     }
 
     pub fn get_all_collateral_tokens(env: &Env) -> Result<Vec<Symbol>, SmartAccountError> {
-        let account_manager: Address = Self::get_account_manager(env);
-        account_manager.require_auth();
         let collateral_tokens_list: Vec<Symbol> = env
             .storage()
             .persistent()

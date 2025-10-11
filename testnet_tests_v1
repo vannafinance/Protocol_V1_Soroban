@@ -1,0 +1,199 @@
+account: hemanth 
+testnet :  GDUX3DUENWHOEHKA5FKTMQGIBRTQUOE5RVA3R4IDBYZG7DZ6IQ6FUBR7
+pvt key : SCQIDIPNPMPBR4TJJ36MFKECJH3UEEQ3NM46E2NB2NFCAU4I3JNEXXVF
+recovery text : stick advice drink jungle orient recall screen feel smile property escape income tag extra squeeze praise tragic virus casino undo order alley side switch
+
+account: elephant1
+testnet : GDOHIA3DGO4ZTN6UADWGPL23MONUB736ZTTCUMQX73WOKXNXCJDIIOUA
+pvt key : SA3T5VAJJIZKQ2LMR4GQQIBKDCUMD2MWIWJI36MQK5CMNMLZ2N5KLR7V
+recovery text : crop rate route spray favorite add crash term person snack release matrix mosquito exotic night inside olympic puppy shock flag manage bus fossil stumble
+
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+// Deploying deployer contract.
+
+stellar contract deploy   --wasm target/wasm32v1-none/release-with-logs/deployer_contract.wasm   --source hemanth   --network testnet   --alias deployer_apple   -- --admin GDUX3DUENWHOEHKA5FKTMQGIBRTQUOE5RVA3R4IDBYZG7DZ6IQ6FUBR7 
+
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: 0bd477c9c7bcd7c3108376f11c4d5858d12335275170ca26024f857997578260
+🌎 Submitting install transaction…
+ℹ️ Using wasm hash 508196e86cefdfd6f56f722b65bffc8508085f01685a0774924442340ae0109b
+ℹ️ Simulating deploy transaction…
+ℹ️ Transaction hash is 8e87f83704302d1e40bd8e8c0ca7850e0b7d3af3b137798903c72d97cf066e6d
+🔗 https://stellar.expert/explorer/testnet/tx/8e87f83704302d1e40bd8e8c0ca7850e0b7d3af3b137798903c72d97cf066e6d
+ℹ️ Signing transaction: 8e87f83704302d1e40bd8e8c0ca7850e0b7d3af3b137798903c72d97cf066e6d
+🌎 Submitting deploy transaction…
+🔗 https://stellar.expert/explorer/testnet/contract/CD6WTAFMKGZAE5RHEBCGEBQIOBKATXEAST5DCU5FIK3DRL6DERV3IFOC
+✅ Deployed!
+⚠️ Overwriting existing contract id: CBAG5KXSXBXTWGTEHDS4RYE6UHJDYMH6MDY3BKRP3FS3FDTLY6RGRGQM
+CD6WTAFMKGZAE5RHEBCGEBQIOBKATXEAST5DCU5FIK3DRL6DERV3IFOC
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+// Uploading all contracts using bash script ./upload_contracts.sh
+Installing registry_contract...
+ℹ️ Skipping install because wasm already installed
+f180b69e33065608d8fabc790e88a9625a862751a3e46b8732ad40086e3aa56d
+Error: Failed to extract hash for registry_contract. Output:
+
+Installing rate_model_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: 2866c4fd4aa5d10317bbff71d480bdd0df1d4bb1d4023ae2c843f6309842c2d3
+🌎 Submitting install transaction…
+ef7cec748829e45be345b90a46b3e8c7485465764dd1b7a4c63a9359c8480e4b
+Error: Failed to extract hash for rate_model_contract. Output:
+
+Installing risk_engine_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: afe8ddefe92902f1b756922f0a99b7a8e69d6f5e180590a1d9d371e0e1659f1e
+🌎 Submitting install transaction…
+3be920dbc13112eac82354a8aff1d628bd68f9bcacbae0d666355231e9fc53ff
+Error: Failed to extract hash for risk_engine_contract. Output:
+
+Installing oracle_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: c3a9b7af6cdaa4ae757b56f6364c19320bc87682588dba81757ce6ec89662df9
+🌎 Submitting install transaction…
+9f23908d74ec2f1a0793c1361724d9a0177a5dc81ca95da6f10eb88d682802da
+Error: Failed to extract hash for oracle_contract. Output:
+
+Installing smart_account_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: 3b7eb660c56acef5c1272094ded9de7781b16259cf317e37920d2a7f5fe11dd8
+🌎 Submitting install transaction…
+89b940d65d0bc1e09ffae0a39c945f835845824105a55bba8ad39e0a9544bf3b
+Error: Failed to extract hash for smart_account_contract. Output:
+
+Installing account_manager_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: 9846cd88b52e9bf31d0f54cac4cb4a089b34487a46c3808286b1018f1d408671
+🌎 Submitting install transaction…
+b2f0a75f109460a5af2f7d7c3343f7a35e0a4791b0976432831aa4c7de4dc669
+Error: Failed to extract hash for account_manager_contract. Output:
+
+Installing lending_protocol_xlm...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: e87c6fa8fa01349b04b5de6bad68cc96fd22068fe128d28afe9a1eb3467a6ffb
+🌎 Submitting install transaction…
+a6365706b6db20d0070176ad62b03b3841374cdd516f0ece8ef73755a96ea85e
+Error: Failed to extract hash for lending_protocol_xlm. Output:
+
+Installing lending_protocol_usdc...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: d0eec26bee6f0ccee6cb490ff50653ccce92a4079ff1871f950ed2860fc6c3a1
+🌎 Submitting install transaction…
+0415aa8095f654213131cf4c09d6fcbd725c9eccbdd6ae41c54a9ff8ca1744c7
+Error: Failed to extract hash for lending_protocol_usdc. Output:
+
+Installing lending_protocol_eurc...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: ed7602e9540cee711ee2db9d4dd9462445a8e1e3c8cfd918d6439be0730f44c8
+🌎 Submitting install transaction…
+3a861d80754dc295915926da4a5004e7b97bed3740673b523619589cc6e3b3df
+Error: Failed to extract hash for lending_protocol_eurc. Output:
+
+All hashes collected:
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+// Deploy all contracts except Liquidity pools first
+stellar contract invoke \
+  --id CD6WTAFMKGZAE5RHEBCGEBQIOBKATXEAST5DCU5FIK3DRL6DERV3IFOC \
+  --source-account hemanth \
+  --network testnet \
+  -- \
+  deploy_all \
+  --registry_contract_wasm_hash f180b69e33065608d8fabc790e88a9625a862751a3e46b8732ad40086e3aa56d \
+  --risk_engine_wasm_hash 3be920dbc13112eac82354a8aff1d628bd68f9bcacbae0d666355231e9fc53ff \
+  --rate_model_wasm_hash ef7cec748829e45be345b90a46b3e8c7485465764dd1b7a4c63a9359c8480e4b \
+  --oracle_wasm_hash 9f23908d74ec2f1a0793c1361724d9a0177a5dc81ca95da6f10eb88d682802da \
+  --account_manager_wasm_hash b2f0a75f109460a5af2f7d7c3343f7a35e0a4791b0976432831aa4c7de4dc669 \
+  --smart_account_hash 89b940d65d0bc1e09ffae0a39c945f835845824105a55bba8ad39e0a9544bf3b
+
+ℹ️ Signing transaction: 0f9f3b45199ee89c0b6425407279409f301f5ac15f9a6aa5c1995ef199b1c144
+📔 CD6WTAFMKGZAE5RHEBCGEBQIOBKATXEAST5DCU5FIK3DRL6DERV3IFOC - Success - Log: {"vec":[{"string":"Deployed registry contract: {}"},{"address":"CCYUYCSFUK7N5O3UU5S36XXA5L2R4ZWVC47ATEMOHYSW6MYVL5XK7Z2Q"}]}
+📔 CD6WTAFMKGZAE5RHEBCGEBQIOBKATXEAST5DCU5FIK3DRL6DERV3IFOC - Success - Log: {"vec":[{"string":"Deployed rate model contract: {}"},{"address":"CCJEHWBQG7TKL4RN2EBU6ZN4L5YFAMKB3TDOUZXCSWFBCFXRLNMYGWH4"}]}
+📔 CD6WTAFMKGZAE5RHEBCGEBQIOBKATXEAST5DCU5FIK3DRL6DERV3IFOC - Success - Log: {"vec":[{"string":"Deployed risk engine contract: {}"},{"address":"CDLXPPSTPJT54IFO6XKTCPFPWIFSYZDO2MLODDMBYNTCWYXQMV6XKBMY"}]}
+📔 CD6WTAFMKGZAE5RHEBCGEBQIOBKATXEAST5DCU5FIK3DRL6DERV3IFOC - Success - Log: {"vec":[{"string":"Deployed oracle contract: {}"},{"address":"CARFSZG3YYG3J4UUDTSQGPG3ZS5WILF7VKJXPYAPMJJ2VMI6UD4SAYWJ"}]}
+📔 CD6WTAFMKGZAE5RHEBCGEBQIOBKATXEAST5DCU5FIK3DRL6DERV3IFOC - Success - Log: {"vec":[{"string":"Deployed account manager contract: {}"},{"address":"CD5UCJII2AQOYJQZ2A6NTCXCG6SCAVLJHIZOPW5Z6XKEIPNAPNB6PQNM"}]}
+["CCYUYCSFUK7N5O3UU5S36XXA5L2R4ZWVC47ATEMOHYSW6MYVL5XK7Z2Q","CCJEHWBQG7TKL4RN2EBU6ZN4L5YFAMKB3TDOUZXCSWFBCFXRLNMYGWH4","CDLXPPSTPJT54IFO6XKTCPFPWIFSYZDO2MLODDMBYNTCWYXQMV6XKBMY","CARFSZG3YYG3J4UUDTSQGPG3ZS5WILF7VKJXPYAPMJJ2VMI6UD4SAYWJ","CD5UCJII2AQOYJQZ2A6NTCXCG6SCAVLJHIZOPW5Z6XKEIPNAPNB6PQNM"]
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+// Deploy pool deployer contract 
+
+ stellar contract deploy   --wasm target/wasm32v1-none/release-with-logs/pool_deployer_contract.wasm   --source hemanth   --network testnet   --alias deployer_mango   -- --admin GDUX3DUENWHOEHKA5FKTMQGIBRTQUOE5RVA3R4IDBYZG7DZ6IQ6FUBR7 
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: ec7b7959a78a3a1d5f345cdedeba7cf689126fd5916a013be993fe9d94c0a6bf
+🌎 Submitting install transaction…
+ℹ️ Using wasm hash 2d443a9792a906101cfbf573187b104d97664b7832578a33fde857d2b13f1e10
+ℹ️ Simulating deploy transaction…
+ℹ️ Transaction hash is e23f439c9d667f96c329d2abf86b2ed41a601b2eb631d83e0c57dd71fecd3a54
+🔗 https://stellar.expert/explorer/testnet/tx/e23f439c9d667f96c329d2abf86b2ed41a601b2eb631d83e0c57dd71fecd3a54
+ℹ️ Signing transaction: e23f439c9d667f96c329d2abf86b2ed41a601b2eb631d83e0c57dd71fecd3a54
+🌎 Submitting deploy transaction…
+🔗 https://stellar.expert/explorer/testnet/contract/CDGMEK7OHGJ7CTVMZWG6L3ASBCZKTVYOXI7N2OC2MZYAOWOC3QTXGHDV
+✅ Deployed!
+⚠️ Overwriting existing contract id: CACGPV63IA4CLUSLATTH2OT6RASWF6QHPAOOHS6IB3JLNH4G66IZXATN
+CDGMEK7OHGJ7CTVMZWG6L3ASBCZKTVYOXI7N2OC2MZYAOWOC3QTXGHDV
+
+
+-- new one CATV5K5XTTHBHXUDH7ETKTPLJSJ7N7AKPHL7VA5ID6O6RSHVK3BPD7EK
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+// Deploy xlm pool contract first
+stellar contract invoke \
+  --id CDGMEK7OHGJ7CTVMZWG6L3ASBCZKTVYOXI7N2OC2MZYAOWOC3QTXGHDV \
+  --source-account hemanth \
+  --network testnet \
+  -- \
+  deploy_liquidity_pools \
+    --registry_address CCYUYCSFUK7N5O3UU5S36XXA5L2R4ZWVC47ATEMOHYSW6MYVL5XK7Z2Q \
+    --account_manager CD5UCJII2AQOYJQZ2A6NTCXCG6SCAVLJHIZOPW5Z6XKEIPNAPNB6PQNM \
+    --rate_model CCJEHWBQG7TKL4RN2EBU6ZN4L5YFAMKB3TDOUZXCSWFBCFXRLNMYGWH4 \
+    --lending_pool_xlm_hash a6365706b6db20d0070176ad62b03b3841374cdd516f0ece8ef73755a96ea85e
+
+ℹ️ Signing transaction: 57402cb21f51ae11466cfea9a3b78557b7f0c2ee836565aad33667eadec5c4cd
+📅 CCP3TX7WUZYDWWCH4HA63KONFQJDCRAJCEBQKWAAAWWBNEVPUO7BJOIA - Success - Event: [{"string":"constructor"},{"string":"admin_set"}] = {"address":"GDUX3DUENWHOEHKA5FKTMQGIBRTQUOE5RVA3R4IDBYZG7DZ6IQ6FUBR7"}
+📅 CCP3TX7WUZYDWWCH4HA63KONFQJDCRAJCEBQKWAAAWWBNEVPUO7BJOIA - Success - Event: [{"string":"constructor"},{"string":"registry_set"}] = {"address":"CCYUYCSFUK7N5O3UU5S36XXA5L2R4ZWVC47ATEMOHYSW6MYVL5XK7Z2Q"}
+📅 CCP3TX7WUZYDWWCH4HA63KONFQJDCRAJCEBQKWAAAWWBNEVPUO7BJOIA - Success - Event: [{"string":"constructor"},{"string":"account_manager_set"}] = {"address":"CD5UCJII2AQOYJQZ2A6NTCXCG6SCAVLJHIZOPW5Z6XKEIPNAPNB6PQNM"}
+📅 CCP3TX7WUZYDWWCH4HA63KONFQJDCRAJCEBQKWAAAWWBNEVPUO7BJOIA - Success - Event: [{"string":"constructor"},{"string":"rate_model_set"}] = {"address":"CCJEHWBQG7TKL4RN2EBU6ZN4L5YFAMKB3TDOUZXCSWFBCFXRLNMYGWH4"}
+📅 CCP3TX7WUZYDWWCH4HA63KONFQJDCRAJCEBQKWAAAWWBNEVPUO7BJOIA - Success - Event: [{"string":"constructor"},{"string":"native_xlm_set"}] = {"address":"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"}
+📅 CCP3TX7WUZYDWWCH4HA63KONFQJDCRAJCEBQKWAAAWWBNEVPUO7BJOIA - Success - Event: [{"string":"constructor"},{"string":"token_issuer_set"}] = {"address":"GBKTBXQK3FD7W3RRFL4CQE56WBDJF27HQPHG37CONO2MDKPDTTV4YUYG"}
+📔 CDGMEK7OHGJ7CTVMZWG6L3ASBCZKTVYOXI7N2OC2MZYAOWOC3QTXGHDV - Success - Log: {"vec":[{"string":"Deployed xlm pool contract: {}"},{"address":"CCP3TX7WUZYDWWCH4HA63KONFQJDCRAJCEBQKWAAAWWBNEVPUO7BJOIA"}]}
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+// Initialise xlm pool
+
+stellar contract invoke \
+  --id CCP3TX7WUZYDWWCH4HA63KONFQJDCRAJCEBQKWAAAWWBNEVPUO7BJOIA \
+  --source-account hemanth \
+  --network testnet \
+  -- \
+  initialize_pool_xlm
+ℹ️ Signing transaction: e991ce742df2dd18283c2ed61b1687e09a44c61f35550f8adf54484d0baca614
+"XLM pool initialised"
+
+
+
+// deposit xlm in pool
+
+
+stellar contract invoke \
+  --id CCP3TX7WUZYDWWCH4HA63KONFQJDCRAJCEBQKWAAAWWBNEVPUO7BJOIA \
+  --source-account hemanth \
+  --network testnet \
+  -- \
+  deposit_xlm \
+  --lender GDOHIA3DGO4ZTN6UADWGPL23MONUB736ZTTCUMQX73WOKXNXCJDIIOUA \
+  --amount 11

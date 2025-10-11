@@ -1,2 +1,2 @@
 #![no_std]
-mod rate_model;
+pub mod rate_model;

@@ -9,3 +9,7 @@ contracts/vanna_finance/test_snapshots/*
 account.txt
 transaction_tests.txt
 tests_accounts.txt
+contracts/VEURCTokenContract/test_snapshots/*
+contracts/VUSDCTokenContract/test_snapshots/*
+contracts/VXLMTokenContract/test_snapshots/*
+integrated_test/test_snapshots/*

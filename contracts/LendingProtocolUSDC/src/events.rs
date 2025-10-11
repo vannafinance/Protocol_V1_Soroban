@@ -27,7 +27,7 @@ pub struct LendingTokenMintEvent {
     pub token_amount: U256,
     pub timestamp: u64,
     pub token_symbol: Symbol,
-    pub token_value: U256,
+    // pub token_value: U256,
 }
 
 #[contracttype]
@@ -37,7 +37,7 @@ pub struct LendingTokenBurnEvent {
     pub token_amount: U256,
     pub timestamp: u64,
     pub token_symbol: Symbol,
-    pub token_value: U256,
+    // pub token_value: U256,
 }
 
 #[contracttype]

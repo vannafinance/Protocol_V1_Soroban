@@ -15,6 +15,6 @@ mod tests {
     }
 }
 
-mod oracle_service;
-mod reflector;
+pub mod oracle_service;
+pub mod reflector;
 mod types;

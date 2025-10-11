@@ -33,11 +33,9 @@ pub enum TokenDataKey {
     TotalTokensMinted(Symbol),
     TotalTokensBurnt(Symbol),
     CurrentVTokenBalance(Symbol),
-    VTokenBalance(Address, Symbol),
+    // VTokenBalance(Address, Symbol),
     VTokenValue(Symbol),
-    VTokenClientAddress(Symbol),
-    UsdcClientAddress,
-    EurcClientAddress,
+    VTokenContractAddress(Symbol),
     NativeXLMClientAddress,
     TokenIssuerAddress,
 }

@@ -1,0 +1,360 @@
+account: hemanth_testnet 
+testnet :  GAUR2W5IOOFNLZYFBXEAJSMQU6XY4H6AUOP4R4FFYNM2RGPP7WFF364C
+pvt key : SBMQQ2MUZKOHEKZWWNUGLACZJ3X3DV7UXMBILVS2OA4H6IVJVPVJJT33
+recovery text : moral craft special angry gesture need decorate valley trumpet print furnace milk title diary steak maximum orbit cross net since canal secret exile turn
+
+
+account: elephant2
+testnet : GAKEPI64RXSQDRGEDBTHJO3JZJ6HERW37AX6PJWQJ6UW7HSI6PSQX2S6
+pvt key : SAXS4FHHCGSX76DV2OIVJAGAATTIVOK6YVU4YWHIOIJKV3BS6MDVD3W3
+recovery text : drill large fix attend galaxy depart federal where humble seed bracket rally august donor side burden bench person police upper bamboo become satoshi poverty
+
+
+account : elephant3
+testnet : GBJV2BWGKI4LOOGIOPX3SKJAXUTEPKPBSXH4WH4F7KKCXKA3ZNJHXMDZ
+pvt key : SDYD265PCAMZAER77BMK44AV6ZI5ANKQSTVHL47WEEXUO3ER26YFCCQL
+recovery text : disease match small indoor weather jump current spot south trumpet couple chalk again cram toward captain harvest write snow human ordinary load alone school
+
+
+
+account : elephant4
+testnet : GCVJJEHEEWLA5A6KM26ZEUUXLW33NY353AXMVQ5GIUHEJSZNYVURTK2F
+pvt net : SAXAC2S365KJHFUGKHN3IQ7TXFPHB4VVFBFTBBT3JWOBOWW47WYTVAUU
+recovery text: inside medal gain uncover moon tube check course swear gadget tide shed grape umbrella lend crack welcome index glad front innocent remind garlic bike
+
+
+account : elephant5
+testnet : GBBDNBO7KNF4RCHLIRTGL64W4IHPUIMPVVVFZCIFCQD4M6ZU54XUYTP5
+pvt key : SB2ON5GKINGNSDSO5WUAM6U6WCCIDZCHXGODPN3IHPRL5BMF5VZROPB6
+recovery text : act skin fluid rail banner casino earn night flush wheat legal second upon emotion erosion renew fitness toy angle time spider wolf cheap puzzle
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+// Deploying deployer contract.
+
+ stellar contract deploy   --wasm target/wasm32v1-none/release-with-logs/deployer_contract.wasm   --source hemanth_testnet   --network testnet   --alias deployer_apple   -- --admin GAUR2W5IOOFNLZYFBXEAJSMQU6XY4H6AUOP4R4FFYNM2RGPP7WFF364C 
+ℹ️ Skipping install because wasm already installed
+ℹ️ Using wasm hash 46a0290f759a746a018c79afdb60a0ae76882d6d2a51329fd24fc6b1d47e2bbb
+ℹ️ Simulating deploy transaction…
+ℹ️ Transaction hash is 13640ae2e7182cb9173fba3f4c633b270c10ff07bd3b0cbe53af95c1126de140
+🔗 https://stellar.expert/explorer/testnet/tx/13640ae2e7182cb9173fba3f4c633b270c10ff07bd3b0cbe53af95c1126de140
+ℹ️ Signing transaction: 13640ae2e7182cb9173fba3f4c633b270c10ff07bd3b0cbe53af95c1126de140
+🌎 Submitting deploy transaction…
+🔗 https://stellar.expert/explorer/testnet/contract/CCTVJKAAUMKFK5M3FNWCNKNHBDQDIGZQ4L3HNS26YX26CYQE7Z6MIBCE
+✅ Deployed!
+⚠️ Overwriting existing alias "deployer_apple" that currently links to contract ID: CB6SIJURW3ID4CWMUCG7OEPLLSAGZTCYQIC3NFNQAUBILK6ATDRVLB7T
+CCTVJKAAUMKFK5M3FNWCNKNHBDQDIGZQ4L3HNS26YX26CYQE7Z6MIBCE
+
+
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+./upload_contracts.sh
+Installing registry_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: afcd146bf3930cb6e624668de9fdee3ca0503769520bd77cbef24d8a8068860d
+🌎 Submitting install transaction…
+7b3d41d85aa7c9dc1231b33933adc84bdcb1665d4e5d42df9005d861df17df4a
+Error: Failed to extract hash for registry_contract. Output:
+
+Installing rate_model_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: c22053b19054e3b2d7001c8ca1a648f74a388362d6e8b174019bc7076a9e0019
+🌎 Submitting install transaction…
+7a5166ce506349a273b7dcd88709e123c210f39ebc687277322aee9596454194
+Error: Failed to extract hash for rate_model_contract. Output:
+
+Installing risk_engine_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: 8af659e6877790a45de56c22ff765b4ac2950912171c3b137d2fd20a31371e1b
+🌎 Submitting install transaction…
+9497b233e52b5392e57e1e89bf1b360cb2f562ecdbcefe4d168afd657b4c3716
+Error: Failed to extract hash for risk_engine_contract. Output:
+
+Installing oracle_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: 55b8d7e70f2a37f86f13fb6f29abb42448c50dff1390f0c90543c15d848bff18
+🌎 Submitting install transaction…
+567c21152e4b113a939046d1831a334fc3a4ece04742c4c490c0885e1ac0bac0
+Error: Failed to extract hash for oracle_contract. Output:
+
+Installing smart_account_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: ab48a121d9c42fcd5759bf8b77c3b93fb800e7f2638047044ae97c737ed28f7a
+🌎 Submitting install transaction…
+3dbc69fcba734eea7baedaaeaeb5d5dfcfed0843c8a9031ac24e4a8b90af45fd
+Error: Failed to extract hash for smart_account_contract. Output:
+
+Installing account_manager_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: ac92c1072ed5f86fb5610f128dd7b84f6504a1d8f14792d2be173caaa6f10089
+🌎 Submitting install transaction…
+640c8e643baf807eaa98015e941c29b98dde13d7477973b8d780aa75dfa29341
+Error: Failed to extract hash for account_manager_contract. Output:
+
+Installing lending_protocol_xlm...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: 37f0d5f5cbd9881183dfdac0947941dc179afa50b2d6ef6dcdc1c2ac866d1c2e
+🌎 Submitting install transaction…
+67d5ad762d13c11cc21b4ee6897ace6bec3106629d0828fb9a33c734ed44ff09
+Error: Failed to extract hash for lending_protocol_xlm. Output:
+
+Installing lending_protocol_usdc...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: 9fac94d2a58c03115ece8dc8179d3a530df7002d6fe9ef83bc36915846df7106
+🌎 Submitting install transaction…
+79fd5191ee8b0462a924212170742db8fa4d71dd5547deb235ad6bcf49824111
+Error: Failed to extract hash for lending_protocol_usdc. Output:
+
+Installing lending_protocol_eurc...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: c9e52f962c35df4e5e6ce4491089087dab0f989235bc866c5797f2a4ca7f77b1
+🌎 Submitting install transaction…
+dbb8c7dc1b2ee150ab57d7a36853eadea1e4f54bfbc4082a2844d3112c4726be
+Error: Failed to extract hash for lending_protocol_eurc. Output:
+
+Installing vxlm_token_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: be5830dc8e7108ed6f23feffb3dc4a8c6e1a2267df6934eceb1c3e6ce76e1c6e
+🌎 Submitting install transaction…
+c8a33afd4c6923824e0aeea3c65d7f6fcbdc7b68f4fd0bd055cdb248439a29d5
+Error: Failed to extract hash for vxlm_token_contract. Output:
+
+Installing vusdc_token_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: 88612143496f93f125a46ab587af6b69d4ea972e1a684980b72044d5b33d3ae7
+🌎 Submitting install transaction…
+485087c0d22b631a5c6cff46572eeb58f713cc55633a32f7336858b9c698e823
+Error: Failed to extract hash for vusdc_token_contract. Output:
+
+Installing veurc_token_contract...
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: 09b7a312e421f9384276148e68a5d145a1349349d15665781bae237ec0746de8
+🌎 Submitting install transaction…
+4851a8d7111f7211371fcada87699c611fb059bf06ebcc041b8b97dbf4f466bf
+Error: Failed to extract hash for veurc_token_contract. Output:
+
+
+All hashes collected:
+
+Ready-to-copy Rust constants (add to your deployer contract):
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+// Deploy all contracts except Liquidity pools first
+stellar contract invoke \
+  --id CCTVJKAAUMKFK5M3FNWCNKNHBDQDIGZQ4L3HNS26YX26CYQE7Z6MIBCE \
+  --source-account hemanth_testnet \
+  --network testnet \
+  -- \
+  deploy_all \
+  --registry_contract_wasm_hash 7b3d41d85aa7c9dc1231b33933adc84bdcb1665d4e5d42df9005d861df17df4a \
+  --risk_engine_wasm_hash 9497b233e52b5392e57e1e89bf1b360cb2f562ecdbcefe4d168afd657b4c3716 \
+  --rate_model_wasm_hash 7a5166ce506349a273b7dcd88709e123c210f39ebc687277322aee9596454194 \
+  --oracle_wasm_hash 567c21152e4b113a939046d1831a334fc3a4ece04742c4c490c0885e1ac0bac0 \
+  --account_manager_wasm_hash 640c8e643baf807eaa98015e941c29b98dde13d7477973b8d780aa75dfa29341 \
+  --smart_account_hash 3dbc69fcba734eea7baedaaeaeb5d5dfcfed0843c8a9031ac24e4a8b90af45fd
+
+ℹ️ Signing transaction: 834a3ee9221e5331af46f5da81bd7e355cb303495cf320e00895f27f8eb00d1d
+📔 CCTVJKAAUMKFK5M3FNWCNKNHBDQDIGZQ4L3HNS26YX26CYQE7Z6MIBCE - Success - Log: {"vec":[{"string":"Deployed registry contract: {}"},{"address":"CBMUTKNRKFILKOOQ6GHKGOIO6Q7YAU7XXIYG5NCGBCCPVSMAUD35IZC3"}]}
+📔 CCTVJKAAUMKFK5M3FNWCNKNHBDQDIGZQ4L3HNS26YX26CYQE7Z6MIBCE - Success - Log: {"vec":[{"string":"Deployed rate model contract: {}"},{"address":"CB4ATQIFY7NAOFWHOCEB7WE7TUC3OG6KUSVATS7V43YJMGYAS723OQ4A"}]}
+📔 CCTVJKAAUMKFK5M3FNWCNKNHBDQDIGZQ4L3HNS26YX26CYQE7Z6MIBCE - Success - Log: {"vec":[{"string":"Deployed risk engine contract: {}"},{"address":"CBICIFI6UUC5E5NETMCOR4TPHG3LRNQHVB4QNJABA6IDWWIZ25HQMJ77"}]}
+📔 CCTVJKAAUMKFK5M3FNWCNKNHBDQDIGZQ4L3HNS26YX26CYQE7Z6MIBCE - Success - Log: {"vec":[{"string":"Deployed oracle contract: {}"},{"address":"CASLIZ36MQPBY3TDYTLFR6VE7VH3NNIZG5D5IIC4JBKDV24GL5RWYILS"}]}
+📔 CCTVJKAAUMKFK5M3FNWCNKNHBDQDIGZQ4L3HNS26YX26CYQE7Z6MIBCE - Success - Log: {"vec":[{"string":"Deployed account manager contract: {}"},{"address":"CDVZVNCZL663MMN2X5XS5F247NAZTSKD47ZLVJDQ47JXFPKRC2OMTCOG"}]}
+["CBMUTKNRKFILKOOQ6GHKGOIO6Q7YAU7XXIYG5NCGBCCPVSMAUD35IZC3","CB4ATQIFY7NAOFWHOCEB7WE7TUC3OG6KUSVATS7V43YJMGYAS723OQ4A","CBICIFI6UUC5E5NETMCOR4TPHG3LRNQHVB4QNJABA6IDWWIZ25HQMJ77","CASLIZ36MQPBY3TDYTLFR6VE7VH3NNIZG5D5IIC4JBKDV24GL5RWYILS","CDVZVNCZL663MMN2X5XS5F247NAZTSKD47ZLVJDQ47JXFPKRC2OMTCOG"]
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+// Deploy pool deployer contract 
+ stellar contract deploy   --wasm target/wasm32v1-none/release-with-logs/pool_deployer_contract.wasm   --source hemanth_testnet   --network testnet   --alias deployer_mango   -- --admin GAUR2W5IOOFNLZYFBXEAJSMQU6XY4H6AUOP4R4FFYNM2RGPP7WFF364C 
+ℹ️ Simulating install transaction…
+ℹ️ Signing transaction: d0858abbde256068d6e6d5b927f5f3c99ad074c8ae8b706f3891355d1b309844
+🌎 Submitting install transaction…
+ℹ️ Using wasm hash ab3011c44d9d5a7e1b1d1dc8e2cabbac78549887a334b10f4ebece468a3d1f53
+ℹ️ Simulating deploy transaction…
+ℹ️ Transaction hash is 99105ce065b25298f08ca44f20e58d3a5885fb83ecc424cffc8b03ff92d06482
+🔗 https://stellar.expert/explorer/testnet/tx/99105ce065b25298f08ca44f20e58d3a5885fb83ecc424cffc8b03ff92d06482
+ℹ️ Signing transaction: 99105ce065b25298f08ca44f20e58d3a5885fb83ecc424cffc8b03ff92d06482
+🌎 Submitting deploy transaction…
+🔗 https://stellar.expert/explorer/testnet/contract/CCOM3GMKDA3ZIWPYKLEJLJJMGEFMOON63VIE35WAZXRN3KP3NPLHZSDT
+✅ Deployed!
+⚠️ Overwriting existing alias "deployer_mango" that currently links to contract ID: CATV5K5XTTHBHXUDH7ETKTPLJSJ7N7AKPHL7VA5ID6O6RSHVK3BPD7EK
+CCOM3GMKDA3ZIWPYKLEJLJJMGEFMOON63VIE35WAZXRN3KP3NPLHZSDT
+
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+// Deploy xlm pool contract first
+stellar contract invoke \
+  --id CCOM3GMKDA3ZIWPYKLEJLJJMGEFMOON63VIE35WAZXRN3KP3NPLHZSDT \
+  --source-account hemanth_testnet \
+  --network testnet \
+  -- \
+  deploy_lps_and_token_contracts \
+    --registry_address CBMUTKNRKFILKOOQ6GHKGOIO6Q7YAU7XXIYG5NCGBCCPVSMAUD35IZC3 \
+    --account_manager CDVZVNCZL663MMN2X5XS5F247NAZTSKD47ZLVJDQ47JXFPKRC2OMTCOG \
+    --rate_model CB4ATQIFY7NAOFWHOCEB7WE7TUC3OG6KUSVATS7V43YJMGYAS723OQ4A \
+    --lending_pool_xlm_hash 67d5ad762d13c11cc21b4ee6897ace6bec3106629d0828fb9a33c734ed44ff09 \
+    --vxlm_contract_hash c8a33afd4c6923824e0aeea3c65d7f6fcbdc7b68f4fd0bd055cdb248439a29d5 \
+    --vusdc_contract_hash 485087c0d22b631a5c6cff46572eeb58f713cc55633a32f7336858b9c698e823 \
+    --veurc_contract_hash 4851a8d7111f7211371fcada87699c611fb059bf06ebcc041b8b97dbf4f466bf
+
+ ℹ️ Signing transaction: 8adea299f799b80c05f9b490f38bddd1772d2d5cdd451ed44ef559b0961aa326
+📅 CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB - Success - Event: [{"string":"constructor"},{"string":"admin_set"}] = {"address":"GAUR2W5IOOFNLZYFBXEAJSMQU6XY4H6AUOP4R4FFYNM2RGPP7WFF364C"}
+📅 CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB - Success - Event: [{"string":"constructor"},{"string":"registry_set"}] = {"address":"CBMUTKNRKFILKOOQ6GHKGOIO6Q7YAU7XXIYG5NCGBCCPVSMAUD35IZC3"}
+📅 CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB - Success - Event: [{"string":"constructor"},{"string":"account_manager_set"}] = {"address":"CDVZVNCZL663MMN2X5XS5F247NAZTSKD47ZLVJDQ47JXFPKRC2OMTCOG"}
+📅 CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB - Success - Event: [{"string":"constructor"},{"string":"rate_model_set"}] = {"address":"CB4ATQIFY7NAOFWHOCEB7WE7TUC3OG6KUSVATS7V43YJMGYAS723OQ4A"}
+📅 CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB - Success - Event: [{"string":"constructor"},{"string":"native_xlm_set"}] = {"address":"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"}
+📅 CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB - Success - Event: [{"string":"constructor"},{"string":"token_issuer_set"}] = {"address":"GBKTBXQK3FD7W3RRFL4CQE56WBDJF27HQPHG37CONO2MDKPDTTV4YUYG"}
+📔 CCOM3GMKDA3ZIWPYKLEJLJJMGEFMOON63VIE35WAZXRN3KP3NPLHZSDT - Success - Log: {"vec":[{"string":"Deployed xlm pool contract: {}"},{"address":"CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB"}]}
+📔 CCOM3GMKDA3ZIWPYKLEJLJJMGEFMOON63VIE35WAZXRN3KP3NPLHZSDT - Success - Log: {"vec":[{"string":"Deployed vxlm token contract : {}"},{"address":"CDJ3NWOUPQRC2ACBLIFEBSUJKMMQAYDUKUSKFUEE2EW73IBRTQIPCXPJ"}]}
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++   
+
+
+// INitialise vxlm_token_contract
+
+stellar contract invoke \
+  --id CDJ3NWOUPQRC2ACBLIFEBSUJKMMQAYDUKUSKFUEE2EW73IBRTQIPCXPJ \
+  --source-account hemanth_testnet \
+  --network testnet \
+  -- \
+  initialize \
+   --admin CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB \
+   --decimal 6 \
+   --name 'VXLM TOKEN' \
+   --symbol 'VXLM'
+
+ℹ️ Signing transaction: 65befed8c9748b6f9d94ee7cbc668d73c2bcc2f1b5ab757fec4cd979a9d6abd5
+📅 CDJ3NWOUPQRC2ACBLIFEBSUJKMMQAYDUKUSKFUEE2EW73IBRTQIPCXPJ - Success - Event: [{"symbol":"initialize"}] = {"vec":[{"address":"CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB"},{"u32":6},{"string":"VXLM TOKEN"},{"string":"VXLM"}]}
+null
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+
+// Initialise xlm pool
+stellar contract invoke \
+  --id CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB \
+  --source-account hemanth_testnet \
+  --network testnet \
+  -- \
+  initialize_pool_xlm \
+  --vxlm_token_contract_address CDJ3NWOUPQRC2ACBLIFEBSUJKMMQAYDUKUSKFUEE2EW73IBRTQIPCXPJ
+ℹ️ Signing transaction: fd1b6aa1d1f8ec23778004481dcff06fe8c63d7d3710952f2efd986c725f9ec6
+📅 CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB - Success - Event: [{"string":"initialize_pool_xlm"},{"string":"xlm_pool_initialized"}] = {"bool":true}
+"XLM pool initialised"
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+elephant2 : GAKEPI64RXSQDRGEDBTHJO3JZJ6HERW37AX6PJWQJ6UW7HSI6PSQX2S6
+
+
+
+  stellar contract invoke \
+  --id CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB \
+  --source-account elephant2 \
+  --network testnet \
+  -- \
+  deposit_xlm \
+  --lender GAKEPI64RXSQDRGEDBTHJO3JZJ6HERW37AX6PJWQJ6UW7HSI6PSQX2S6 \
+  --amount 11
+ℹ️ Signing transaction: 99655111decd2cc2f75c0cc6477c788d4d3d8ec108c4b685ecf6ada6ffd614ee
+📅 CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC - Success - Event: [{"symbol":"transfer"},{"address":"GAKEPI64RXSQDRGEDBTHJO3JZJ6HERW37AX6PJWQJ6UW7HSI6PSQX2S6"},{"address":"CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB"},{"string":"native"}] = {"i128":"11"}
+📅 CDJ3NWOUPQRC2ACBLIFEBSUJKMMQAYDUKUSKFUEE2EW73IBRTQIPCXPJ - Success - Event: [{"symbol":"mint"}] = {"map":[{"key":{"symbol":"admin"},"val":{"address":"CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB"}},{"key":{"symbol":"amount"},"val":{"i128":"11"}},{"key":{"symbol":"to"},"val":{"address":"GAKEPI64RXSQDRGEDBTHJO3JZJ6HERW37AX6PJWQJ6UW7HSI6PSQX2S6"}}]}
+📅 CDJ3NWOUPQRC2ACBLIFEBSUJKMMQAYDUKUSKFUEE2EW73IBRTQIPCXPJ - Success - Event: [{"symbol":"transfer"}] = {"map":[{"key":{"symbol":"amount"},"val":{"i128":"11"}},{"key":{"symbol":"from"},"val":"void"},{"key":{"symbol":"to"},"val":{"address":"GAKEPI64RXSQDRGEDBTHJO3JZJ6HERW37AX6PJWQJ6UW7HSI6PSQX2S6"}}]}
+📅 CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB - Success - Event: [{"symbol":"mint_event"},{"address":"GAKEPI64RXSQDRGEDBTHJO3JZJ6HERW37AX6PJWQJ6UW7HSI6PSQX2S6"}] = {"map":[{"key":{"symbol":"lender"},"val":{"address":"GAKEPI64RXSQDRGEDBTHJO3JZJ6HERW37AX6PJWQJ6UW7HSI6PSQX2S6"}},{"key":{"symbol":"timestamp"},"val":{"u64":"1759369671"}},{"key":{"symbol":"token_amount"},"val":{"u256":"11"}},{"key":{"symbol":"token_symbol"},"val":{"symbol":"VXLM"}}]}
+📅 CBQL7FTAMV27QXZUEY5QYCYBUTIVBLQXMNMX7KUS7HVAJFXHMZ2XSMSB - Success - Event: [{"symbol":"deposit_event"},{"address":"GAKEPI64RXSQDRGEDBTHJO3JZJ6HERW37AX6PJWQJ6UW7HSI6PSQX2S6"}] = {"map":[{"key":{"symbol":"amount"},"val":{"u256":"11"}},{"key":{"symbol":"asset_symbol"},"val":{"symbol":"XLM"}},{"key":{"symbol":"lender"},"val":{"address":"GAKEPI64RXSQDRGEDBTHJO3JZJ6HERW37AX6PJWQJ6UW7HSI6PSQX2S6"}},{"key":{"symbol":"timestamp"},"val":{"u64":"1759369671"}}]}
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+   stellar contract invoke \
+  --id CDVZVNCZL663MMN2X5XS5F247NAZTSKD47ZLVJDQ47JXFPKRC2OMTCOG \
+  --source-account elephant4 \
+  --network testnet \
+  -- \
+  create_account \
+  --user_address GCVJJEHEEWLA5A6KM26ZEUUXLW33NY353AXMVQ5GIUHEJSZNYVURTK2F \
+  --account_manager CDVZVNCZL663MMN2X5XS5F247NAZTSKD47ZLVJDQ47JXFPKRC2OMTCOG
+ℹ️ Signing transaction: 7912172351c95e9bd4e9a0ed41359a9b8d4dbf1b9d692c88f353f91c62ee9b56
+📔 CDVZVNCZL663MMN2X5XS5F247NAZTSKD47ZLVJDQ47JXFPKRC2OMTCOG - Success - Log: {"string":"successfully deployed margin account"}
+"CDNZCBHRZJ3HOZULKXIJ4K6OVHBPLSFT3YNF5T7EGX5SA3SUO7TD4ZBZ"
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+  stellar contract invoke \
+  --id CDVZVNCZL663MMN2X5XS5F247NAZTSKD47ZLVJDQ47JXFPKRC2OMTCOG \
+  --source-account elephant5 \
+  --network testnet \
+  -- \
+  create_account \
+  --user_address GBBDNBO7KNF4RCHLIRTGL64W4IHPUIMPVVVFZCIFCQD4M6ZU54XUYTP5 \
+  --account_manager CDVZVNCZL663MMN2X5XS5F247NAZTSKD47ZLVJDQ47JXFPKRC2OMTCOG
+ℹ️ Signing transaction: baf05704b064acfc86f54f3ba98b89349364fd203dfa5329a5781bab91ca2009
+📔 CDVZVNCZL663MMN2X5XS5F247NAZTSKD47ZLVJDQ47JXFPKRC2OMTCOG - Success - Log: {"string":"successfully deployed margin account"}
+"CBCAKJJOMMC6W3G5IZSJYWICUACOGRBCXWNKP7LM56VRC4ACOKWFZEFW"
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+stellar contract invoke \
+  --id CDVZVNCZL663MMN2X5XS5F247NAZTSKD47ZLVJDQ47JXFPKRC2OMTCOG \
+  --source-account hemanth_testnet \
+  --network testnet \
+  -- \
+  set_iscollateral_allowed \
+  --token_symbol USDC
+ℹ️ Signing transaction: a873cc4961aec3c0a5b126951a782c443bbb2cfb0aaaacafda7743605a6d9263
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+stellar contract invoke \
+  --id CDVZVNCZL663MMN2X5XS5F247NAZTSKD47ZLVJDQ47JXFPKRC2OMTCOG \
+  --source-account hemanth_testnet \
+  --network testnet \
+  -- \
+  set_max_asset_cap \
+  --cap 10
+ℹ️ Signing transaction: ed7a71a9540d01c71833e16830a912b55db2f198445363ab911cb04cd6da8482
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+stellar contract invoke \
+  --id CBMUTKNRKFILKOOQ6GHKGOIO6Q7YAU7XXIYG5NCGBCCPVSMAUD35IZC3 \
+  --source-account hemanth_testnet \
+  --network testnet \
+  -- \
+  set_native_usdc_contract_address \
+  --usdc_contract_address GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
+ℹ️ Signing transaction: 2cb9058f6675eceb93ee54535d69ab35ccab3a09ada16b79fc8b054bd3ff346d
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+  stellar contract invoke \
+  --id CDVZVNCZL663MMN2X5XS5F247NAZTSKD47ZLVJDQ47JXFPKRC2OMTCOG \
+  --source-account elephant5 \
+  --network testnet \
+  -- \
+  deposit_collateral_tokens \
+  --user_address GBBDNBO7KNF4RCHLIRTGL64W4IHPUIMPVVVFZCIFCQD4M6ZU54XUYTP5 \
+  --token_symbol USDC \
+  --token_amount 3

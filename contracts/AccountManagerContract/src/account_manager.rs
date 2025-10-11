@@ -1,13 +1,13 @@
 use core::panic;
 
 use soroban_sdk::{
-    Address, BytesN, Env, Symbol, U256, Vec, contract, contractimpl, panic_with_error, token,
-    xdr::ToXdr,
+    Address, Bytes, BytesN, Env, Symbol, U256, Vec, contract, contractimpl, log, panic_with_error,
+    token, xdr::ToXdr,
 };
 
 use crate::types::{
-    AccountDeletionEvent, AccountManagerError, AccountManagerKey, TraderBorrowEvent,
-    TraderLiquidateEvent, TraderRepayEvent, TraderSettleAccountEvent,
+    AccountCreationEvent, AccountDeletionEvent, AccountManagerError, AccountManagerKey,
+    TraderBorrowEvent, TraderLiquidateEvent, TraderRepayEvent, TraderSettleAccountEvent,
 };
 
 const TLL_LEDGERS_YEAR: u32 = 6307200;
@@ -62,20 +62,29 @@ impl AccountManagerContract {
         env.storage()
             .persistent()
             .set(&AccountManagerKey::RegistryContract, &registry_contract);
+
+        Self::extend_ttl_account_manager(&env, AccountManagerKey::Admin);
+        Self::extend_ttl_account_manager(&env, AccountManagerKey::RegistryContract);
     }
 
     pub fn create_account(
         env: &Env,
-        user_address: Address,
+        trader_address: Address,
     ) -> Result<Address, AccountManagerError> {
+        trader_address.require_auth();
+
+        if Self::has_smart_account(&env, &trader_address) {
+            panic!("Trader already has a smart account!");
+        }
+
         let mut users = env
             .storage()
             .persistent()
             .get(&AccountManagerKey::UsersList)
             .unwrap_or_else(|| Vec::new(&env));
 
-        if !users.contains(&user_address) {
-            users.push_back(user_address.clone());
+        if !users.contains(&trader_address) {
+            users.push_back(trader_address.clone());
             env.storage()
                 .persistent()
                 .set(&AccountManagerKey::UsersList, &users);
@@ -89,33 +98,52 @@ impl AccountManagerContract {
         let registry_client = registry_contract::Client::new(env, &registry_contract_address);
         let smart_account_hash = registry_client.get_smart_account_hash();
 
-        let salt =
-            Self::generate_predictable_salt(&env, &user_address, &env.current_contract_address());
+        let salt = Self::generate_predictable_salt(
+            &env,
+            trader_address.clone(),
+            env.current_contract_address(),
+        );
 
         let mut constructor_args = Vec::new(&env);
+        // constructor_args.push_back(account_manager.to_val());
+        constructor_args.push_back(env.current_contract_address().to_val()); // ONly commented out for testing.
         constructor_args.push_back(registry_contract_address.to_val());
-        constructor_args.push_back(env.current_contract_address().to_val());
-        constructor_args.push_back(user_address.to_val());
+        constructor_args.push_back(trader_address.to_val());
 
-        let deployed_address = env
+        let smart_account = env
             .deployer()
             .with_address(env.current_contract_address(), salt)
             .deploy_v2(smart_account_hash, constructor_args);
 
         env.storage().persistent().set(
-            &AccountManagerKey::SmartAccountAddress(user_address.clone()),
-            &deployed_address,
+            &AccountManagerKey::SmartAccountAddress(trader_address.clone()),
+            &smart_account,
         );
 
-        Ok(deployed_address)
+        env.storage().persistent().set(
+            &AccountManagerKey::TraderAddress(smart_account.clone()),
+            &trader_address,
+        );
+
+        env.events().publish(
+            (Symbol::new(&env, "Smart_account_creation"), trader_address),
+            AccountCreationEvent {
+                smart_account: smart_account.clone(),
+                creation_time: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(smart_account)
     }
 
     // !! What to do with the collateral? send it back?
-    pub fn delete_account(env: &Env, user_address: Address) -> Result<(), AccountManagerError> {
-        user_address.require_auth();
+    pub fn delete_account(
+        env: &Env,
+        smart_account_address: Address,
+    ) -> Result<bool, AccountManagerError> {
+        let trader_address = Self::get_trader_address(env, smart_account_address.clone());
+        trader_address.require_auth();
 
-        let smart_account_address: Address =
-            Self::get_smart_account_address(&env, user_address.clone());
         let smart_account_client =
             smart_account_contract::Client::new(&env, &smart_account_address);
 
@@ -135,13 +163,13 @@ impl AccountManagerContract {
             });
 
             smart_account_client.remove_collateral_token_balance(
-                &user_address,
+                &trader_address,
                 &coltoken,
                 &col_token_amount,
             );
         }
 
-        smart_account_client.deactivate_account(&user_address);
+        smart_account_client.deactivate_account();
 
         // remove user's address from list of user addresses
         let key_d = AccountManagerKey::UsersList;
@@ -151,50 +179,47 @@ impl AccountManagerContract {
             .get(&key_d)
             .expect("Account contract not initiated");
         let index = user_addresses
-            .first_index_of(user_address.clone())
-            .unwrap_or_else(|| panic!("User account not found in list"));
+            .first_index_of(trader_address.clone())
+            .unwrap_or_else(|| panic!("User account has already been deleted"));
         user_addresses.remove(index);
         env.storage().persistent().set(&key_d, &user_addresses);
         Self::extend_ttl_account_manager(&env, key_d);
 
         // Set account deletion time
         env.storage().persistent().set(
-            &AccountManagerKey::AccountDeletedTime(user_address.clone()),
+            &AccountManagerKey::AccountDeletedTime(smart_account_address.clone()),
             &env.ledger().timestamp(),
         );
 
         env.events().publish(
-            (Symbol::new(&env, "Account_Deleted"), user_address.clone()),
+            (Symbol::new(&env, "Smart_Account_Deleted"), &trader_address),
             AccountDeletionEvent {
-                smart_account: user_address,
+                smart_account: smart_account_address,
                 deletion_time: env.ledger().timestamp(),
             },
         );
 
-        Ok(())
+        Ok(true)
     }
 
     pub fn deposit_collateral_tokens(
         env: Env,
-        user_address: Address,
+        smart_account: Address,
         token_symbol: Symbol,
         token_amount: U256,
     ) -> Result<(), AccountManagerError> {
-        user_address.require_auth();
+        let trader_address = Self::get_trader_address(&env, smart_account.clone());
+        trader_address.require_auth();
 
-        if !Self::has_smart_account(&env, user_address.clone()) {
-            panic!("User doesn't have a smart account address, Create smart account first");
+        if token_amount.eq(&U256::from_u128(&env, 0)) {
+            panic!("Cannot deposit a zero amount");
         }
 
         if !Self::get_iscollateral_allowed(&env, token_symbol.clone()) {
             panic!("This token is not allowed as collateral");
         }
 
-        let smart_account_address: Address =
-            Self::get_smart_account_address(&env, user_address.clone());
-
-        let smart_account_client =
-            smart_account_contract::Client::new(&env, &smart_account_address);
+        let smart_account_client = smart_account_contract::Client::new(&env, &smart_account);
 
         let collateral_tokens_list = smart_account_client.get_all_collateral_tokens();
 
@@ -214,29 +239,17 @@ impl AccountManagerContract {
         let registry_client = registry_contract::Client::new(&env, &registry_address);
 
         if token_symbol == Symbol::new(&env, "XLM") {
-            let native_xlm_address = registry_client.get_xlm_token_contract_adddress();
+            let native_xlm_address = registry_client.get_xlm_contract_adddress();
             let xlm_token = token::Client::new(&env, &native_xlm_address);
-            xlm_token.transfer(
-                &user_address,
-                &smart_account_address,
-                &(amount_u128 as i128),
-            );
+            xlm_token.transfer(&trader_address, &smart_account, &(amount_u128 as i128));
         } else if token_symbol == Symbol::new(&env, "USDC") {
             let usdc_contract_address = registry_client.get_usdc_contract_address();
             let usdc_token = token::Client::new(&env, &usdc_contract_address);
-            usdc_token.transfer(
-                &user_address,
-                &smart_account_address,
-                &(amount_u128 as i128),
-            );
+            usdc_token.transfer(&trader_address, &smart_account, &(amount_u128 as i128));
         } else if token_symbol == Symbol::new(&env, "EURC") {
             let eurc_contract_address = registry_client.get_eurc_contract_address();
             let eurc_token = token::Client::new(&env, &eurc_contract_address);
-            eurc_token.transfer(
-                &user_address,
-                &smart_account_address,
-                &(amount_u128 as i128),
-            );
+            eurc_token.transfer(&trader_address, &smart_account, &(amount_u128 as i128));
         } else {
             panic!("Collateral not allowed for this token symbol");
         }
@@ -250,21 +263,18 @@ impl AccountManagerContract {
 
     pub fn withdraw_collateral_balance(
         env: Env,
-        user_address: Address,
+        smart_account: Address,
         token_symbol: Symbol,
         token_amount: U256,
     ) -> Result<(), AccountManagerError> {
-        user_address.require_auth();
+        let trader_address = Self::get_trader_address(&env, smart_account.clone());
+        trader_address.require_auth();
 
-        if !Self::has_smart_account(&env, user_address.clone()) {
-            panic!("User doesn't have a smart account address, Create smart account first");
+        if token_amount.eq(&U256::from_u128(&env, 0)) {
+            panic!("Cannot withdraw a zero amount");
         }
 
-        let smart_account_address: Address =
-            Self::get_smart_account_address(&env, user_address.clone());
-
-        let smart_account_client =
-            smart_account_contract::Client::new(&env, &smart_account_address);
+        let smart_account_client = smart_account_contract::Client::new(&env, &smart_account);
 
         let collateral_tokens_list = smart_account_client.get_all_collateral_tokens();
         if !collateral_tokens_list.contains(token_symbol.clone()) {
@@ -276,11 +286,7 @@ impl AccountManagerContract {
         let risk_engine_address = registry_client.get_risk_engine_address();
         let risk_engine_client = risk_engine_contract::Client::new(&env, &risk_engine_address);
 
-        if !risk_engine_client.is_withdraw_allowed(
-            &token_symbol,
-            &token_amount,
-            &smart_account_address,
-        ) {
+        if !risk_engine_client.is_withdraw_allowed(&token_symbol, &token_amount, &smart_account) {
             panic!("Account is unhealthy! withdraw is not allowed");
         }
 
@@ -289,7 +295,7 @@ impl AccountManagerContract {
         });
 
         smart_account_client.remove_collateral_token_balance(
-            &user_address,
+            &trader_address,
             &token_symbol,
             &amount_u128,
         );
@@ -299,24 +305,26 @@ impl AccountManagerContract {
 
     pub fn borrow(
         env: &Env,
+        smart_account: Address,
         borrow_amount: U256,
         token_symbol: Symbol,
-        user_account: Address,
     ) -> Result<(), AccountManagerError> {
-        user_account.require_auth();
+        let trader_address = Self::get_trader_address(&env, smart_account.clone());
+        trader_address.require_auth();
+
+        if borrow_amount.eq(&U256::from_u128(&env, 0)) {
+            panic!("Cannot borrow a zero amount");
+        }
 
         let registry_address = Self::get_registry_address(env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
         let risk_engine_address = registry_client.get_risk_engine_address();
         let risk_engine_client = risk_engine_contract::Client::new(&env, &risk_engine_address);
 
-        let smart_account_address: Address =
-            Self::get_smart_account_address(&env, user_account.clone());
-
         if !risk_engine_client.is_borrow_allowed(
             &token_symbol.clone(),
             &borrow_amount,
-            &smart_account_address,
+            &smart_account,
         ) {
             panic!("Borrowing is not allowed for this user");
         }
@@ -326,30 +334,30 @@ impl AccountManagerContract {
             let xlm_client: lending_protocol_xlm::Client<'_> =
                 lending_protocol_xlm::Client::new(&env, &pool_xlm_contract);
 
-            xlm_client.lend_to(&smart_account_address, &borrow_amount);
+            xlm_client.lend_to(&smart_account, &borrow_amount);
         } else if token_symbol == Symbol::new(&env, "USDC") {
             let pool_usdc_contract = registry_client.get_lendingpool_usdc();
 
             let usdc_client: lending_protocol_usdc::Client<'_> =
                 lending_protocol_usdc::Client::new(&env, &pool_usdc_contract);
-            usdc_client.lend_to(&smart_account_address, &borrow_amount);
+            usdc_client.lend_to(&smart_account, &borrow_amount);
         } else if token_symbol == Symbol::new(&env, "EURC") {
             let pool_eurc_contract = registry_client.get_lendingpool_eurc();
 
             let eurc_client: lending_protocol_eurc::Client<'_> =
                 lending_protocol_eurc::Client::new(&env, &pool_eurc_contract);
-            eurc_client.lend_to(&smart_account_address, &borrow_amount);
+            eurc_client.lend_to(&smart_account, &borrow_amount);
         } else {
             panic!("No lending pool available for given token_symbol");
         }
 
         env.events().publish(
             (
-                Symbol::new(&env, "Trader Borrow Event"),
-                smart_account_address.clone(),
+                Symbol::new(&env, "Trader_Borrow_Event"),
+                smart_account.clone(),
             ),
             TraderBorrowEvent {
-                smart_account: smart_account_address,
+                smart_account: smart_account,
                 token_amount: borrow_amount,
                 timestamp: env.ledger().timestamp(),
                 token_symbol,
@@ -364,16 +372,19 @@ impl AccountManagerContract {
         env: Env,
         repay_amount: U256,
         token_symbol: Symbol,
-        user_account: Address,
+        smart_account: Address,
     ) -> Result<(), AccountManagerError> {
-        user_account.require_auth();
+        let trader_address = Self::get_trader_address(&env, smart_account.clone());
+        trader_address.require_auth();
+
+        if repay_amount.eq(&U256::from_u128(&env, 0)) {
+            panic!("Cannot repay a zero amount");
+        }
 
         let registry_address: Address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
-        let smart_account_address: Address =
-            Self::get_smart_account_address(&env, user_account.clone());
-        let smart_account_client =
-            smart_account_contract::Client::new(&env, &smart_account_address);
+
+        let smart_account_client = smart_account_contract::Client::new(&env, &smart_account);
 
         let borrowed_tokens = smart_account_client.get_all_borrowed_tokens();
 
@@ -386,33 +397,27 @@ impl AccountManagerContract {
 
         if token_symbol == Symbol::new(&env, "XLM") {
             let pool_xlm_contract = registry_client.get_lendingpool_xlm();
-
-            let xlm_client: lending_protocol_xlm::Client<'_> =
-                lending_protocol_xlm::Client::new(&env, &pool_xlm_contract);
-            xlm_client.collect_from(&repay_amount, &smart_account_address);
+            let xlm_client = lending_protocol_xlm::Client::new(&env, &pool_xlm_contract);
+            xlm_client.collect_from(&repay_amount, &smart_account);
         } else if token_symbol == Symbol::new(&env, "USDC") {
             let pool_usdc_contract = registry_client.get_lendingpool_usdc();
-
-            let usdc_client: lending_protocol_usdc::Client<'_> =
-                lending_protocol_usdc::Client::new(&env, &pool_usdc_contract);
-            usdc_client.collect_from(&repay_amount, &smart_account_address);
+            let usdc_client = lending_protocol_usdc::Client::new(&env, &pool_usdc_contract);
+            usdc_client.collect_from(&repay_amount, &smart_account);
         } else if token_symbol == Symbol::new(&env, "EURC") {
             let pool_eurc_contract = registry_client.get_lendingpool_eurc();
-
-            let eurc_client: lending_protocol_eurc::Client<'_> =
-                lending_protocol_eurc::Client::new(&env, &pool_eurc_contract);
-            eurc_client.collect_from(&repay_amount, &smart_account_address);
+            let eurc_client = lending_protocol_eurc::Client::new(&env, &pool_eurc_contract);
+            eurc_client.collect_from(&repay_amount, &smart_account);
         } else {
             panic!("No lending pool available for given token_symbol");
         }
 
         env.events().publish(
             (
-                Symbol::new(&env, "Trader Repay Event"),
-                smart_account_address.clone(),
+                Symbol::new(&env, "Trader_Repay_Event"),
+                smart_account.clone(),
             ),
             TraderRepayEvent {
-                smart_account: smart_account_address,
+                smart_account: smart_account,
                 token_amount: repay_amount,
                 timestamp: env.ledger().timestamp(),
                 token_symbol,
@@ -421,24 +426,24 @@ impl AccountManagerContract {
         Ok(())
     }
 
-    pub fn liquidate(env: Env, user_address: Address) -> Result<(), AccountManagerError> {
+    pub fn liquidate(env: Env, smart_account: Address) -> Result<(), AccountManagerError> {
+        let trader_address = Self::get_trader_address(&env, smart_account.clone());
+        trader_address.require_auth();
+
         let registry_address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
-
-        let smart_account_address: Address =
-            Self::get_smart_account_address(&env, user_address.clone());
 
         let risk_engine_address = registry_client.get_risk_engine_address();
         let risk_engine_client = risk_engine_contract::Client::new(&env, &risk_engine_address);
         if risk_engine_client.is_account_healthy(
-            &risk_engine_client.get_current_total_balance(&smart_account_address),
-            &risk_engine_client.get_current_total_borrows(&smart_account_address),
+            &risk_engine_client.get_current_total_balance(&smart_account),
+            &risk_engine_client.get_current_total_borrows(&smart_account),
         ) {
             panic!("Cannot liquidate when account is healthy!!");
         }
 
         let smart_account_contract_client =
-            smart_account_contract::Client::new(&env, &smart_account_address);
+            smart_account_contract::Client::new(&env, &smart_account);
         let all_borrowed_tokens = smart_account_contract_client.get_all_borrowed_tokens();
 
         for tokenx in all_borrowed_tokens.iter() {
@@ -446,22 +451,22 @@ impl AccountManagerContract {
                 let pool_xlm_contract = registry_client.get_lendingpool_xlm();
                 let xlm_client: lending_protocol_xlm::Client<'_> =
                     lending_protocol_xlm::Client::new(&env, &pool_xlm_contract);
-                let liquidate_amount = xlm_client.get_borrow_balance(&smart_account_address);
-                xlm_client.collect_from(&liquidate_amount, &smart_account_address);
+                let liquidate_amount = xlm_client.get_borrow_balance(&smart_account);
+                xlm_client.collect_from(&liquidate_amount, &smart_account);
             } else if tokenx == Symbol::new(&env, "USDC") {
                 let pool_usdc_contract = registry_client.get_lendingpool_usdc();
                 let usdc_client: lending_protocol_usdc::Client<'_> =
                     lending_protocol_usdc::Client::new(&env, &pool_usdc_contract);
-                let liquidate_amount = usdc_client.get_borrow_balance(&smart_account_address);
+                let liquidate_amount = usdc_client.get_borrow_balance(&smart_account);
 
-                usdc_client.collect_from(&liquidate_amount, &smart_account_address);
+                usdc_client.collect_from(&liquidate_amount, &smart_account);
             } else if tokenx == Symbol::new(&env, "EURC") {
                 let pool_eurc_contract = registry_client.get_lendingpool_eurc();
                 let eurc_client: lending_protocol_eurc::Client<'_> =
                     lending_protocol_eurc::Client::new(&env, &pool_eurc_contract);
-                let liquidate_amount = eurc_client.get_borrow_balance(&smart_account_address);
+                let liquidate_amount = eurc_client.get_borrow_balance(&smart_account);
 
-                eurc_client.collect_from(&liquidate_amount, &smart_account_address);
+                eurc_client.collect_from(&liquidate_amount, &smart_account);
             } else {
                 panic!("This token pool doesn't exist")
             }
@@ -477,7 +482,7 @@ impl AccountManagerContract {
             });
 
             smart_account_contract_client.remove_collateral_token_balance(
-                &user_address,
+                &trader_address,
                 &coltoken,
                 &col_token_amount,
             );
@@ -485,26 +490,23 @@ impl AccountManagerContract {
 
         env.events().publish(
             (
-                Symbol::new(&env, "Trader Liquidate Event"),
-                smart_account_address.clone(),
+                Symbol::new(&env, "Trader_Liquidate_Event"),
+                smart_account.clone(),
             ),
             TraderLiquidateEvent {
-                smart_account: smart_account_address,
+                smart_account: smart_account,
                 timestamp: env.ledger().timestamp(),
             },
         );
         Ok(())
     }
 
-    pub fn settle_account(
-        env: Env,
-        smart_account: Address,
-        user_account: Address,
-    ) -> Result<(), AccountManagerError> {
-        let smart_account_contract_address: Address =
-            Self::get_smart_account_address(&env, user_account.clone());
+    pub fn settle_account(env: Env, smart_account: Address) -> Result<bool, AccountManagerError> {
+        let trader_address = Self::get_trader_address(&env, smart_account.clone());
+        trader_address.require_auth();
+
         let smart_account_contract_client =
-            smart_account_contract::Client::new(&env, &smart_account_contract_address);
+            smart_account_contract::Client::new(&env, &smart_account);
         let borrowed_tokens = smart_account_contract_client.get_all_borrowed_tokens();
         for tokenx in borrowed_tokens.iter() {
             let token_debt = smart_account_contract_client.get_borrowed_token_debt(&tokenx.clone());
@@ -513,15 +515,15 @@ impl AccountManagerContract {
         }
         env.events().publish(
             (
-                Symbol::new(&env, "Trader SettleAccount Event"),
-                user_account.clone(),
+                Symbol::new(&env, "Trader_SettleAccount_Event"),
+                smart_account.clone(),
             ),
             TraderSettleAccountEvent {
                 smart_account,
                 timestamp: env.ledger().timestamp(),
             },
         );
-        Ok(())
+        Ok(true)
     }
 
     fn extend_ttl_account_manager(env: &Env, key: AccountManagerKey) {
@@ -535,7 +537,7 @@ impl AccountManagerContract {
             .storage()
             .persistent()
             .get(&AccountManagerKey::Admin)
-            .unwrap();
+            .unwrap_or_else(|| panic!("Failed to fetch admin address n1"));
         admin.require_auth();
 
         let key = AccountManagerKey::AssetCap;
@@ -556,11 +558,23 @@ impl AccountManagerContract {
         env.storage().persistent().get(&key).unwrap_or(false)
     }
 
+    pub fn set_iscollateral_allowed(env: &Env, token_symbol: Symbol) {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&AccountManagerKey::Admin)
+            .unwrap_or_else(|| panic!("Admin key not set!"));
+        admin.require_auth();
+
+        let key = AccountManagerKey::IsCollateralAllowed(token_symbol);
+        env.storage().persistent().set(&key, &true);
+    }
+
     fn get_registry_address(env: &Env) -> Address {
         env.storage()
             .persistent()
             .get(&AccountManagerKey::RegistryContract)
-            .unwrap()
+            .unwrap_or_else(|| panic!("Failed to fetch registry contract address n1"))
     }
 
     fn get_smart_account_address(env: &Env, user_address: Address) -> Address {
@@ -572,40 +586,53 @@ impl AccountManagerContract {
             .expect("Failed to fetch users smart account address")
     }
 
-    fn generate_predictable_salt(
-        env: &Env,
-        native_token: &Address,
-        vxlm_token: &Address,
-    ) -> BytesN<32> {
-        let mut salt_bytes = [0u8; 32];
-
-        // Use hash of token addresses for deterministic salt
-        let native_xdr = native_token.to_xdr(env);
-        let vxlm_xdr = vxlm_token.to_xdr(env);
-
-        // Copy first 16 bytes from each address
-        let native_len = (native_xdr.len() as usize).min(16);
-        let vxlm_len = (vxlm_xdr.len() as usize).min(16);
-
-        for i in 0..native_len {
-            salt_bytes[i] = native_xdr.get(i as u32).unwrap_or(0);
-        }
-
-        for i in 0..vxlm_len {
-            salt_bytes[16 + i] = vxlm_xdr.get(i as u32).unwrap_or(0);
-        }
-
-        BytesN::from_array(env, &salt_bytes)
+    fn get_trader_address(env: &Env, smart_account: Address) -> Address {
+        env.storage()
+            .persistent()
+            .get(&AccountManagerKey::TraderAddress(smart_account.clone()))
+            .expect("Failed to fetch Traders address")
     }
 
-    fn has_smart_account(env: &Env, user_address: Address) -> bool {
+    pub fn generate_predictable_salt(
+        env: &Env,
+        trader_address: Address,
+        account_manager: Address,
+    ) -> BytesN<32> {
+        // Convert addresses to XDR for consistent serialization
+        // Make sure empty addresses are not sent
+        assert!(trader_address.to_string().len() != 0);
+        assert!(account_manager.to_string().len() != 0);
+
+        let trader_xdr = trader_address.to_xdr(env);
+        let manager_xdr = account_manager.to_xdr(env);
+
+        // Create a combined buffer to hash both addresses together
+        let mut combined = Bytes::new(env);
+
+        // Append trader address bytes
+        for i in 0..trader_xdr.len() {
+            combined.push_back(trader_xdr.get(i).unwrap());
+        }
+
+        // Append account manager bytes
+        for i in 0..manager_xdr.len() {
+            combined.push_back(manager_xdr.get(i).unwrap());
+        }
+
+        // Use Soroban's built-in SHA256 hash function
+        // This ensures a unique 32-byte output for any unique input combination
+        env.crypto().sha256(&combined).into()
+    }
+
+    fn has_smart_account(env: &Env, trader_address: &Address) -> bool {
         env.storage()
             .persistent()
             .has(&AccountManagerKey::SmartAccountAddress(
-                user_address.clone(),
+                trader_address.clone(),
             ))
     }
 
+    /// To be implemented
     pub fn approve() {}
 
     pub fn execute() {}

@@ -1,6 +1,6 @@
 #![no_std]
 
-mod errors;
-mod events;
-mod liquidity_pool_xlm;
-mod types;
+pub mod errors;
+pub mod events;
+pub mod liquidity_pool_xlm;
+pub mod types;

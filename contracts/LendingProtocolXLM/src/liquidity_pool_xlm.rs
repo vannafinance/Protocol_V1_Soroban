@@ -6,7 +6,7 @@ use crate::events::{
 };
 use crate::types::{ContractDetails, DataKey, PoolDataKey, TokenDataKey};
 use soroban_sdk::{
-    Address, Env, String, Symbol, U256, Vec, contract, contractimpl, panic_with_error, token,
+    Address, Env, String, Symbol, U256, Vec, contract, contractimpl, log, panic_with_error, token,
 };
 
 pub mod rate_model_contract {
@@ -27,10 +27,15 @@ pub mod smart_account_contract {
     );
 }
 
+pub mod vxlm_token_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/vxlm_token_contract.wasm"
+    );
+}
+
 #[contract]
 pub struct LiquidityPoolXLM;
 
-// pub const XLM_CONTRACT_ID: [u8; 32] = [0; 32];
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 const _TLL_LEDGERS_MONTH: u32 = 518400;
@@ -41,7 +46,6 @@ impl LiquidityPoolXLM {
         env: Env,
         admin: Address,
         native_token_address: Address,
-        vxlm_token_address: Address,
         registry_contract: Address,
         account_manager: Address,
         rate_model: Address,
@@ -53,7 +57,6 @@ impl LiquidityPoolXLM {
         Self::extend_ttl_datakey(&env, key);
 
         env.events().publish(("constructor", "admin_set"), &admin);
-        let vxlm_symbol = Symbol::new(&env, "VXLM");
 
         env.storage()
             .persistent()
@@ -76,16 +79,10 @@ impl LiquidityPoolXLM {
         env.events()
             .publish(("constructor", "rate_model_set"), &rate_model);
 
-        env.storage().persistent().set(
-            &TokenDataKey::VTokenClientAddress(vxlm_symbol.clone()),
-            &vxlm_token_address,
-        );
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::VTokenClientAddress(vxlm_symbol.clone()));
-
         env.storage()
             .persistent()
-            .set(&TokenDataKey::EurcClientAddress, &native_token_address);
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::EurcClientAddress);
+            .set(&TokenDataKey::NativeXLMClientAddress, &native_token_address);
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::NativeXLMClientAddress);
         env.events()
             .publish(("constructor", "native_xlm_set"), &native_token_address);
 
@@ -119,7 +116,10 @@ impl LiquidityPoolXLM {
         Ok(admin_address)
     }
 
-    pub fn initialize_pool_xlm(env: Env) -> Result<String, LendingError> {
+    pub fn initialize_pool_xlm(
+        env: Env,
+        vxlm_token_contract_address: Address,
+    ) -> Result<String, LendingError> {
         let admin: Address = env
             .storage()
             .persistent()
@@ -128,9 +128,22 @@ impl LiquidityPoolXLM {
 
         admin.require_auth();
 
+        let vxlm_symbol = Symbol::new(&env, "VXLM");
+        env.storage().persistent().set(
+            &TokenDataKey::VTokenContractAddress(vxlm_symbol.clone()),
+            &vxlm_token_contract_address,
+        );
+        Self::extend_ttl_tokendatakey(
+            &env,
+            TokenDataKey::VTokenContractAddress(vxlm_symbol.clone()),
+        );
+
         env.storage()
             .persistent()
             .set(&PoolDataKey::Initialised, &true); // Store the XLM this contract handles
+
+        env.events()
+            .publish(("initialize_pool_xlm", "xlm_pool_initialized"), true);
         Ok(String::from_str(&env, "XLM pool initialised"))
     }
 
@@ -169,14 +182,8 @@ impl LiquidityPoolXLM {
         // Update lender list
         Self::add_lender_to_list_xlm(&env, &lender);
 
-        let token_value: U256 = env
-            .storage()
-            .persistent()
-            .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "VXLM")))
-            .unwrap_or_else(|| panic!("VTokenValue not set"));
-
         // Now Mint the VXLM tokens that were created for the lender
-        Self::mint_vxlm_tokens(&env, lender.clone(), vtokens_to_be_minted, token_value);
+        Self::mint_vxlm_tokens(&env, lender.clone(), vtokens_to_be_minted);
 
         env.events().publish(
             (Symbol::new(&env, "deposit_event"), lender.clone()),
@@ -195,12 +202,17 @@ impl LiquidityPoolXLM {
         Self::is_xlm_pool_initialised(&env);
         Self::before_withdraw(env);
 
-        let key_k = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "VXLM"));
-        let vxlm_balance = env
+        let vxlm_symbol = Symbol::new(&env, "VXLM");
+        let vxlm_token_contract_address: Address = env
             .storage()
             .persistent()
-            .get(&key_k)
-            .unwrap_or_else(|| U256::from_u32(&env, 0));
+            .get(&TokenDataKey::VTokenContractAddress(vxlm_symbol))
+            .unwrap();
+
+        let xlm_token_client = vxlm_token_contract::Client::new(&env, &vxlm_token_contract_address);
+
+        // let vxlm_token = token::Client::new(&env, &token_address);
+        let vxlm_balance = U256::from_u128(&env, xlm_token_client.balance(&lender) as u128);
 
         // Check if lender has enough token balance to redeem
         if tokens_to_redeem > vxlm_balance {
@@ -227,13 +239,13 @@ impl LiquidityPoolXLM {
             &(amount_u128 as i128),
         );
 
-        let token_value: U256 = env
-            .storage()
-            .persistent()
-            .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "VXLM")))
-            .unwrap();
+        // let token_value: U256 = env
+        //     .storage()
+        //     .persistent()
+        //     .get(&TokenDataKey::VTokenValue(Symbol::new(&env, "VXLM")))
+        //     .unwrap();
 
-        Self::burn_vxlm_tokens(&env, lender.clone(), tokens_to_redeem.clone(), token_value);
+        Self::burn_vxlm_tokens(&env, lender.clone(), tokens_to_redeem.clone());
 
         // emit event after withdraw
         env.events().publish(
@@ -247,28 +259,27 @@ impl LiquidityPoolXLM {
         );
     }
 
-    pub fn lend_to(
-        env: &Env,
-        trader_smart_account: Address,
-        amount: U256,
-    ) -> Result<bool, LendingError> {
+    pub fn lend_to(env: &Env, smart_account: Address, amount: U256) -> Result<bool, LendingError> {
         let account_manager: Address = env
             .storage()
             .persistent()
             .get(&ContractDetails::AccountManager)
             .expect("Account manager contract address not set !");
         account_manager.require_auth();
+        log!(&env, "reached before update state!");
 
         Self::update_state(env);
         let borrow_shares = Self::convert_asset_borrow_shares(env, amount.clone());
         let mut is_first_borrow: bool = false;
 
-        let key_a = PoolDataKey::UserBorrowShares(trader_smart_account.clone());
-        let key_b = PoolDataKey::TotalBorrowShares;
         let key_c = PoolDataKey::Borrows;
-        let user_borrow_shares: U256 = env.storage().persistent().get(&key_a).unwrap();
-        let total_borrow_shares: U256 = env.storage().persistent().get(&key_b).unwrap();
-        let borrows: U256 = env.storage().persistent().get(&key_c).unwrap();
+        let user_borrow_shares: U256 = Self::get_user_borrow_shares(&env, smart_account.clone());
+        let total_borrow_shares: U256 = Self::get_total_borrow_shares(&env);
+        let borrows: U256 = env
+            .storage()
+            .persistent()
+            .get(&key_c)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
 
         if user_borrow_shares == U256::from_u32(&env, 0) {
             is_first_borrow = true;
@@ -278,11 +289,9 @@ impl LiquidityPoolXLM {
         let res2 = total_borrow_shares.add(&borrow_shares.clone());
         let res3 = borrows.add(&amount.clone());
 
-        env.storage().persistent().set(&key_a, &res1);
-        env.storage().persistent().set(&key_b, &res2);
+        Self::set_user_borrow_shares(&env, smart_account.clone(), res1);
+        Self::set_total_borrow_shares(&env, res2);
         env.storage().persistent().set(&key_c, &res3);
-        Self::extend_ttl_pooldatakey(env, key_a);
-        Self::extend_ttl_pooldatakey(env, key_b);
         Self::extend_ttl_pooldatakey(env, key_c);
 
         // Now transfer amount to trader's smart account address
@@ -293,11 +302,19 @@ impl LiquidityPoolXLM {
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
         xlm_token.transfer(
             &env.current_contract_address(), // from
-            &trader_smart_account,           // to
+            &smart_account,                  // to
             &(amount_u128 as i128),
         );
 
-        let smart_account_client = smart_account_contract::Client::new(&env, &trader_smart_account);
+        let bal = xlm_token.balance(&smart_account);
+        log!(
+            &env,
+            "Balance of margin account after lending {:?}",
+            bal,
+            smart_account.clone()
+        );
+
+        let smart_account_client = smart_account_contract::Client::new(&env, &smart_account);
         smart_account_client.add_borrowed_token(&Symbol::new(&env, "XLM"));
         smart_account_client.set_has_debt(&true, &Symbol::new(&env, "XLM"));
 
@@ -326,7 +343,11 @@ impl LiquidityPoolXLM {
             Self::get_user_borrow_shares(env, trader_smart_account.clone());
         let total_borrow_shares: U256 = Self::get_total_borrow_shares(env);
         let key_c = PoolDataKey::Borrows;
-        let borrows: U256 = env.storage().persistent().get(&key_c).unwrap();
+        let borrows: U256 = env
+            .storage()
+            .persistent()
+            .get(&key_c)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
 
         let amount_u128: u128 = amount
             .to_u128()
@@ -349,37 +370,23 @@ impl LiquidityPoolXLM {
         return Ok(res1 == U256::from_u32(&env, 0));
     }
 
-    fn mint_vxlm_tokens(env: &Env, lender: Address, tokens_to_mint: U256, token_value: U256) {
-        let key = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "VXLM"));
-
-        // Check if user has balance initialised, else initialise key for user
-        if !env.storage().persistent().has(&key) {
-            env.storage()
-                .persistent()
-                .set(&key, &U256::from_u128(&env, 0));
-            Self::extend_ttl_tokendatakey(&env, key.clone());
-        }
-
+    fn mint_vxlm_tokens(env: &Env, lender: Address, tokens_to_mint: U256) {
         let tokens_to_mint_u128: u128 = tokens_to_mint
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
         let vxlm_symbol = Symbol::new(&env, "VXLM");
 
-        let token_address: Address = env
+        let vxlm_token_contract_address: Address = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::VTokenClientAddress(vxlm_symbol))
+            .get(&TokenDataKey::VTokenContractAddress(vxlm_symbol))
             .unwrap();
 
-        let token_sac = token::StellarAssetClient::new(&env, &token_address);
+        let xlm_token_client = vxlm_token_contract::Client::new(&env, &vxlm_token_contract_address);
+        // let token_sac = token::StellarAssetClient::new(&env, &token_address);
 
         // mint tokens to his address.
-        token_sac.mint(&lender, &(tokens_to_mint_u128 as i128)); // Mint tokens to recipient
-
-        let current_vxlm_balance: U256 = env.storage().persistent().get(&key).unwrap();
-        let new_vxlm_balance = current_vxlm_balance.add(&tokens_to_mint);
-        env.storage().persistent().set(&key, &new_vxlm_balance);
-        Self::extend_ttl_tokendatakey(&env, key.clone());
+        xlm_token_client.mint(&lender, &(tokens_to_mint_u128 as i128)); // Mint tokens to recipient
 
         // Update total token balance available right now
         let current_total_token_balance = Self::get_current_total_vxlm_balance(env);
@@ -403,33 +410,28 @@ impl LiquidityPoolXLM {
                 token_amount: tokens_to_mint,
                 timestamp: env.ledger().timestamp(),
                 token_symbol: Symbol::new(&env, "VXLM"),
-                token_value: token_value,
+                // token_value: token_value,
             },
         );
     }
 
-    fn burn_vxlm_tokens(env: &Env, lender: Address, tokens_to_burn: U256, token_value: U256) {
-        let key = TokenDataKey::VTokenBalance(lender.clone(), Symbol::new(&env, "VXLM"));
-        let current_vxlm_balance: U256 = env.storage().persistent().get(&key).unwrap();
-        let new_vxlm_balance = current_vxlm_balance.sub(&tokens_to_burn);
-        env.storage().persistent().set(&key, &new_vxlm_balance);
-        Self::extend_ttl_tokendatakey(&env, key.clone());
-
+    fn burn_vxlm_tokens(env: &Env, lender: Address, tokens_to_burn: U256) {
         let tokens_to_burn_u128: u128 = tokens_to_burn
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
         let vxlm_symbol = Symbol::new(&env, "VXLM");
 
-        let token_address: Address = env
+        let vxlm_token_contract_address: Address = env
             .storage()
             .persistent()
-            .get(&TokenDataKey::VTokenClientAddress(vxlm_symbol))
+            .get(&TokenDataKey::VTokenContractAddress(vxlm_symbol))
             .unwrap();
 
-        let token_sac = token::TokenClient::new(&env, &token_address);
+        let xlm_token_client = vxlm_token_contract::Client::new(&env, &vxlm_token_contract_address);
+        // let token_sac = token::TokenClient::new(&env, &token_address);
 
         // burn tokens from his address.
-        token_sac.burn(&lender, &(tokens_to_burn_u128 as i128));
+        xlm_token_client.burn(&lender, &(tokens_to_burn_u128 as i128));
 
         let current_total_token_balance = Self::get_current_total_vxlm_balance(env);
         let new_total_token_balance = current_total_token_balance.sub(&tokens_to_burn);
@@ -452,14 +454,18 @@ impl LiquidityPoolXLM {
                 token_amount: tokens_to_burn,
                 timestamp: env.ledger().timestamp(),
                 token_symbol: Symbol::new(&env, "VXLM"),
-                token_value,
+                // token_value,
             },
         );
     }
 
     pub fn convert_asset_borrow_shares(env: &Env, amount: U256) -> U256 {
         let key_b = PoolDataKey::TotalBorrowShares;
-        let total_borrow_shares: U256 = env.storage().persistent().get(&key_b).unwrap();
+        let total_borrow_shares: U256 = env
+            .storage()
+            .persistent()
+            .get(&key_b)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
 
         if total_borrow_shares == U256::from_u32(&env, 0) {
             return amount;
@@ -487,12 +493,20 @@ impl LiquidityPoolXLM {
         if lastupdatetime == env.ledger().timestamp() {
             return;
         }
+        log!(&env, "reached inside update state!");
+
         let key_c = PoolDataKey::Borrows;
-        let borrows: U256 = env.storage().persistent().get(&key_c).unwrap();
+        let borrows: U256 = env
+            .storage()
+            .persistent()
+            .get(&key_c)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
         let rate_factor = Self::get_rate_factor(&env).unwrap();
         let interest_accrued = borrows.mul(&rate_factor);
         let res = borrows.add(&interest_accrued);
         env.storage().persistent().set(&key_c, &res);
+        log!(&env, "reached middle update state!");
+
         env.storage()
             .persistent()
             .set(&PoolDataKey::LastUpdatedTime, &env.ledger().timestamp());
@@ -507,12 +521,16 @@ impl LiquidityPoolXLM {
 
     pub fn get_user_borrow_shares(env: &Env, trader: Address) -> U256 {
         let key_a = PoolDataKey::UserBorrowShares(trader.clone());
-        let user_borrow_shares: U256 = env.storage().persistent().get(&key_a).unwrap();
+        let user_borrow_shares: U256 = env
+            .storage()
+            .persistent()
+            .get(&key_a)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
         return user_borrow_shares;
     }
 
     pub fn set_user_borrow_shares(env: &Env, trader: Address, res: U256) {
-        let key_a = PoolDataKey::UserBorrowShares(trader.clone());
+        let key_a = PoolDataKey::UserBorrowShares(trader);
         env.storage().persistent().set(&key_a, &res);
         Self::extend_ttl_pooldatakey(env, key_a);
     }
@@ -525,7 +543,11 @@ impl LiquidityPoolXLM {
 
     pub fn get_total_borrow_shares(env: &Env) -> U256 {
         let key_b = PoolDataKey::TotalBorrowShares;
-        let total_borrow_shares: U256 = env.storage().persistent().get(&key_b).unwrap();
+        let total_borrow_shares: U256 = env
+            .storage()
+            .persistent()
+            .get(&key_b)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
         return total_borrow_shares;
     }
 
@@ -545,7 +567,11 @@ impl LiquidityPoolXLM {
     pub fn get_borrows(env: &Env) -> U256 {
         let key_c = PoolDataKey::Borrows;
 
-        let borrows: U256 = env.storage().persistent().get(&key_c).unwrap();
+        let borrows: U256 = env
+            .storage()
+            .persistent()
+            .get(&key_c)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
         let res = borrows.mul(&Self::get_rate_factor(&env).unwrap());
         let result = borrows.add(&res);
         result
@@ -564,7 +590,11 @@ impl LiquidityPoolXLM {
         }
         let key_c = PoolDataKey::Borrows;
 
-        let borrows: U256 = env.storage().persistent().get(&key_c).unwrap();
+        let borrows: U256 = env
+            .storage()
+            .persistent()
+            .get(&key_c)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
         let liquidity = Self::get_total_liquidity_in_pool(&env);
 
         let res = U256::from_u128(&env, (blocktimestamp - lastupdatetime) as u128)
@@ -647,17 +677,10 @@ impl LiquidityPoolXLM {
         }
     }
 
-    pub fn get_xlm_pool_address(env: &Env) -> Address {
-        env.storage()
-            .persistent()
-            .get(&PoolDataKey::PoolAddress(Symbol::new(&env, "XLM").clone()))
-            .unwrap_or_else(|| panic!("XLM pool address not set"))
-    }
-
     pub fn get_native_xlm_client_address(env: &Env) -> Address {
         env.storage()
             .persistent()
-            .get(&TokenDataKey::EurcClientAddress)
+            .get(&TokenDataKey::NativeXLMClientAddress)
             .unwrap_or_else(|| panic!("Native XLM client address not set"))
     }
 
@@ -676,14 +699,14 @@ impl LiquidityPoolXLM {
             let resx = res.div(&total_liquidity_pool);
 
             let vtoken_value = amount.div(&resx);
-            env.storage().persistent().set(
-                &TokenDataKey::VTokenValue(Symbol::new(&env, "VXLM")),
-                &vtoken_value,
-            );
-            Self::extend_ttl_tokendatakey(
-                &env,
-                TokenDataKey::VTokenValue(Symbol::new(&env, "VXLM")),
-            );
+            // env.storage().persistent().set(
+            //     &TokenDataKey::VTokenValue(Symbol::new(&env, "VXLM")),
+            //     &vtoken_value,
+            // );
+            // Self::extend_ttl_tokendatakey(
+            //     &env,
+            //     TokenDataKey::VTokenValue(Symbol::new(&env, "VXLM")),
+            // );
             resx
         }
     }
@@ -696,11 +719,11 @@ impl LiquidityPoolXLM {
         let resx = res.div(&v_token_supply);
 
         let vtoken_value = resx.div(&vtokens_to_be_burnt);
-        env.storage().persistent().set(
-            &TokenDataKey::VTokenValue(Symbol::new(&env, "VXLM")),
-            &vtoken_value,
-        );
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::VTokenValue(Symbol::new(&env, "VXLM")));
+        // env.storage().persistent().set(
+        //     &TokenDataKey::VTokenValue(Symbol::new(&env, "VXLM")),
+        //     &vtoken_value,
+        // );
+        // Self::extend_ttl_tokendatakey(&env, TokenDataKey::VTokenValue(Symbol::new(&env, "VXLM")));
 
         resx
     }

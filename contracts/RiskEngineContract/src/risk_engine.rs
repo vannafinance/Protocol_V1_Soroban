@@ -1,5 +1,5 @@
-use soroban_sdk::contractimpl;
 use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract};
+use soroban_sdk::{contractimpl, log};
 
 use crate::types::RiskEngineError;
 use crate::types::RiskEngineKey;
@@ -26,31 +26,29 @@ impl RiskEngineContract {
         borrow_amount: U256,
         margin_account: Address,
     ) -> Result<bool, RiskEngineError> {
-        //  Fetch price from oracle
+        let registry_addr = Self::get_registry_address(&env);
+        let registry_client = registry_contract::Client::new(&env, &registry_addr);
+        let oracle_contract_addr = registry_client.get_oracle_contract_address();
+        let oracle_client = oracle_contract::Client::new(env, &oracle_contract_addr);
 
-        let registry_contract: Address = env
-            .storage()
-            .persistent()
-            .get(&RiskEngineKey::RegistryContract)
-            .expect("Failed to get registry contract address !");
-        let registry_client = registry_contract::Client::new(&env, &registry_contract);
-        let oracle_contract_address: Address = registry_client.get_oracle_contract_address();
-        let oracle_client = oracle_contract::Client::new(env, &oracle_contract_address);
-
-        let price = oracle_client.get_price_latest(&symbol);
+        let (price, decimals) = oracle_client.get_price_latest(&symbol);
         let oracle_price = U256::from_u128(&env, price);
         let borrow_value = borrow_amount.mul(&oracle_price);
 
-        let current_account_balance =
-            Self::get_current_total_balance(&env, margin_account.clone()).unwrap();
-        let current_account_debt =
-            Self::get_current_total_borrows(&env, margin_account.clone()).unwrap();
+        let current_balance = Self::get_current_total_balance(&env, margin_account.clone())?;
+        let current_debt = Self::get_current_total_borrows(&env, margin_account.clone())?;
+
+        log!(
+            &env,
+            "Current balance and debt before {}",
+            current_balance,
+            current_debt
+        );
         let res = Self::is_account_healthy(
             env,
-            current_account_balance.add(&borrow_value),
-            current_account_debt.add(&borrow_value),
-        )
-        .unwrap();
+            current_balance.add(&borrow_value),
+            current_debt.add(&borrow_value),
+        )?;
         Ok(res)
     }
 
@@ -60,24 +58,21 @@ impl RiskEngineContract {
         withdraw_amount: U256,
         margin_account: Address,
     ) -> Result<bool, RiskEngineError> {
-        let registry_contract: Address = env
-            .storage()
-            .persistent()
-            .get(&RiskEngineKey::RegistryContract)
-            .expect("Failed to get registry contract address !");
+        let registry_contract: Address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_contract);
 
         // check has debt
         let smart_account_contract_client =
             smart_account_contract::Client::new(&env, &margin_account.clone());
         if !smart_account_contract_client.has_debt() {
+            log!(&env, "Returning, since account has no debt");
             return Ok(true);
         }
 
         let oracle_contract_address: Address = registry_client.get_oracle_contract_address();
 
         let oracle_client = oracle_contract::Client::new(&env, &oracle_contract_address);
-        let price = oracle_client.get_price_latest(&symbol);
+        let (price, decimals) = oracle_client.get_price_latest(&symbol);
         let oracle_price = U256::from_u128(&env, price);
         let withdraw_value = withdraw_amount.mul(&oracle_price);
 
@@ -101,11 +96,20 @@ impl RiskEngineContract {
         total_account_balance: U256,
         total_account_debt: U256,
     ) -> Result<bool, RiskEngineError> {
+        log!(
+            &env,
+            "Total account balance, debt",
+            total_account_balance,
+            total_account_debt
+        );
         if total_account_debt == U256::from_u128(&env, 0) {
+            log!(&env, "Yes account is HEALTHY!");
             return Ok(true);
         } else {
-            let res = total_account_balance.div(&total_account_debt)
+            let res = (total_account_balance.div(&total_account_debt))
+                .mul(&U256::from_u128(&env, 10000000))
                 > U256::from_u128(&env, BALANCE_TO_BORROW_THRESHOLD);
+            log!(&env, "Is Account is healthy : ", res);
             return Ok(res);
         }
     }
@@ -130,7 +134,7 @@ impl RiskEngineContract {
             let token_balance =
                 smart_account_contract_client.get_collateral_token_balance(&token.clone());
 
-            let oracle_price_usd = oracle_client.get_price_latest(&token);
+            let (oracle_price_usd, decimals) = oracle_client.get_price_latest(&token);
 
             total_account_balance_usd = total_account_balance_usd
                 .add(&token_balance.mul(&U256::from_u128(&env, oracle_price_usd)));
@@ -158,7 +162,7 @@ impl RiskEngineContract {
 
             let oracle_contract_address: Address = registry_client.get_oracle_contract_address();
             let oracle_client = oracle_contract::Client::new(env, &oracle_contract_address);
-            let oracle_price_usd = oracle_client.get_price_latest(&tokenx);
+            let (oracle_price_usd, decimals) = oracle_client.get_price_latest(&tokenx);
 
             total_account_debt_usd = total_account_debt_usd
                 .add(&token_balance.mul(&U256::from_u128(&env, oracle_price_usd)));

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration
-SOURCE_ACCOUNT="hemanth"  # Replace with your source account alias if different
+SOURCE_ACCOUNT="hemanth_testnet"  # Replace with your source account alias if different
 NETWORK="testnet"
 WASM_DIR="target/wasm32v1-none/release-with-logs"  # Adjust if your build path differs
 CONTRACTS=(
@@ -14,6 +14,9 @@ CONTRACTS=(
     "lending_protocol_xlm"
     "lending_protocol_usdc"
     "lending_protocol_eurc"
+    "vxlm_token_contract"
+    "vusdc_token_contract"
+    "veurc_token_contract"
     # Add more if needed, e.g., "lending_protocol_xlm"
 )
 
@@ -31,7 +34,7 @@ install_contract() {
     fi
     
     echo "Installing $contract_name..."
-    stellar contract upload --wasm "$wasm_file" --source "$SOURCE_ACCOUNT" --network "$NETWORK" 2>&1
+    stellar contract upload --global --wasm "$wasm_file" --source "$SOURCE_ACCOUNT" --network "$NETWORK" 2>&1
     
     # Parse the hash from output (looks for "Using wasm hash <hash>")
     hash=$(echo "$output" | grep -oP 'Using wasm hash \K[0-9a-f]{64}')

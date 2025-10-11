@@ -1,0 +1,28 @@
+[package]
+name = "integrated_test"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+soroban-sdk = { workspace = true }
+lending_protocol_xlm = { path = "../contracts/LendingProtocolXLM" }
+lending_protocol_usdc = { path = "../contracts/LendingProtocolUSDC" }
+lending_protocol_eurc = { path = "../contracts/LendingProtocolEURC" }
+account_manager_contract = { path = "../contracts/AccountManagerContract" }
+oracle_contract = { path = "../contracts/OracleContract" }
+rate_model_contract = { path = "../contracts/RateModelContract" }
+registry_contract = { path = "../contracts/RegistryContract" }
+risk_engine_contract = { path = "../contracts/RiskEngineContract" }
+smart_account_contract = { path = "../contracts/SmartAccountContract" }
+vxlm_token_contract = { path = "../contracts/VXLMTokenContract"}
+vusdc_token_contract = { path = "../contracts/VUSDCTokenContract"}
+veurc_token_contract = { path = "../contracts/VEURCTokenContract"}
+sep-40-oracle = { version = "1.2.2",  features = ["testutils"] }
+
+
+
+
+
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

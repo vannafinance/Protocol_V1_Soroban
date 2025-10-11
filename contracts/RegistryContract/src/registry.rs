@@ -140,7 +140,7 @@ impl RegistryContract {
         Ok(())
     }
 
-    pub fn set_xlm_token_contract_adddress(
+    pub fn set_native_xlm_contract_adddress(
         env: &Env,
         xlm_contract_adddress: Address,
     ) -> Result<(), RegistryContractError> {
@@ -156,7 +156,7 @@ impl RegistryContract {
         Ok(())
     }
 
-    pub fn set_usdc_contract_address(
+    pub fn set_native_usdc_contract_address(
         env: &Env,
         usdc_contract_address: Address,
     ) -> Result<(), RegistryContractError> {
@@ -171,7 +171,7 @@ impl RegistryContract {
         Ok(())
     }
 
-    pub fn set_eurc_contract_address(
+    pub fn set_native_eurc_contract_address(
         env: &Env,
         eurc_contract_address: Address,
     ) -> Result<(), RegistryContractError> {
@@ -191,7 +191,7 @@ impl RegistryContract {
             .storage()
             .persistent()
             .get(&RegistryKey::LendingPoolXlm)
-            .unwrap_or_else(|| panic!("Failed to get address"));
+            .unwrap_or_else(|| panic!("Failed to get lendingpool_xlm address"));
         Ok(res)
     }
 
@@ -200,7 +200,7 @@ impl RegistryContract {
             .storage()
             .persistent()
             .get(&RegistryKey::SmartAccountContractHash)
-            .unwrap_or_else(|| panic!("Failed to get Hash"));
+            .unwrap_or_else(|| panic!("Failed to get smart account hash"));
         Ok(res)
     }
 
@@ -209,7 +209,7 @@ impl RegistryContract {
             .storage()
             .persistent()
             .get(&RegistryKey::AccountManagerContract)
-            .unwrap_or_else(|| panic!("Failed to get address"));
+            .unwrap_or_else(|| panic!("Failed to get account_manager address"));
         Ok(res)
     }
 
@@ -218,7 +218,7 @@ impl RegistryContract {
             .storage()
             .persistent()
             .get(&RegistryKey::LendingPoolEurc)
-            .unwrap_or_else(|| panic!("Failed to get address"));
+            .unwrap_or_else(|| panic!("Failed to get lendingpool_eurc address"));
         Ok(res)
     }
 
@@ -227,7 +227,7 @@ impl RegistryContract {
             .storage()
             .persistent()
             .get(&RegistryKey::LendingPoolUsdc)
-            .unwrap_or_else(|| panic!("Failed to get address"));
+            .unwrap_or_else(|| panic!("Failed to get lendingpool_usdc address"));
         Ok(res)
     }
 
@@ -236,7 +236,7 @@ impl RegistryContract {
             .storage()
             .persistent()
             .get(&RegistryKey::RiskEngineContract)
-            .unwrap_or_else(|| panic!("Failed to get address"));
+            .unwrap_or_else(|| panic!("Failed to get risk_enginer contract address"));
         Ok(res)
     }
 
@@ -245,7 +245,7 @@ impl RegistryContract {
             .storage()
             .persistent()
             .get(&RegistryKey::RateModelContract)
-            .unwrap_or_else(|| panic!("Failed to get address"));
+            .unwrap_or_else(|| panic!("Failed to get rate_model contract address"));
         Ok(res)
     }
 
@@ -254,27 +254,21 @@ impl RegistryContract {
             .storage()
             .persistent()
             .get(&RegistryKey::OracleContract)
-            .unwrap_or_else(|| panic!("Failed to get address"));
+            .unwrap_or_else(|| panic!("Failed to get oracle contract address"));
         Ok(res)
     }
 
-    pub fn get_xlm_token_contract_adddress(env: &Env) -> Result<Address, RegistryContractError> {
-        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
-        admin.require_auth();
-
+    pub fn get_xlm_contract_adddress(env: &Env) -> Result<Address, RegistryContractError> {
         let token_contract_address: Address = env
             .storage()
             .persistent()
             .get(&RegistryKey::NativeXlmContractAddress)
-            .expect("Failed to fetch token contract address for XLM");
+            .expect("Failed to fetch native token contract address for XLM");
 
         Ok(token_contract_address)
     }
 
     pub fn get_usdc_contract_address(env: &Env) -> Result<Address, RegistryContractError> {
-        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
-        admin.require_auth();
-
         let token_contract_address: Address = env
             .storage()
             .persistent()
@@ -285,9 +279,6 @@ impl RegistryContract {
     }
 
     pub fn get_eurc_contract_address(env: &Env) -> Result<Address, RegistryContractError> {
-        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
-        admin.require_auth();
-
         let token_contract_address: Address = env
             .storage()
             .persistent()

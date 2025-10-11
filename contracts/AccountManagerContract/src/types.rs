@@ -5,6 +5,7 @@ use soroban_sdk::{Address, Symbol, U256, contracterror, contracttype};
 pub enum AccountManagerKey {
     UsersList,                    // List of all unique users
     SmartAccountAddress(Address), // User's smart account address
+    TraderAddress(Address),       // Traders address for respective margin account.
     // UserBorrowedDebt(Address, Symbol), // User debt balance in a specific asset symbol
     // UserBorrowedTokensList(Address),   // All borrowed tokens symbols held by user address
     // TotalDebtInPool(Symbol), // Total debt in pool for a specific asset symbol
@@ -24,6 +25,14 @@ pub enum AccountManagerError {
     BorrowedTokenNotFound = 2,
     MarginAccountNotFound = 3,
     IntegerConversionError = 4,
+    UserDoesntHaveCollateralToken = 5,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccountCreationEvent {
+    pub smart_account: Address,
+    pub creation_time: u64,
 }
 
 #[contracttype]

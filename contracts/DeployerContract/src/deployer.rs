@@ -1,6 +1,7 @@
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{Address, Env, Symbol, Vec, contract, log};
 
+use soroban_sdk::Bytes;
 /// This example demonstrates the 'factory' pattern for programmatically
 /// deploying the contracts via `env.deployer()`.
 use soroban_sdk::{BytesN, contractimpl, symbol_short};
@@ -391,75 +392,40 @@ impl Deployer {
     //     deployed_address
     // }
 
+    /// Generates a unique, predictable salt for contract deployment
+    /// Uses cryptographic hashing to ensure uniqueness for each unique combination
+    /// of admin_address, deployer_address, and hash
     fn generate_predictable_salt(
         env: &Env,
-        native_token: &Address,
-        vxlm_token: &Address,
+        admin_address: &Address,
+        deployer_address: &Address,
         hash: BytesN<32>,
     ) -> BytesN<32> {
-        let mut salt_bytes = [0u8; 32];
+        // Convert addresses to XDR for consistent serialization
+        let admin_xdr = admin_address.to_xdr(env);
+        let deployer_xdr = deployer_address.to_xdr(env);
+        let hash_xdr = hash.to_xdr(env);
 
-        // Use hash of token addresses for deterministic salt
-        let native_xdr = native_token.to_xdr(env);
-        let vxlm_xdr = vxlm_token.to_xdr(env);
-        let hash_xdr = hash.clone().to_xdr(env);
+        // Create a combined buffer to hash all inputs together
+        let mut combined = Bytes::new(env);
 
-        // Copy first 16 bytes from each address
-        let native_len = (native_xdr.len() as usize).min(8);
-        let vxlm_len = (vxlm_xdr.len() as usize).min(8);
-        let hash_len = (hash.len() as usize).min(16);
-
-        for i in 0..native_len {
-            salt_bytes[i] = native_xdr.get(i as u32).unwrap_or(0);
+        // Append admin address bytes
+        for i in 0..admin_xdr.len() {
+            combined.push_back(admin_xdr.get(i).unwrap());
         }
 
-        for i in 0..vxlm_len {
-            salt_bytes[8 + i] = vxlm_xdr.get(i as u32).unwrap_or(0);
+        // Append deployer address bytes
+        for i in 0..deployer_xdr.len() {
+            combined.push_back(deployer_xdr.get(i).unwrap());
         }
 
-        for i in 0..hash_len {
-            salt_bytes[16 + i] = hash_xdr.get(i as u32).unwrap_or(0);
+        // Append hash bytes
+        for i in 0..hash_xdr.len() {
+            combined.push_back(hash_xdr.get(i).unwrap());
         }
 
-        BytesN::from_array(env, &salt_bytes)
+        // Use Soroban's built-in SHA256 hash function
+        // This ensures a unique 32-byte output for any unique input combination
+        env.crypto().sha256(&combined).into()
     }
 }
-
-// fn generate_salt(env: &Env) -> BytesN<32> {
-//     let deploy_counter_key = String::from_str(env, "DEPLOY_COUNTER");
-
-//     // Get current ledger timestamp
-//     let timestamp = env.ledger().timestamp();
-
-//     // Get and increment deploy counter
-//     let counter: u64 = env
-//         .storage()
-//         .persistent()
-//         .get(&deploy_counter_key)
-//         .unwrap_or(0);
-
-//     env.storage()
-//         .persistent()
-//         .set(&deploy_counter_key, &(counter + 1));
-
-//     // Create salt from timestamp + counter
-//     let mut salt_bytes = [0u8; 32];
-
-//     // First 8 bytes: timestamp
-//     salt_bytes[0..8].copy_from_slice(&timestamp.to_be_bytes());
-
-//     // Next 8 bytes: counter
-//     salt_bytes[8..16].copy_from_slice(&counter.to_be_bytes());
-
-//     // Remaining bytes can be filled with contract address or left as zeros
-//     let contract_addr = env.current_contract_address();
-//     let addr_bytes = contract_addr.to_xdr(env);
-//     let copy_len = (addr_bytes.len() as usize).min(16);
-
-//     for i in 0..copy_len {
-//         // i is usize (for array indexing), cast to u32 for Bytes.get()
-//         salt_bytes[16 + i] = addr_bytes.get(i as u32).unwrap_or(0);
-//     }
-
-//     BytesN::from_array(env, &salt_bytes)
-// }

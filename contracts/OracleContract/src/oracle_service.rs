@@ -55,32 +55,81 @@ impl OracleContract {
     //         .rate
     // }
 
-    pub fn get_price_latest(env: &Env, symbol: Symbol) -> u128 {
-        let reflector_address: Address = env
-            .storage()
-            .persistent()
-            .get(&OracleDataKey::ReflectorAddress)
-            .unwrap();
+    pub fn get_price_latest(env: &Env, symbol: Symbol) -> (u128, u32) {
+        #[cfg(not(feature = "testutils"))]
+        {
+            use soroban_sdk::log;
 
-        // let oracle_address = Address::from_str(&env, TESTNET_REFLECTOR_ADDRESS);
-        let reflector_client = ReflectorClient::new(&env, &reflector_address);
-        let ticker = ReflectorAsset::Other(symbol);
-        let recent = reflector_client.lastprice(&ticker);
+            log!(&env, "Entered NON TEST mode!!!");
 
-        if recent.is_none() {
-            panic!("price not available");
+            let reflector_address: Address = env
+                .storage()
+                .persistent()
+                .get(&OracleDataKey::ReflectorAddress)
+                .unwrap();
+
+            let reflector_client = ReflectorClient::new(&env, &reflector_address);
+
+            let ticker = ReflectorAsset::Other(symbol.clone());
+
+            let recent = reflector_client.lastprice(&ticker);
+
+            if recent.is_none() {
+                panic!("price not available");
+            }
+            log!(
+                &env,
+                "NON TESTUTILS MODE PRICE {:?}",
+                recent.clone().unwrap().price
+            );
+
+            let price = recent.unwrap().price as u128;
+            let decimals = reflector_client.decimals();
+            log!(
+                &env,
+                "Price for symbol",
+                symbol,
+                "is",
+                price,
+                "decimals",
+                decimals
+            );
+            (price, decimals)
         }
 
-        let price = recent.unwrap().price;
+        #[cfg(feature = "testutils")]
+        {
+            use sep_40_oracle::testutils::Asset;
+            use sep_40_oracle::testutils::MockPriceOracleClient;
+            use soroban_sdk::log;
 
-        // Do not forget for price precision, get decimals from the oracle
-        // (this value can be also hardcoded once the price feed has been
-        // selected because decimals never change in live oracles)
-        let price_decimals = reflector_client.decimals();
+            log!(&env, "Entered test mode!!!");
+            let reflector_address: Address = env
+                .storage()
+                .persistent()
+                .get(&OracleDataKey::ReflectorAddress)
+                .unwrap();
 
-        let final_price = price / 10i128.pow(price_decimals);
+            let test_client = MockPriceOracleClient::new(env, &reflector_address);
+            let recent = test_client.lastprice(&Asset::Other(symbol));
 
-        final_price as u128
+            if recent.is_none() {
+                panic!("price not available");
+            }
+
+            let price = recent.unwrap().price as u128;
+            let decimals = reflector_client.decimals();
+            log!(
+                &env,
+                "Price for symbol",
+                symbol,
+                "is",
+                price,
+                "decimals",
+                decimals
+            );
+            (price, decimals)
+        }
     }
 
     fn extend_ttl(env: &Env, key: OracleDataKey) {
