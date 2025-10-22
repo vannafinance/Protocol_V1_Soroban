@@ -1,4 +1,4 @@
-use core::panic;
+use core::{ops::Add, panic};
 
 use soroban_sdk::{
     Address, Bytes, BytesN, Env, Symbol, U256, Vec, contract, contractimpl, log, panic_with_error,
@@ -73,9 +73,9 @@ impl AccountManagerContract {
     ) -> Result<Address, AccountManagerError> {
         trader_address.require_auth();
 
-        if Self::has_smart_account(&env, &trader_address) {
+        /* if Self::has_smart_account(&env, &trader_address) {
             panic!("Trader already has a smart account!");
-        }
+        } */
 
         let mut users = env
             .storage()
@@ -90,54 +90,28 @@ impl AccountManagerContract {
                 .set(&AccountManagerKey::UsersList, &users);
         }
 
-        let registry_contract_address: Address = env
-            .storage()
-            .persistent()
-            .get(&AccountManagerKey::RegistryContract)
-            .expect("Failed to get registry contract key!");
+        let registry_contract_address: Address = Self::get_registry_address(env);
         let registry_client = registry_contract::Client::new(env, &registry_contract_address);
-        let smart_account_hash = registry_client.get_smart_account_hash();
+        let smart_account: Address;
 
-        let salt = Self::generate_predictable_salt(
-            &env,
-            trader_address.clone(),
-            env.current_contract_address(),
-        );
+        let mut inactive_accounts = Self::get_inactive_accounts(env, trader_address.clone());
+        if inactive_accounts.len() == 0 {
+            let smart_account_hash = registry_client.get_smart_account_hash();
+            smart_account = Self::create_smart_account(env, &trader_address, smart_account_hash);
+            registry_client.add_account(&trader_address, &smart_account);
+        } else {
+            smart_account = inactive_accounts.pop_back().unwrap();
+            Self::set_inactive_accounts(env, trader_address.clone(), inactive_accounts);
+            registry_client.update_account(&trader_address, &smart_account);
+        }
 
-        let mut constructor_args = Vec::new(&env);
-        // constructor_args.push_back(account_manager.to_val());
-        constructor_args.push_back(env.current_contract_address().to_val()); // ONly commented out for testing.
-        constructor_args.push_back(registry_contract_address.to_val());
-        constructor_args.push_back(trader_address.to_val());
-
-        let smart_account = env
-            .deployer()
-            .with_address(env.current_contract_address(), salt)
-            .deploy_v2(smart_account_hash, constructor_args);
-
-        env.storage().persistent().set(
-            &AccountManagerKey::SmartAccountAddress(trader_address.clone()),
-            &smart_account,
-        );
-
-        env.storage().persistent().set(
-            &AccountManagerKey::TraderAddress(smart_account.clone()),
-            &trader_address,
-        );
-
-        env.events().publish(
-            (Symbol::new(&env, "Smart_account_creation"), trader_address),
-            AccountCreationEvent {
-                smart_account: smart_account.clone(),
-                creation_time: env.ledger().timestamp(),
-            },
-        );
+        let smart_account_client = smart_account_contract::Client::new(&env, &smart_account);
+        smart_account_client.activate_account();
 
         Ok(smart_account)
     }
 
-    // !! What to do with the collateral? send it back?
-    pub fn delete_account(
+    pub fn close_account(
         env: &Env,
         smart_account_address: Address,
     ) -> Result<bool, AccountManagerError> {
@@ -147,31 +121,39 @@ impl AccountManagerContract {
         let smart_account_client =
             smart_account_contract::Client::new(&env, &smart_account_address);
 
-        let has_debt = smart_account_client.has_debt();
-
-        if has_debt {
+        if smart_account_client.has_debt() {
             panic!("Cannot delete account with debt, please repay debt first");
         }
 
-        let all_collateral_tokens = smart_account_client.get_all_collateral_tokens();
-        for coltoken in all_collateral_tokens.iter() {
-            let coltokenbalance =
-                smart_account_client.get_collateral_token_balance(&coltoken.clone());
+        smart_account_client.sweep_to(&trader_address);
 
-            let col_token_amount = coltokenbalance.to_u128().unwrap_or_else(|| {
-                panic_with_error!(&env, AccountManagerError::IntegerConversionError)
-            });
+        // let all_collateral_tokens = smart_account_client.get_all_collateral_tokens();
+        // for coltoken in all_collateral_tokens.iter() {
+        //     let coltokenbalance =
+        //         smart_account_client.get_collateral_token_balance(&coltoken.clone());
 
-            smart_account_client.remove_collateral_token_balance(
-                &trader_address,
-                &coltoken,
-                &col_token_amount,
-            );
-        }
+        //     let col_token_amount = coltokenbalance.to_u128().unwrap_or_else(|| {
+        //         panic_with_error!(&env, AccountManagerError::IntegerConversionError)
+        //     });
+
+        //     smart_account_client.remove_collateral_token_balance(
+        //         &trader_address,
+        //         &coltoken,
+        //         &col_token_amount,
+        //     );
+        // }
+
+        let registry_contract_address: Address = Self::get_registry_address(env);
+        let registry_client = registry_contract::Client::new(env, &registry_contract_address);
 
         smart_account_client.deactivate_account();
+        registry_client.close_account(&trader_address, &smart_account_address);
 
-        // remove user's address from list of user addresses
+        let mut inactive_accounts = Self::get_inactive_accounts(env, trader_address.clone());
+        inactive_accounts.push_back(smart_account_address.clone());
+        Self::set_inactive_accounts(env, trader_address.clone(), inactive_accounts);
+
+        /* // remove user's address from list of user addresses
         let key_d = AccountManagerKey::UsersList;
         let mut user_addresses: Vec<Address> = env
             .storage()
@@ -183,16 +165,16 @@ impl AccountManagerContract {
             .unwrap_or_else(|| panic!("User account has already been deleted"));
         user_addresses.remove(index);
         env.storage().persistent().set(&key_d, &user_addresses);
-        Self::extend_ttl_account_manager(&env, key_d);
+        Self::extend_ttl_account_manager(&env, key_d); */
 
         // Set account deletion time
         env.storage().persistent().set(
-            &AccountManagerKey::AccountDeletedTime(smart_account_address.clone()),
+            &AccountManagerKey::AccountClosedTime(smart_account_address.clone()),
             &env.ledger().timestamp(),
         );
 
         env.events().publish(
-            (Symbol::new(&env, "Smart_Account_Deleted"), &trader_address),
+            (Symbol::new(&env, "Smart_Account_Closed"), &trader_address),
             AccountDeletionEvent {
                 smart_account: smart_account_address,
                 deletion_time: env.ledger().timestamp(),
@@ -472,21 +454,23 @@ impl AccountManagerContract {
             }
         }
 
-        let all_collateral_tokens = smart_account_contract_client.get_all_collateral_tokens();
-        for coltoken in all_collateral_tokens.iter() {
-            let coltokenbalance =
-                smart_account_contract_client.get_collateral_token_balance(&coltoken.clone());
+        smart_account_contract_client.sweep_to(&trader_address);
 
-            let col_token_amount = coltokenbalance.to_u128().unwrap_or_else(|| {
-                panic_with_error!(&env, AccountManagerError::IntegerConversionError)
-            });
+        // let all_collateral_tokens = smart_account_contract_client.get_all_collateral_tokens();
+        // for coltoken in all_collateral_tokens.iter() {
+        //     let coltokenbalance =
+        //         smart_account_contract_client.get_collateral_token_balance(&coltoken.clone());
 
-            smart_account_contract_client.remove_collateral_token_balance(
-                &trader_address,
-                &coltoken,
-                &col_token_amount,
-            );
-        }
+        //     let col_token_amount = coltokenbalance.to_u128().unwrap_or_else(|| {
+        //         panic_with_error!(&env, AccountManagerError::IntegerConversionError)
+        //     });
+
+        //     smart_account_contract_client.remove_collateral_token_balance(
+        //         &trader_address,
+        //         &coltoken,
+        //         &col_token_amount,
+        //     );
+        // }
 
         env.events().publish(
             (
@@ -577,14 +561,14 @@ impl AccountManagerContract {
             .unwrap_or_else(|| panic!("Failed to fetch registry contract address n1"))
     }
 
-    fn get_smart_account_address(env: &Env, user_address: Address) -> Address {
+    /*  fn get_smart_account_address(env: &Env, user_address: Address) -> Address {
         env.storage()
             .persistent()
             .get(&AccountManagerKey::SmartAccountAddress(
                 user_address.clone(),
             ))
             .expect("Failed to fetch users smart account address")
-    }
+    } */
 
     fn get_trader_address(env: &Env, smart_account: Address) -> Address {
         env.storage()
@@ -593,10 +577,11 @@ impl AccountManagerContract {
             .expect("Failed to fetch Traders address")
     }
 
-    pub fn generate_predictable_salt(
+    pub fn generate_salt(
         env: &Env,
         trader_address: Address,
         account_manager: Address,
+        smart_account_num: u32,
     ) -> BytesN<32> {
         // Convert addresses to XDR for consistent serialization
         // Make sure empty addresses are not sent
@@ -605,6 +590,7 @@ impl AccountManagerContract {
 
         let trader_xdr = trader_address.to_xdr(env);
         let manager_xdr = account_manager.to_xdr(env);
+        let num_xdr = smart_account_num.to_le_bytes();
 
         // Create a combined buffer to hash both addresses together
         let mut combined = Bytes::new(env);
@@ -619,17 +605,85 @@ impl AccountManagerContract {
             combined.push_back(manager_xdr.get(i).unwrap());
         }
 
+        for i in 0..num_xdr.len() {
+            combined.push_back(*num_xdr.get(i).unwrap());
+        }
+
         // Use Soroban's built-in SHA256 hash function
         // This ensures a unique 32-byte output for any unique input combination
         env.crypto().sha256(&combined).into()
     }
 
-    fn has_smart_account(env: &Env, trader_address: &Address) -> bool {
+    /* fn has_smart_account(env: &Env, trader_address: &Address) -> bool {
         env.storage()
             .persistent()
             .has(&AccountManagerKey::SmartAccountAddress(
                 trader_address.clone(),
             ))
+    } */
+
+    pub fn get_inactive_accounts(env: &Env, trader_address: Address) -> Vec<Address> {
+        env.storage()
+            .persistent()
+            .get(&AccountManagerKey::InactiveAccountOf(trader_address))
+            .unwrap_or(Vec::new(env))
+    }
+
+    fn set_inactive_accounts(env: &Env, trader_address: Address, inactive_accounts: Vec<Address>) {
+        env.storage().persistent().set(
+            &AccountManagerKey::InactiveAccountOf(trader_address),
+            &inactive_accounts,
+        )
+    }
+
+    fn create_smart_account(
+        env: &Env,
+        trader_address: &Address,
+        smart_account_hash: BytesN<32>,
+    ) -> Address {
+        let mut trader_smart_accounts = env
+            .storage()
+            .persistent()
+            .get(&AccountManagerKey::SmartAccounts(trader_address.clone()))
+            .unwrap_or(Vec::new(env));
+
+        let salt = Self::generate_salt(
+            &env,
+            trader_address.clone(),
+            env.current_contract_address(),
+            trader_smart_accounts.len(),
+        );
+
+        let mut constructor_args = Vec::new(&env);
+        constructor_args.push_back(env.current_contract_address().to_val());
+        constructor_args.push_back(Self::get_registry_address(env).to_val());
+        constructor_args.push_back(trader_address.to_val());
+
+        let smart_account = env
+            .deployer()
+            .with_address(env.current_contract_address(), salt)
+            .deploy_v2(smart_account_hash, constructor_args);
+
+        trader_smart_accounts.push_back(smart_account.clone());
+
+        env.storage().persistent().set(
+            &AccountManagerKey::SmartAccounts(trader_address.clone()),
+            &trader_smart_accounts,
+        );
+
+        env.storage().persistent().set(
+            &AccountManagerKey::TraderAddress(smart_account.clone()),
+            &trader_address,
+        );
+
+        env.events().publish(
+            (Symbol::new(&env, "Smart_account_creation"), trader_address),
+            AccountCreationEvent {
+                smart_account: smart_account.clone(),
+                creation_time: env.ledger().timestamp(),
+            },
+        );
+        smart_account
     }
 
     /// To be implemented

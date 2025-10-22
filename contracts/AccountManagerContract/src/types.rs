@@ -3,15 +3,16 @@ use soroban_sdk::{Address, Symbol, U256, contracterror, contracttype};
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[contracttype]
 pub enum AccountManagerKey {
-    UsersList,                    // List of all unique users
-    SmartAccountAddress(Address), // User's smart account address
-    TraderAddress(Address),       // Traders address for respective margin account.
+    UsersList,                  // List of all unique users
+    SmartAccounts(Address),     // User's smart account addresses
+    TraderAddress(Address),     // Traders address for respective margin account.
+    InactiveAccountOf(Address), // List of inactive accounts for a trader
     // UserBorrowedDebt(Address, Symbol), // User debt balance in a specific asset symbol
     // UserBorrowedTokensList(Address),   // All borrowed tokens symbols held by user address
     // TotalDebtInPool(Symbol), // Total debt in pool for a specific asset symbol
     IsAccountInitialised(Address), // Flag to check if account is initialized
     AccountCreatedTime(Address),   // Time when account was created
-    AccountDeletedTime(Address),   // Time when account is deleted
+    AccountClosedTime(Address),    // Time when account is deleted
     IsCollateralAllowed(Symbol),
     AssetCap,
     Admin,

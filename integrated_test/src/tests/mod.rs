@@ -1,1 +1,5 @@
-mod account_manager_test;
+mod account_manager_contract_tests;
+mod registry_contract_tests;
+mod smart_account_contract_tests;
+
+mod lending_protocol_xlm_tests;

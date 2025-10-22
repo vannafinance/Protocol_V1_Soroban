@@ -1,8 +1,13 @@
 use core::panic;
 
-use soroban_sdk::{Address, Env, Symbol, U256, Vec, contract, contractimpl, log, token};
+use soroban_sdk::{
+    Address, Env, Symbol, U256, Vec, contract, contractimpl, log, panic_with_error, token,
+};
 
-use crate::types::{SmartAccountDataKey, SmartAccountDeactivationEvent, SmartAccountError};
+use crate::types::{
+    SmartAccountActivationEvent, SmartAccountDataKey, SmartAccountDeactivationEvent,
+    SmartAccountError,
+};
 
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
@@ -30,11 +35,13 @@ impl SmartAccountContract {
             .persistent()
             .set(&SmartAccountDataKey::OwnerAddress, &user_address);
 
-        Self::activate_account(&env).expect("Failed to activate account");
+        let key = SmartAccountDataKey::IsAccountActive;
+        // When deployed the smart account is inactive, which should be activated explicitly
+        env.storage().persistent().set(&key, &false);
+        Self::extend_ttl_smart_account(&env, key);
         Self::extend_ttl_smart_account(&env, SmartAccountDataKey::AccountManager);
         Self::extend_ttl_smart_account(&env, SmartAccountDataKey::RegistryContract);
         Self::extend_ttl_smart_account(&env, SmartAccountDataKey::OwnerAddress);
-        log!(&env, "Smart account created!");
     }
 
     pub fn deactivate_account(env: &Env) -> Result<(), SmartAccountError> {
@@ -45,7 +52,7 @@ impl SmartAccountContract {
         env.storage().persistent().set(&key, &false);
         Self::extend_ttl_smart_account(&env, key);
         env.events().publish(
-            (Symbol::new(&env, "Smart Account_Deactivated"),),
+            (Symbol::new(&env, "Smart_Account_Deactivated"),),
             SmartAccountDeactivationEvent {
                 margin_account: env.current_contract_address(),
                 deactivate_time: env.ledger().timestamp(),
@@ -56,10 +63,17 @@ impl SmartAccountContract {
 
     pub fn activate_account(env: &Env) -> Result<(), SmartAccountError> {
         let account_manager: Address = Self::get_account_manager(&env);
-        // account_manager.require_auth();
+        account_manager.require_auth();
         let key = SmartAccountDataKey::IsAccountActive;
         env.storage().persistent().set(&key, &true);
         Self::extend_ttl_smart_account(&env, key);
+        env.events().publish(
+            (Symbol::new(&env, "Smart_Account_Activated"),),
+            SmartAccountActivationEvent {
+                margin_account: env.current_contract_address(),
+                activated_time: env.ledger().timestamp(),
+            },
+        );
         Ok(())
     }
 
@@ -116,15 +130,15 @@ impl SmartAccountContract {
     }
 
     pub fn remove_collateral_token_balance(
-        env: Env,
+        env: &Env,
         user_address: Address,
         token_symbol: Symbol,
         amount: u128,
     ) -> Result<(), SmartAccountError> {
-        let registry_address = Self::get_registry_address(&env);
-        let registry_client = registry_contract::Client::new(&env, &registry_address);
         let account_manager = Self::get_account_manager(&env);
         account_manager.require_auth();
+        let registry_address = Self::get_registry_address(&env);
+        let registry_client = registry_contract::Client::new(&env, &registry_address);
 
         if token_symbol == Symbol::new(&env, "XLM") {
             let native_xlm_address = registry_client.get_xlm_contract_adddress();
@@ -158,17 +172,41 @@ impl SmartAccountContract {
         let collateral_balance =
             Self::get_collateral_token_balance(&env, token_symbol.clone()).unwrap();
         let balance_after_deduction = collateral_balance.sub(&U256::from_u128(&env, amount));
-        Self::set_collateral_token_balance(
-            &env,
-            token_symbol.clone(),
-            balance_after_deduction.clone(),
-        )
-        .unwrap();
+
+        let key_a = SmartAccountDataKey::CollateralBalance(token_symbol.clone());
+        env.storage()
+            .persistent()
+            .set(&key_a, &balance_after_deduction);
+        Self::extend_ttl_smart_account(&env, key_a);
 
         if balance_after_deduction == U256::from_u128(&env, 0) {
             Self::remove_collateral_token(&env, token_symbol.clone()).unwrap();
         }
 
+        Ok(())
+    }
+
+    pub fn sweep_to(env: &Env, to_address: Address) -> Result<(), SmartAccountError> {
+        let account_manager: Address = Self::get_account_manager(&env);
+        account_manager.require_auth();
+
+        let all_collateral_tokens = Self::get_all_collateral_tokens(env).unwrap();
+        for coltoken in all_collateral_tokens.iter() {
+            let coltokenbalance =
+                Self::get_collateral_token_balance(env, coltoken.clone()).unwrap();
+
+            let col_token_amount = coltokenbalance.to_u128().unwrap_or_else(|| {
+                panic_with_error!(&env, SmartAccountError::IntegerConversionError)
+            });
+
+            Self::remove_collateral_token_balance(
+                env,
+                to_address.clone(),
+                coltoken,
+                col_token_amount,
+            )
+            .unwrap();
+        }
         Ok(())
     }
 
@@ -187,8 +225,7 @@ impl SmartAccountContract {
         token_symbol: Symbol,
     ) -> Result<(), SmartAccountError> {
         Self::check_auth(&env, token_symbol).unwrap();
-        // let account_manager: Address = Self::get_account_manager(env);
-        // account_manager.require_auth();
+
         env.storage()
             .persistent()
             .set(&SmartAccountDataKey::HasDebt, &has_debt);
@@ -196,7 +233,6 @@ impl SmartAccountContract {
         Ok(())
     }
 
-    // flaw !! where is add borrowed tokens?
     pub fn get_all_borrowed_tokens(env: &Env) -> Result<Vec<Symbol>, SmartAccountError> {
         // let account_manager: Address = Self::get_account_manager(env);
         // account_manager.require_auth();
@@ -263,6 +299,9 @@ impl SmartAccountContract {
     }
 
     pub fn add_collateral_token(env: &Env, token_symbol: Symbol) -> Result<(), SmartAccountError> {
+        let account_manager = Self::get_account_manager(&env);
+        account_manager.require_auth();
+
         let mut exisiting_tokens = Self::get_all_collateral_tokens(&env).unwrap();
         if !exisiting_tokens.contains(&token_symbol) {
             exisiting_tokens.push_back(token_symbol);
@@ -306,6 +345,9 @@ impl SmartAccountContract {
         token_symbol: Symbol,
         balance: U256,
     ) -> Result<(), SmartAccountError> {
+        let account_manager = Self::get_account_manager(&env);
+        account_manager.require_auth();
+
         let key_a = SmartAccountDataKey::CollateralBalance(token_symbol.clone());
         env.storage().persistent().set(&key_a, &balance);
         Self::extend_ttl_smart_account(&env, key_a);
@@ -350,6 +392,13 @@ impl SmartAccountContract {
         // Ok(token_debt)
     }
 
+    pub fn is_account_active(env: &Env) -> bool {
+        env.storage()
+            .persistent()
+            .get(&SmartAccountDataKey::IsAccountActive)
+            .unwrap_or(false)
+    }
+
     fn check_auth(env: &Env, token_symbol: Symbol) -> Result<(), SmartAccountError> {
         let registry_address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
@@ -366,6 +415,8 @@ impl SmartAccountContract {
             let pool_eurc_address = registry_client.get_lendingpool_eurc();
             // make sure only the lending pool has auth to call this function by adding authorization
             pool_eurc_address.require_auth();
+        } else {
+            panic!("Non existent lending pool, Auth failed!!");
         }
         Ok(())
     }

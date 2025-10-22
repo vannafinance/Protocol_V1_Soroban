@@ -4,21 +4,22 @@
 //! This file includes integration + edge case tests for AccountManagerContract
 //! Dependencies: registry_contract, smart_account_contract, risk_engine_contract, liquidity pools, oracle, etc.
 
+use std::ops::Add;
+
 use account_manager_contract::account_manager::AccountManagerContractClient;
 use account_manager_contract::account_manager::{self, AccountManagerContract};
-use account_manager_contract::types::AccountManagerError;
 use lending_protocol_xlm::liquidity_pool_xlm::{self, LiquidityPoolXLM, LiquidityPoolXLMClient};
 use oracle_contract::oracle_service::{OracleContract, OracleContractClient};
 use registry_contract::registry::RegistryContract;
 use registry_contract::registry::RegistryContractClient;
 use risk_engine_contract::risk_engine::RiskEngineContract;
 use sep_40_oracle::testutils::{self, Asset, MockPriceOracle, MockPriceOracleClient};
-use sep_40_oracle::{Asset as MAsset, PriceData, PriceFeedClient, PriceFeedTrait};
+// use sep_40_oracle::{Asset as MAsset, PriceData, PriceFeedClient, PriceFeedTrait};
 use smart_account_contract::smart_account::SmartAccountContractClient;
-use soroban_sdk::token;
 use soroban_sdk::token::StellarAssetClient;
 use soroban_sdk::{Address as Addr, String, Symbol, U256};
 use soroban_sdk::{Env, Vec, testutils::Address};
+use soroban_sdk::{log, token};
 use vxlm_token_contract::v_xlm::VXLMToken;
 use vxlm_token_contract::v_xlm::VXLMTokenClient;
 
@@ -40,6 +41,7 @@ pub struct ContractAddresses {
     xlm_address: Addr,
     usdc_address: Addr,
     eurc_address: Addr,
+    mock_oracle_address: Addr,
 }
 
 pub fn test_initiation(env: &Env) -> ContractAddresses {
@@ -54,11 +56,12 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
     let oracle_contract_id = Addr::generate(&env);
     let risk_engine_contract_id = Addr::generate(&env);
     let vxlm_token_contract_id = Addr::generate(&env);
+    let price_feed_add = Addr::generate(&env);
     let xlm_token = env.register_stellar_asset_contract_v2(admin.clone());
     let usdc_token = env.register_stellar_asset_contract_v2(admin.clone());
     let eurc_token = env.register_stellar_asset_contract_v2(admin.clone());
 
-    let contracts = ContractAddresses {
+    let mut contracts = ContractAddresses {
         admin: admin,
         liquidity_pool_xlm: liquidity_pool_xlm_addr,
         liquidity_pool_usdc: liquidity_pool_usdc_addr,
@@ -73,6 +76,7 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
         xlm_address: xlm_token.address(),
         usdc_address: usdc_token.address(),
         eurc_address: eurc_token.address(),
+        mock_oracle_address: price_feed_add,
     };
 
     // Deploy account manager contract
@@ -95,7 +99,7 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
         (contracts.admin.clone(), contracts.registry_contract.clone()),
     );
     // set oracle contract to something simple (we can reuse a mock)
-    let price_feed_addr = oracle_price_feed_setup(&env, &contracts);
+    let price_feed_addr = oracle_price_feed_setup(&env, &mut contracts);
     // register oracle contract that points to price feed
     env.register_at(
         &contracts.oracle_contract,
@@ -109,11 +113,18 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
     registry_client.set_smart_account_hash(&smart_hash);
     registry_client.set_native_usdc_contract_address(&contracts.usdc_address);
     registry_client.set_native_eurc_contract_address(&contracts.eurc_address);
-    registry_client.set_native_xlm_contract_adddress(&contracts.xlm_address);
+    registry_client.set_native_xlm_contract_address(&contracts.xlm_address);
     registry_client.set_oracle_contract_address(&contracts.oracle_contract);
     registry_client.set_risk_engine_address(&contracts.risk_engine_contract);
     registry_client.set_lendingpool_xlm(&contracts.liquidity_pool_xlm);
     registry_client.set_rate_model_address(&contracts.rate_model_contract);
+    registry_client.set_accountmanager_contract(&contracts.account_manager_contract);
+
+    assert!(
+        registry_client
+            .get_xlm_contract_adddress()
+            .eq(&contracts.xlm_address)
+    );
 
     contracts
 }
@@ -159,7 +170,7 @@ fn liquidity_pool_lenders_initialise(env: &Env, contracts: &ContractAddresses) {
     let lp_xlm_client = LiquidityPoolXLMClient::new(&env, &contracts.liquidity_pool_xlm);
 
     let registry_client = RegistryContractClient::new(&env, &contracts.registry_contract);
-    registry_client.set_native_xlm_contract_adddress(&contracts.xlm_address);
+    registry_client.set_native_xlm_contract_address(&contracts.xlm_address);
     let lender_addr1 = Addr::generate(&env);
     let lender_addr2 = Addr::generate(&env);
 
@@ -198,34 +209,34 @@ fn liquidity_pool_lenders_initialise(env: &Env, contracts: &ContractAddresses) {
     assert!(xlm_token_client.balance(&lender_addr4) == 999999300);
 }
 
-fn oracle_price_feed_setup(env: &Env, contracts: &ContractAddresses) -> Addr {
-    let price_feed_add = Addr::generate(&env);
+fn oracle_price_feed_setup(env: &Env, contracts: &mut ContractAddresses) -> Addr {
     let usdc_symbol = Symbol::new(&env, "USDC");
     let xlm_symbol = Symbol::new(&env, "XLM");
     let eurc_symbol = Symbol::new(&env, "EURC");
-    let sol_symbol = Symbol::new(&env, "SOL");
-
-    let xlm_address = Addr::generate(&env);
 
     let wasm_hash = env
         .deployer()
         .upload_contract_wasm(testutils::MockPriceOracleWASM);
 
-    let price_feed_addr = env
+    println!("CAME HEREEE!!666");
+
+    let price_feed_address = env
         .deployer()
         .with_address(
-            price_feed_add,
-            AccountManagerContract::generate_predictable_salt(
+            contracts.mock_oracle_address.clone(),
+            AccountManagerContract::generate_salt(
                 &env,
                 contracts.admin.clone(),
                 contracts.account_manager_contract.clone(),
+                12,
             ),
         )
         .deploy_v2(wasm_hash, ());
 
-    println!("Price feed contract deployed! at {:?}", price_feed_addr);
+    contracts.mock_oracle_address = price_feed_address.clone();
+    // println!("Price feed contract deployed! at {:?}", price_feed_addr);
 
-    let price_feed_client = MockPriceOracleClient::new(&env, &price_feed_addr);
+    let price_feed_client = MockPriceOracleClient::new(&env, &price_feed_address);
     let assets = Vec::from_array(
         &env,
         [
@@ -245,7 +256,7 @@ fn oracle_price_feed_setup(env: &Env, contracts: &ContractAddresses) -> Addr {
         &Vec::from_array(&env, [4000000, 9990000, 12262415]),
         &env.ledger().timestamp(),
     );
-    price_feed_addr
+    contracts.mock_oracle_address.clone()
 }
 
 #[test]
@@ -256,22 +267,8 @@ fn all_integrated_tests_start() {
     let contracts = test_initiation(&env);
 
     let xlm_token = env.register_stellar_asset_contract_v2(contracts.admin.clone());
-    // let vxlm_token =
-    //     env.register_stellar_asset_contract_v2(contracts.liquidity_pool_xlm.clone());
 
     println!("vxlm token address is {:?}", contracts.vxlm_token_contract);
-
-    env.register_at(
-        &contracts.registry_contract,
-        RegistryContract,
-        (contracts.admin.clone(),),
-    );
-
-    env.register_at(
-        &contracts.account_manager_contract,
-        AccountManagerContract,
-        (contracts.admin.clone(), contracts.registry_contract.clone()),
-    );
 
     env.register_at(
         &contracts.liquidity_pool_xlm,
@@ -305,7 +302,7 @@ fn all_integrated_tests_start() {
     let stellar_asset = StellarAssetClient::new(&env, &xlm_token.address());
 
     let registry_client = RegistryContractClient::new(&env, &contracts.registry_contract);
-    registry_client.set_native_xlm_contract_adddress(&xlm_token.address());
+    registry_client.set_native_xlm_contract_address(&xlm_token.address());
 
     stellar_asset.mint(&lender_addr, &1000000000i128);
 
@@ -357,33 +354,8 @@ fn account_manager_flows() {
     env.mock_all_auths();
 
     let contracts = test_initiation(&env);
-    let reflector_address = Addr::generate(&env);
     let usdc_token = env.register_stellar_asset_contract_v2(contracts.admin.clone());
     let xlm_token = env.register_stellar_asset_contract_v2(contracts.admin.clone());
-
-    env.register_at(
-        &contracts.registry_contract,
-        RegistryContract,
-        (contracts.admin.clone(),),
-    );
-
-    env.register_at(
-        &contracts.account_manager_contract,
-        AccountManagerContract,
-        (contracts.admin.clone(), contracts.registry_contract.clone()),
-    );
-
-    env.register_at(
-        &contracts.risk_engine_contract,
-        RiskEngineContract,
-        (contracts.admin.clone(), contracts.registry_contract.clone()),
-    );
-
-    env.register_at(
-        &contracts.oracle_contract,
-        OracleContract,
-        (contracts.admin.clone(), reflector_address),
-    );
 
     let account_manager_client =
         account_manager_contract::account_manager::AccountManagerContractClient::new(
@@ -397,11 +369,10 @@ fn account_manager_flows() {
         RegistryContractClient::new(&env, &contracts.registry_contract.clone());
     registry_contract_client.set_smart_account_hash(&smart_account_hash);
     registry_contract_client.set_native_usdc_contract_address(&usdc_token.address());
-    registry_contract_client.set_native_xlm_contract_adddress(&xlm_token.address());
+    registry_contract_client.set_native_xlm_contract_address(&xlm_token.address());
     registry_contract_client.set_risk_engine_address(&contracts.risk_engine_contract);
     registry_contract_client.set_oracle_contract_address(&contracts.oracle_contract);
 
-    let stellar_asset_usdc = StellarAssetClient::new(&env, &usdc_token.address());
     let stellar_asset_xlm = StellarAssetClient::new(&env, &xlm_token.address());
 
     let trader_address = Addr::generate(&env);
@@ -413,6 +384,8 @@ fn account_manager_flows() {
     let margin_acc1 = account_manager_client.create_account(&trader_address);
 
     let margin_acc2 = account_manager_client.create_account(&trader_address2);
+
+    assert_ne!(margin_acc1, margin_acc2);
 
     println!("CReated margin account addres is {:?}", margin_acc1);
     println!("CReated margin account addres is {:?}", margin_acc2);
@@ -469,14 +442,6 @@ fn account_manager_flows() {
         &Symbol::new(&env, "XLM"),
         &U256::from_u128(&env, 80),
     );
-
-    // account_manager_client.borrow(
-    //     &trader_address,
-    //     &U256::from_u32(&env, 1000),
-    //     &Symbol::new(&env, "USDC"),
-    // );
-
-    // account_manager_client.approve();
 }
 
 #[test]
@@ -485,28 +450,11 @@ fn test_oracle_price() {
     env.mock_all_auths();
     let contracts = test_initiation(&env);
 
-    let price_feed_add = Addr::generate(&env);
     let usdc_symbol = Symbol::new(&env, "USDC");
     let xlm_symbol = Symbol::new(&env, "XLM");
     let eurc_symbol = Symbol::new(&env, "EURC");
 
-    let wasm_hash = env
-        .deployer()
-        .upload_contract_wasm(testutils::MockPriceOracleWASM);
-
-    let price_feed_addr = env
-        .deployer()
-        .with_address(
-            price_feed_add,
-            AccountManagerContract::generate_predictable_salt(
-                &env,
-                contracts.admin.clone(),
-                contracts.account_manager_contract.clone(),
-            ),
-        )
-        .deploy_v2(wasm_hash, ());
-
-    let price_feed_client = MockPriceOracleClient::new(&env, &price_feed_addr);
+    let price_feed_client = MockPriceOracleClient::new(&env, &contracts.mock_oracle_address);
     let assets = Vec::from_array(
         &env,
         [
@@ -533,7 +481,10 @@ fn test_oracle_price() {
     let oracle_address = env.register_at(
         &contracts.oracle_contract,
         OracleContract,
-        (contracts.admin.clone(), price_feed_addr),
+        (
+            contracts.admin.clone(),
+            contracts.mock_oracle_address.clone(),
+        ),
     );
 
     let oracle_client = OracleContractClient::new(&env, &oracle_address);
@@ -551,20 +502,6 @@ fn test_trader_borrow_logic() {
 
     liquidity_pool_lenders_initialise(&env, &contracts);
 
-    let price_feed_addr = oracle_price_feed_setup(&env, &contracts);
-
-    env.register_at(
-        &contracts.risk_engine_contract,
-        RiskEngineContract,
-        (contracts.admin.clone(), contracts.registry_contract.clone()),
-    );
-
-    env.register_at(
-        &contracts.oracle_contract,
-        OracleContract,
-        (contracts.admin.clone(), price_feed_addr),
-    );
-
     let account_manager_client =
         AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
 
@@ -573,14 +510,13 @@ fn test_trader_borrow_logic() {
     let registry_client = RegistryContractClient::new(&env, &contracts.registry_contract.clone());
     registry_client.set_smart_account_hash(&smart_account_hash);
     registry_client.set_native_usdc_contract_address(&contracts.usdc_address);
-    registry_client.set_native_xlm_contract_adddress(&contracts.xlm_address);
+    registry_client.set_native_xlm_contract_address(&contracts.xlm_address);
     registry_client.set_risk_engine_address(&contracts.risk_engine_contract);
     registry_client.set_oracle_contract_address(&contracts.oracle_contract);
     registry_client.set_lendingpool_xlm(&contracts.liquidity_pool_xlm);
     registry_client.set_rate_model_address(&contracts.rate_model_contract);
 
     let stellar_asset_usdc = StellarAssetClient::new(&env, &contracts.usdc_address);
-    let stellar_asset_xlm = StellarAssetClient::new(&env, &contracts.xlm_address);
 
     let trader_address = Addr::generate(&env);
     println!("Trader address 1 {:?}", trader_address);
@@ -643,20 +579,6 @@ fn test_trader_borrow_failures() {
 
     liquidity_pool_lenders_initialise(&env, &contracts);
 
-    let price_feed_addr = oracle_price_feed_setup(&env, &contracts);
-
-    env.register_at(
-        &contracts.risk_engine_contract,
-        RiskEngineContract,
-        (contracts.admin.clone(), contracts.registry_contract.clone()),
-    );
-
-    env.register_at(
-        &contracts.oracle_contract,
-        OracleContract,
-        (contracts.admin.clone(), price_feed_addr),
-    );
-
     let account_manager_client =
         AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
 
@@ -665,7 +587,7 @@ fn test_trader_borrow_failures() {
     let registry_client = RegistryContractClient::new(&env, &contracts.registry_contract.clone());
     registry_client.set_smart_account_hash(&smart_account_hash);
     registry_client.set_native_usdc_contract_address(&contracts.usdc_address);
-    registry_client.set_native_xlm_contract_adddress(&contracts.xlm_address);
+    registry_client.set_native_xlm_contract_address(&contracts.xlm_address);
     registry_client.set_risk_engine_address(&contracts.risk_engine_contract);
     registry_client.set_oracle_contract_address(&contracts.oracle_contract);
     registry_client.set_lendingpool_xlm(&contracts.liquidity_pool_xlm);
@@ -739,7 +661,6 @@ fn test_account_creation_without_registry_should_fail() {
 }
 
 #[test]
-#[should_panic(expected = "Trader already has a smart account!")]
 fn account_creation_and_duplicate_creation() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1080,11 +1001,11 @@ fn delete_account_with_debt() {
         RiskEngineContract,
         (contracts.admin.clone(), contracts.registry_contract.clone()),
     );
-    let price_feed_addr = oracle_price_feed_setup(&env, &contracts);
+
     env.register_at(
         &contracts.oracle_contract,
         OracleContract,
-        (contracts.admin.clone(), price_feed_addr),
+        (contracts.admin.clone(), contracts.mock_oracle_address),
     );
 
     let account_manager_client =
@@ -1112,7 +1033,7 @@ fn delete_account_with_debt() {
     );
 
     // now attempt to delete account -> should panic because smart_account.has_debt() == true
-    account_manager_client.delete_account(&smart_acc);
+    account_manager_client.close_account(&smart_acc);
 }
 
 #[test]
@@ -1163,21 +1084,192 @@ fn settle_account_invokes_repay_for_all_borrows() {
 }
 
 #[test]
-fn predictable_salt_is_consistent() {
+fn close_account_and_activate_again() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contracts = test_initiation(&env);
+
+    liquidity_pool_lenders_initialise(&env, &contracts);
+
+    let account_manager_client =
+        AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
+    account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
+    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "USDC"));
+
+    let trader = Addr::generate(&env);
+    let usdc_token = StellarAssetClient::new(&env, &contracts.usdc_address);
+    usdc_token.mint(&trader, &10_000i128);
+
+    let smart_acc = account_manager_client.create_account(&trader);
+    account_manager_client.deposit_collateral_tokens(
+        &smart_acc,
+        &Symbol::new(&env, "USDC"),
+        &U256::from_u128(&env, 100),
+    );
+
+    // Borrow & then settle: settle_account calls repay for each borrowed token
+    account_manager_client.borrow(
+        &smart_acc,
+        &U256::from_u128(&env, 5),
+        &Symbol::new(&env, "XLM"),
+    );
+
+    // Call settle_account (should call repay internally for outstanding tokens)
+    let res = account_manager_client.settle_account(&smart_acc);
+    assert!(res);
+
+    // After settle account, the smart_account should have a borrow recorded via pool logic.
+    let smart_client = SmartAccountContractClient::new(&env, &smart_acc);
+    // borrowed tokens list should not contain XLM after repay
+    let borrowed = smart_client.get_all_borrowed_tokens();
+    assert!(!borrowed.contains(Symbol::new(&env, "XLM")));
+
+    // Smart account should have 0 XLM tokens after repay
+    let xlm_token = token::Client::new(&env, &contracts.xlm_address);
+    let bal = xlm_token.balance(&smart_acc);
+    assert!(bal == 0_i128);
+
+    account_manager_client.close_account(&smart_acc);
+
+    let accs = account_manager_client.get_inactive_accounts(&trader);
+
+    assert!(accs.len() == 1);
+    assert!(accs.last().unwrap() == smart_acc);
+
+    println!("Is account active: {:?} ", smart_client.is_account_active());
+    assert!(!smart_client.is_account_active());
+
+    // Assert when creating a new account the old inactivated account is activates.
+    let addressx = account_manager_client.create_account(&trader);
+    assert!(addressx.eq(&smart_acc));
+    assert!(smart_client.is_account_active());
+
+    let accs = account_manager_client.get_inactive_accounts(&trader);
+    assert!(accs.len() == 0);
+}
+
+#[test]
+#[should_panic(expected = "Cannot liquidate when account is healthy!!")]
+fn liquidate_account_test_failure() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contracts = test_initiation(&env);
+
+    liquidity_pool_lenders_initialise(&env, &contracts);
+
+    let account_manager_client =
+        AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
+    account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
+    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "USDC"));
+
+    let trader = Addr::generate(&env);
+    let usdc_token = StellarAssetClient::new(&env, &contracts.usdc_address);
+    usdc_token.mint(&trader, &10_000i128);
+
+    let smart_acc = account_manager_client.create_account(&trader);
+    account_manager_client.deposit_collateral_tokens(
+        &smart_acc,
+        &Symbol::new(&env, "USDC"),
+        &U256::from_u128(&env, 100),
+    );
+
+    // Borrow & then settle: settle_account calls repay for each borrowed token
+    account_manager_client.borrow(
+        &smart_acc,
+        &U256::from_u128(&env, 5),
+        &Symbol::new(&env, "XLM"),
+    );
+
+    // Call settle_account (should call repay internally for outstanding tokens)
+    // let res = account_manager_client.settle_account(&smart_acc);
+    // assert!(res);
+    account_manager_client.liquidate(&smart_acc);
+
+    // After settle account, the smart_account should have a borrow recorded via pool logic.
+    let smart_client = SmartAccountContractClient::new(&env, &smart_acc);
+    // borrowed tokens list should not contain XLM after repay
+    let borrowed = smart_client.get_all_borrowed_tokens();
+    assert!(!borrowed.contains(Symbol::new(&env, "XLM")));
+
+    // Smart account should have 0 XLM tokens after repay
+    let xlm_token = token::Client::new(&env, &contracts.xlm_address);
+    let bal = xlm_token.balance(&smart_acc);
+    assert!(bal == 0_i128);
+}
+
+#[test]
+fn liquidate_account_test_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contracts = test_initiation(&env);
+
+    let xlm_symbol = Symbol::new(&env, "XLM");
+    let usdc_symbol = Symbol::new(&env, "USDC");
+    let eurc_symbol = Symbol::new(&env, "EURC");
+
+    liquidity_pool_lenders_initialise(&env, &contracts);
+
+    let account_manager_client =
+        AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
+    account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
+    account_manager_client.set_iscollateral_allowed(&usdc_symbol);
+
+    let trader = Addr::generate(&env);
+    let usdc_token = StellarAssetClient::new(&env, &contracts.usdc_address);
+    usdc_token.mint(&trader, &10_000i128);
+
+    let smart_acc = account_manager_client.create_account(&trader);
+    account_manager_client.deposit_collateral_tokens(
+        &smart_acc,
+        &usdc_symbol,
+        &U256::from_u128(&env, 100),
+    );
+
+    // Borrow & then settle: settle_account calls repay for each borrowed token
+    account_manager_client.borrow(&smart_acc, &U256::from_u128(&env, 50), &xlm_symbol);
+
+    // change borrowed xlm value to make the account unhealthy with oracle price modification
+    let price_feed_client =
+        MockPriceOracleClient::new(&env, &contracts.mock_oracle_address.clone());
+
+    price_feed_client.set_price(
+        &Vec::from_array(&env, [4000000, 999000, 12262415]),
+        &env.ledger().timestamp(),
+    );
+
+    // account can only be liquidated when its unhealthy?
+    account_manager_client.liquidate(&smart_acc);
+
+    // After settle account, the smart_account should have a borrow recorded via pool logic.
+    let smart_client = SmartAccountContractClient::new(&env, &smart_acc);
+    // borrowed tokens list should not contain XLM after repay
+    let borrowed = smart_client.get_all_borrowed_tokens();
+    assert!(!borrowed.contains(Symbol::new(&env, "XLM")));
+
+    // Smart account should have 0 XLM tokens after repay
+    let xlm_token = token::Client::new(&env, &contracts.xlm_address);
+    let bal = xlm_token.balance(&smart_acc);
+    assert!(bal == 0_i128);
+}
+
+#[test]
+fn predictable_salt_is_unique() {
     let env = Env::default();
     env.mock_all_auths();
     let contracts = test_initiation(&env);
 
     let trader = Addr::generate(&env);
-    let salt_a = AccountManagerContract::generate_predictable_salt(
+    let salt_a = AccountManagerContract::generate_salt(
         &env,
         trader.clone(),
         contracts.account_manager_contract.clone(),
+        10,
     );
-    let salt_b = AccountManagerContract::generate_predictable_salt(
+    let salt_b = AccountManagerContract::generate_salt(
         &env,
         trader.clone(),
         contracts.account_manager_contract.clone(),
+        11,
     );
-    assert_eq!(salt_a, salt_b);
+    assert_ne!(salt_a, salt_b);
 }

@@ -1,3 +1,4 @@
+use soroban_sdk::Address;
 use soroban_sdk::{contracterror, contracttype};
 
 #[contracterror]
@@ -22,4 +23,8 @@ pub enum RegistryKey {
     NativeXlmContractAddress,
     UsdcContractAddress,
     EurcContractAddress,
+    UsersList,         // List of all unique trader addresses
+    SmartAccountsList, // List of of all smart accounts
+    //SmartAccountAddress(Address), // Traders's smart account address
+    OwnerAddress(Address), // Traders address for respective margin account
 }

@@ -26,6 +26,7 @@ pub enum SmartAccountError {
     CollateralTokenNotFound = 1,
     BorrowedTokenNotFound = 2,
     MarginAccountNotFound = 3,
+    IntegerConversionError = 4,
 }
 
 #[contracttype]
@@ -33,4 +34,11 @@ pub enum SmartAccountError {
 pub struct SmartAccountDeactivationEvent {
     pub margin_account: Address,
     pub deactivate_time: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmartAccountActivationEvent {
+    pub margin_account: Address,
+    pub activated_time: u64,
 }

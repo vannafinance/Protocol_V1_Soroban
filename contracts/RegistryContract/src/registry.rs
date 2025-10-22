@@ -1,4 +1,8 @@
-use soroban_sdk::{Address, BytesN, Env, Symbol, contract, contractimpl, symbol_short};
+use core::ops::Add;
+
+use soroban_sdk::{
+    Address, BytesN, Env, String, Symbol, Vec, contract, contractimpl, symbol_short,
+};
 
 use crate::types::{RegistryContractError, RegistryKey};
 
@@ -140,7 +144,7 @@ impl RegistryContract {
         Ok(())
     }
 
-    pub fn set_native_xlm_contract_adddress(
+    pub fn set_native_xlm_contract_address(
         env: &Env,
         xlm_contract_adddress: Address,
     ) -> Result<(), RegistryContractError> {
@@ -286,6 +290,78 @@ impl RegistryContract {
             .expect("Failed to fetch token contract address for EURC");
 
         Ok(token_contract_address)
+    }
+
+    pub fn get_admin(env: &Env) -> Result<Address, RegistryContractError> {
+        env.storage()
+            .persistent()
+            .get(&ADMIN)
+            .expect("Failed to fetch admin address")
+    }
+    pub fn add_account(
+        env: &Env,
+        trader: Address,
+        smart_account: Address,
+    ) -> Result<bool, RegistryContractError> {
+        let acc_manager = Self::get_accountmanager_contract(env).unwrap();
+        acc_manager.require_auth();
+
+        let mut accounts_list: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&RegistryKey::SmartAccountsList)
+            .unwrap_or(Vec::new(env));
+
+        if !accounts_list.contains(smart_account.clone()) {
+            accounts_list.push_back(smart_account.clone());
+            Self::set_smart_accounts_list(env, accounts_list);
+        }
+
+        env.storage().persistent().set(
+            &RegistryKey::OwnerAddress(smart_account.clone()),
+            &Some(trader),
+        );
+        Self::extend_ttl_registry(&env, RegistryKey::OwnerAddress(smart_account.clone()));
+
+        Ok(true)
+    }
+
+    pub fn close_account(
+        env: &Env,
+        trader: Address,
+        smart_account: Address,
+    ) -> Result<bool, RegistryContractError> {
+        let acc_manager = Self::get_accountmanager_contract(env).unwrap();
+        acc_manager.require_auth();
+
+        env.storage().persistent().set(
+            &RegistryKey::OwnerAddress(smart_account.clone()),
+            &None::<Address>,
+        );
+        Ok(true)
+    }
+
+    pub fn update_account(
+        env: &Env,
+        trader: Address,
+        smart_account: Address,
+    ) -> Result<bool, RegistryContractError> {
+        let acc_manager = Self::get_accountmanager_contract(env).unwrap();
+        acc_manager.require_auth();
+        env.storage().persistent().set(
+            &RegistryKey::OwnerAddress(smart_account.clone()),
+            &Some(trader),
+        );
+        Self::extend_ttl_registry(&env, RegistryKey::OwnerAddress(smart_account.clone()));
+
+        Ok(true)
+    }
+
+    fn set_smart_accounts_list(env: &Env, list: Vec<Address>) {
+        env.storage()
+            .persistent()
+            .set(&RegistryKey::SmartAccountsList, &list);
+        Self::extend_ttl_registry(&env, RegistryKey::SmartAccountsList);
     }
 
     fn extend_ttl_registry(env: &Env, key: RegistryKey) {
