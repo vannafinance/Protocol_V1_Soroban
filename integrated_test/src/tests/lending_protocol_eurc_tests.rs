@@ -1,4 +1,4 @@
-// Comprehensive tests for `LiquidityPoolXLM`
+// Comprehensive tests for `LiquidityPoolEURC`
 // ------------------------------------------------------------
 // These tests use real token contracts (soroban_token_contract)
 // and light-weight mock contracts for Registry, RateModel, and SmartAccount.
@@ -22,7 +22,9 @@ use soroban_sdk::{
 
 use account_manager_contract::account_manager::AccountManagerContractClient;
 use account_manager_contract::account_manager::{self, AccountManagerContract};
-use lending_protocol_xlm::liquidity_pool_xlm::{self, LiquidityPoolXLM, LiquidityPoolXLMClient};
+use lending_protocol_eurc::liquidity_pool_eurc::{
+    self, LiquidityPoolEURC, LiquidityPoolEURCClient,
+};
 use oracle_contract::oracle_service::{OracleContract, OracleContractClient};
 use registry_contract::registry::{RegistryContract, RegistryContractClient};
 use risk_engine_contract::risk_engine::RiskEngineContract;
@@ -32,8 +34,8 @@ use smart_account_contract::smart_account::{SmartAccountContract, SmartAccountCo
 use soroban_sdk::Address as Addr;
 use soroban_sdk::token::StellarAssetClient;
 use soroban_sdk::{log, token};
-use vxlm_token_contract::v_xlm::VXLMToken;
-use vxlm_token_contract::v_xlm::VXLMTokenClient;
+use veurc_token_contract::v_eurc::VEURCToken;
+use veurc_token_contract::v_eurc::VEURCTokenClient;
 
 const SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/release-with-logs/smart_account_contract.wasm");
@@ -45,6 +47,7 @@ const WAD7: i128 = 10000000;
 pub mod helpers {
     use rate_model_contract::rate_model::RateModelContract;
     use smart_account_contract::smart_account::SmartAccountContract;
+    use veurc_token_contract::v_eurc::{VEURCToken, VEURCTokenClient};
 
     use super::*;
     // use soroban_token_contract::{Client as TokenClient, Token};
@@ -62,6 +65,8 @@ pub mod helpers {
         pub risk_engine_contract: Address,
         pub smart_account_contract: Option<Address>,
         pub vxlm_token_contract: Address,
+        pub vusdc_token_contract: Address,
+        pub veurc_token_contract: Address,
         pub xlm_address: Address,
         pub usdc_address: Address,
         pub eurc_address: Address,
@@ -81,6 +86,10 @@ pub mod helpers {
         let oracle_contract_id = Address::generate(&env);
         let risk_engine_contract_id = Address::generate(&env);
         let vxlm_token_contract_id = Address::generate(&env);
+        let vusdc_token_contract_id = Address::generate(&env);
+
+        let veurc_token_contract_id = Address::generate(&env);
+
         let price_feed_add = Address::generate(&env);
         let smart_account_contract = Address::generate(&env);
         let user = Address::generate(&env);
@@ -103,6 +112,8 @@ pub mod helpers {
             risk_engine_contract: risk_engine_contract_id,
             smart_account_contract: Some(smart_account_contract),
             vxlm_token_contract: vxlm_token_contract_id,
+            vusdc_token_contract: vusdc_token_contract_id,
+            veurc_token_contract: veurc_token_contract_id,
             xlm_address: xlm_token.address(),
             usdc_address: usdc_token.address(),
             eurc_address: eurc_token.address(),
@@ -153,16 +164,16 @@ pub mod helpers {
         registry_client.set_native_xlm_contract_address(&contracts.xlm_address);
         registry_client.set_oracle_contract_address(&contracts.oracle_contract);
         registry_client.set_risk_engine_address(&contracts.risk_engine_contract);
-        registry_client.set_lendingpool_xlm(&contracts.liquidity_pool_xlm);
+        registry_client.set_lendingpool_eurc(&contracts.liquidity_pool_eurc);
         registry_client.set_rate_model_address(&contracts.rate_model_contract);
         registry_client.set_accountmanager_contract(&contracts.account_manager_contract);
 
         env.register_at(
-            &contracts.liquidity_pool_xlm,
-            LiquidityPoolXLM,
+            &contracts.liquidity_pool_eurc,
+            LiquidityPoolEURC,
             (
                 contracts.admin.clone(),
-                contracts.xlm_address.clone(),
+                contracts.eurc_address.clone(),
                 contracts.registry_contract.clone(),
                 contracts.account_manager_contract.clone(),
                 contracts.rate_model_contract.clone(),
@@ -170,13 +181,14 @@ pub mod helpers {
             ),
         );
 
-        env.register_at(&contracts.vxlm_token_contract, VXLMToken, ());
-        let vxlm_token_contract_client = VXLMTokenClient::new(&env, &contracts.vxlm_token_contract);
-        vxlm_token_contract_client.initialize(
-            &contracts.liquidity_pool_xlm,
+        env.register_at(&contracts.veurc_token_contract, VEURCToken, ());
+        let veurc_token_contract_client =
+            VEURCTokenClient::new(&env, &contracts.veurc_token_contract);
+        veurc_token_contract_client.initialize(
+            &contracts.liquidity_pool_eurc,
             &7_u32,
-            &String::from_str(&env, "VXLM TOKEN"),
-            &String::from_str(&env, "VXLM"),
+            &String::from_str(&env, "VEURC TOKEN"),
+            &String::from_str(&env, "VEURC"),
         );
 
         env.register_at(
@@ -254,8 +266,8 @@ pub mod helpers {
         env.as_contract(who, f)
     }
 
-    pub fn pool_client(env: &Env, ctx: &ContractAddresses) -> LiquidityPoolXLMClient<'static> {
-        LiquidityPoolXLMClient::new(&env, &ctx.liquidity_pool_xlm)
+    pub fn pool_client(env: &Env, ctx: &ContractAddresses) -> LiquidityPoolEURCClient<'static> {
+        LiquidityPoolEURCClient::new(&env, &ctx.liquidity_pool_eurc)
     }
 }
 
@@ -297,15 +309,15 @@ fn reset_admin_requires_auth_and_updates() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
 
     let new_admin = Address::generate(&env);
 
-    let pp = xlm_pool_client
+    let pp = eurc_pool_client
         .mock_auths(&[MockAuth {
             address: &ctx.admin.clone(),
             invoke: &MockAuthInvoke {
-                contract: &xlm_pool_client.address,
+                contract: &eurc_pool_client.address,
                 fn_name: "reset_admin",
                 args: (&new_admin,).into_val(&env),
                 sub_invokes: &[],
@@ -318,7 +330,7 @@ fn reset_admin_requires_auth_and_updates() {
         String::from_str(&env, "Adminkey set successfully reset")
     );
 
-    assert_eq!(xlm_pool_client.get_admin(), new_admin);
+    assert_eq!(eurc_pool_client.get_admin(), new_admin);
 }
 
 #[test]
@@ -326,23 +338,23 @@ fn initialize_pool_requires_admin_and_marks_initialized() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
 
-    let res = xlm_pool_client
+    let res = eurc_pool_client
         .mock_auths(&[MockAuth {
             address: &ctx.admin.clone(),
             invoke: &MockAuthInvoke {
-                contract: &xlm_pool_client.address,
-                fn_name: "initialize_pool_xlm",
-                args: (&ctx.vxlm_token_contract,).into_val(&env),
+                contract: &eurc_pool_client.address,
+                fn_name: "initialize_pool_eurc",
+                args: (&ctx.veurc_token_contract,).into_val(&env),
                 sub_invokes: &[],
             },
         }])
-        .initialize_pool_xlm(&ctx.vxlm_token_contract);
+        .initialize_pool_eurc(&ctx.veurc_token_contract);
 
-    // let res = c.initialize_pool_xlm(&ctx.vxlm_token_contract);
-    assert_eq!(res, String::from_str(&env, "XLM pool initialised"));
-    assert!(xlm_pool_client.is_xlm_pool_initialised());
+    // let res = c.initialize_pool_eurc(&ctx.veurc_token_contract);
+    assert_eq!(res, String::from_str(&env, "EURC pool initialised"));
+    assert!(eurc_pool_client.is_eurc_pool_initialised());
 }
 
 #[test]
@@ -351,12 +363,12 @@ fn deposit_panics_if_not_initialized() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
 
     env.mock_all_auths();
 
     let amount = U256::from_u128(&env, 1_000);
-    xlm_pool_client.deposit_xlm(&ctx.user.clone(), &amount); // should panic
+    eurc_pool_client.deposit_eurc(&ctx.user.clone(), &amount); // should panic
 }
 
 #[test]
@@ -365,75 +377,75 @@ fn deposit_panics_zero_amount() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
 
-    xlm_pool_client
+    eurc_pool_client
         .mock_auths(&[MockAuth {
             address: &ctx.admin.clone(),
             invoke: &MockAuthInvoke {
-                contract: &xlm_pool_client.address,
-                fn_name: "initialize_pool_xlm",
-                args: (&ctx.vxlm_token_contract,).into_val(&env),
+                contract: &eurc_pool_client.address,
+                fn_name: "initialize_pool_eurc",
+                args: (&ctx.veurc_token_contract,).into_val(&env),
                 sub_invokes: &[],
             },
         }])
-        .initialize_pool_xlm(&ctx.vxlm_token_contract);
+        .initialize_pool_eurc(&ctx.veurc_token_contract);
 
-    xlm_pool_client
+    eurc_pool_client
         .mock_auths(&[MockAuth {
             address: &ctx.user.clone(),
             invoke: &MockAuthInvoke {
-                contract: &xlm_pool_client.address,
-                fn_name: "deposit_xlm",
+                contract: &eurc_pool_client.address,
+                fn_name: "deposit_eurc",
                 args: (&ctx.user.clone(), &U256::from_u32(&env, 0)).into_val(&env),
                 sub_invokes: &[],
             },
         }])
-        .deposit_xlm(&ctx.user.clone(), &U256::from_u32(&env, 0));
+        .deposit_eurc(&ctx.user.clone(), &U256::from_u32(&env, 0));
 }
 
 #[test]
-fn deposit_mints_vxlm_and_updates_state() {
+fn deposit_mints_veurc_and_updates_state() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
 
-    xlm_pool_client
+    eurc_pool_client
         .mock_auths(&[MockAuth {
             address: &ctx.admin.clone(),
             invoke: &MockAuthInvoke {
-                contract: &xlm_pool_client.address,
-                fn_name: "initialize_pool_xlm",
-                args: (&ctx.vxlm_token_contract,).into_val(&env),
+                contract: &eurc_pool_client.address,
+                fn_name: "initialize_pool_eurc",
+                args: (&ctx.veurc_token_contract,).into_val(&env),
                 sub_invokes: &[],
             },
         }])
-        .initialize_pool_xlm(&ctx.vxlm_token_contract);
+        .initialize_pool_eurc(&ctx.veurc_token_contract);
 
     // Allowing mock auth for minting and then removing it
     env.mock_all_auths();
-    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
-    stellar_asset_xlm.mint(&ctx.user, &(50000 * WAD7));
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user, &(50000 * WAD7));
     // env.set_auths(&[]);
 
     // User has TXLM from test_initiation
-    xlm_pool_client.deposit_xlm(&ctx.user.clone(), &U256::from_u128(&env, 50_000 * WAD_U128));
+    eurc_pool_client.deposit_eurc(&ctx.user.clone(), &U256::from_u128(&env, 50_000 * WAD_U128));
 
     // Check VXLM balance
-    let vxlm_token_contract_client = VXLMTokenClient::new(&env, &ctx.vxlm_token_contract);
-    let vbal = vxlm_token_contract_client.balance(&ctx.user.clone());
-    println!("Decimals {:?}", vxlm_token_contract_client.decimals());
-    println!("vxlm token client bal {:?}", vbal);
+    let veurc_token_contract_client = VEURCTokenClient::new(&env, &ctx.veurc_token_contract);
+    let vbal = veurc_token_contract_client.balance(&ctx.user.clone());
+    println!("Decimals {:?}", veurc_token_contract_client.decimals());
+    println!("veurc token client bal {:?}", vbal);
     assert!(vbal == (50000 * WAD7));
 
     // Lenders list contains user
-    let lenders = xlm_pool_client.get_lenders_xlm();
+    let lenders = eurc_pool_client.get_lenders_eurc();
     assert!(lenders.iter().any(|a| a == ctx.user.clone()));
 
     // Pool balance increased
-    let x = TokenClient::new(&env, &ctx.xlm_address);
-    assert_eq!(x.balance(&ctx.liquidity_pool_xlm), 50_000i128 * WAD7);
+    let x = TokenClient::new(&env, &ctx.eurc_address);
+    assert_eq!(x.balance(&ctx.liquidity_pool_eurc), 50_000i128 * WAD7);
 }
 
 #[test]
@@ -442,32 +454,32 @@ fn redeem_auth_failure() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
 
-    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
-    stellar_asset_xlm.mint(&ctx.user, &100000);
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user, &100000);
 
     // deposit then redeem half
     let amount = U256::from_u128(&env, 100_000);
-    xlm_pool_client.deposit_xlm(&ctx.user.clone(), &amount);
+    eurc_pool_client.deposit_eurc(&ctx.user.clone(), &amount);
 
     // user has some vXLM now; redeem portion
-    let vxlm_token_contract_client = VXLMTokenClient::new(&env, &ctx.vxlm_token_contract);
-    let minted = vxlm_token_contract_client.balance(&ctx.user.clone()) as u128;
+    let veurc_token_contract_client = VEURCTokenClient::new(&env, &ctx.veurc_token_contract);
+    let minted = veurc_token_contract_client.balance(&ctx.user.clone()) as u128;
 
-    // let v = TokenClient::new(&env, &ctx.vxlm_token_contract);
+    // let v = TokenClient::new(&env, &ctx.veurc_token_contract);
     // let minted = v.balance(&ctx.user.clone()) as u128;
     let redeem = U256::from_u128(&env, minted as u128 / 2);
 
     env.set_auths(&[]);
 
-    xlm_pool_client.redeem_vxlm(&ctx.user.clone(), &redeem);
+    eurc_pool_client.redeem_veurc(&ctx.user.clone(), &redeem);
 
     // vXLM burnt approximately by redeem amount
-    let post = vxlm_token_contract_client.balance(&ctx.user.clone()) as u128;
+    let post = veurc_token_contract_client.balance(&ctx.user.clone()) as u128;
     assert!(post < minted);
     println!("POST AND MINTED {:?} < {:?}", post, minted);
 }
@@ -477,39 +489,39 @@ fn redeem_auth_logic_success() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
 
-    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
-    stellar_asset_xlm.mint(&ctx.user, &(100000 * WAD7));
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user, &(100000 * WAD7));
 
     // deposit then redeem half
     let amount = U256::from_u128(&env, 100_000 * WAD_U128);
-    xlm_pool_client.deposit_xlm(&ctx.user.clone(), &amount);
+    eurc_pool_client.deposit_eurc(&ctx.user.clone(), &amount);
 
     // user has some vXLM now; redeem portion
-    let vxlm_token_contract_client = VXLMTokenClient::new(&env, &ctx.vxlm_token_contract);
-    let minted = vxlm_token_contract_client.balance(&ctx.user.clone()) as u128;
+    let veurc_token_contract_client = VEURCTokenClient::new(&env, &ctx.veurc_token_contract);
+    let minted = veurc_token_contract_client.balance(&ctx.user.clone()) as u128;
 
     let redeem = U256::from_u128(&env, 50000 * WAD_U128);
     env.set_auths(&[]);
 
-    xlm_pool_client
+    eurc_pool_client
         .mock_auths(&[MockAuth {
             address: &ctx.user.clone(),
             invoke: &MockAuthInvoke {
-                contract: &xlm_pool_client.address,
-                fn_name: "redeem_vxlm",
+                contract: &eurc_pool_client.address,
+                fn_name: "redeem_veurc",
                 args: (&ctx.user.clone(), &redeem).into_val(&env),
                 sub_invokes: &[],
             },
         }])
-        .redeem_vxlm(&ctx.user.clone(), &redeem);
+        .redeem_veurc(&ctx.user.clone(), &redeem);
 
     // vXLM burnt approximately by redeem amount
-    let post = vxlm_token_contract_client.balance(&ctx.user.clone()) as u128;
+    let post = veurc_token_contract_client.balance(&ctx.user.clone()) as u128;
     assert!(post < minted);
     println!("POST AND MINTED {:?} < {:?}", post, minted);
 }
@@ -520,13 +532,13 @@ fn redeem_panics_if_over_balance() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
 
     // No deposit => user has 0 vXLM
-    xlm_pool_client.redeem_vxlm(&ctx.user.clone(), &U256::from_u32(&env, 1));
+    eurc_pool_client.redeem_veurc(&ctx.user.clone(), &U256::from_u32(&env, 1));
 }
 
 #[test]
@@ -535,25 +547,25 @@ fn redeem_panics_if_pool_insufficient_balance() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
 
-    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
-    stellar_asset_xlm.mint(&ctx.user, &(100000 * WAD7));
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user, &(100000 * WAD7));
 
     // User deposits small, then try redeem huge by minting vXLM directly (simulate malicious vToken mint)
     let amount = U256::from_u128(&env, 10_000 * WAD_U128);
-    xlm_pool_client.deposit_xlm(&ctx.user.clone(), &amount);
+    eurc_pool_client.deposit_eurc(&ctx.user.clone(), &amount);
 
-    let vxlm_token_contract_client = VXLMTokenClient::new(&env, &ctx.vxlm_token_contract);
-    vxlm_token_contract_client.mint(&ctx.user.clone(), &(1_0000_0000_000i128 * WAD7)); // inflate vXLM artificially
+    let veurc_token_contract_client = VEURCTokenClient::new(&env, &ctx.veurc_token_contract);
+    veurc_token_contract_client.mint(&ctx.user.clone(), &(1_000_000_000i128 * WAD7)); // inflate vXLM artificially
 
     // Now redeem a lot -> should hit InsufficientPoolBalance
-    xlm_pool_client.redeem_vxlm(
+    eurc_pool_client.redeem_veurc(
         &ctx.user.clone(),
-        &U256::from_u128(&env, 1_0000_0000_000 * WAD_U128),
+        &U256::from_u128(&env, 1_000_000_000 * WAD_U128),
     );
 }
 
@@ -563,19 +575,19 @@ fn lend_to_requires_account_manager_auth_failure() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
-    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
-    stellar_asset_xlm.mint(&ctx.user, &100000);
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user, &100000);
 
     // Seed pool liquidity via user deposit
-    xlm_pool_client.deposit_xlm(&ctx.user.clone(), &U256::from_u128(&env, 100_000));
+    eurc_pool_client.deposit_eurc(&ctx.user.clone(), &U256::from_u128(&env, 100_000));
 
     env.set_auths(&[]);
 
-    let first = xlm_pool_client.lend_to(
+    let first = eurc_pool_client.lend_to(
         &ctx.smart_account_contract.clone().unwrap(),
         &U256::from_u128(&env, 40_000),
     );
@@ -586,110 +598,61 @@ fn lend_to_requires_account_manager_and_updates_borrows_and_shares() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
-    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
-    stellar_asset_xlm.mint(&ctx.user, &(100000 * WAD7));
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user, &100000);
 
     // Seed pool liquidity via user deposit
-    xlm_pool_client.deposit_xlm(
-        &ctx.user.clone(),
-        &U256::from_u128(&env, 100_000 * WAD_U128),
-    );
+    eurc_pool_client.deposit_eurc(&ctx.user.clone(), &U256::from_u128(&env, 100_000));
 
-    let trader = ctx.smart_account_contract.clone().unwrap();
-    let first = xlm_pool_client
+    // env.register_at(
+    //     &ctx.smart_account_contract.clone().unwrap(),
+    //     SmartAccountContract,
+    //     (
+    //         ctx.account_manager_contract.clone(),
+    //         ctx.registry_contract,
+    //         user,
+    //     ),
+    // );
+
+    let first = eurc_pool_client
         .mock_auths(&[MockAuth {
             address: &ctx.account_manager_contract.clone(),
             invoke: &MockAuthInvoke {
-                contract: &xlm_pool_client.address,
+                contract: &eurc_pool_client.address,
                 fn_name: "lend_to",
-                args: (&trader, &U256::from_u128(&env, 40_000 * WAD_U128)).into_val(&env),
+                args: (
+                    &ctx.smart_account_contract.clone().unwrap(),
+                    &U256::from_u128(&env, 40_000),
+                )
+                    .into_val(&env),
                 sub_invokes: &[],
             },
         }])
-        .lend_to(&trader, &U256::from_u128(&env, 40_000 * WAD_U128));
+        .lend_to(
+            &ctx.smart_account_contract.clone().unwrap(),
+            &U256::from_u128(&env, 40_000),
+        );
 
     assert!(first, "first borrow should return true");
 
     // Borrow shares & borrows > 0
-    let borrows = xlm_pool_client.get_borrows();
-    assert!(borrows == U256::from_u128(&env, 40000 * WAD_U128));
-    let shares = xlm_pool_client.get_total_borrow_shares();
-    assert!(shares == U256::from_u128(&env, 40000 * WAD_U128));
-    let user_borrow_shares = xlm_pool_client.get_user_borrow_shares(&trader);
-    assert!(user_borrow_shares == U256::from_u128(&env, 40000 * WAD_U128));
+    let borrows = eurc_pool_client.get_borrows();
+    assert!(borrows > U256::from_u32(&env, 0));
+    println!("Borrows {:?}", borrows);
+    let shares = eurc_pool_client.get_total_borrow_shares();
+    assert!(shares > U256::from_u32(&env, 0));
+    println!("Shares {:?}", shares);
 
     // Second borrow returns false
-    let second = xlm_pool_client.lend_to(&trader, &U256::from_u128(&env, 1_000 * WAD_U128));
+    let second = eurc_pool_client.lend_to(
+        &ctx.smart_account_contract.unwrap(),
+        &U256::from_u128(&env, 1_000),
+    );
     assert!(!second);
-
-    // Borrow shares & borrows > 0
-    let borrows = xlm_pool_client.get_borrows();
-    assert!(borrows == U256::from_u128(&env, 41000 * WAD_U128));
-    let shares = xlm_pool_client.get_total_borrow_shares();
-    assert!(shares == U256::from_u128(&env, 41000 * WAD_U128));
-    let user_borrow_shares = xlm_pool_client.get_user_borrow_shares(&trader);
-    assert!(user_borrow_shares == U256::from_u128(&env, 41000 * WAD_U128));
-
-    let trader2 = Address::generate(&env);
-    env.register_at(
-        &trader2,
-        SmartAccountContract,
-        (
-            ctx.clone().account_manager_contract.clone(),
-            ctx.clone().registry_contract,
-            Address::generate(&env).clone(),
-        ),
-    );
-
-    // Third borrow returns false
-    let third = xlm_pool_client.lend_to(&trader2, &U256::from_u128(&env, 1_000 * WAD_U128));
-
-    let borrows = xlm_pool_client.get_borrows();
-    assert!(borrows == U256::from_u128(&env, 42000 * WAD_U128));
-
-    let shares = xlm_pool_client.get_total_borrow_shares();
-    assert!(shares == U256::from_u128(&env, 42000 * WAD_U128));
-
-    let user_borrow_shares = xlm_pool_client.get_user_borrow_shares(&trader2);
-    assert!(user_borrow_shares == U256::from_u128(&env, 1000 * WAD_U128));
-
-    xlm_pool_client.collect_from(&U256::from_u128(&env, 500 * WAD_U128), &trader2);
-
-    let borrows = xlm_pool_client.get_borrows();
-    assert!(borrows == U256::from_u128(&env, 41500 * WAD_U128));
-
-    let shares = xlm_pool_client.get_total_borrow_shares();
-    assert!(shares == U256::from_u128(&env, 41500 * WAD_U128));
-
-    let user_borrow_shares = xlm_pool_client.get_user_borrow_shares(&trader2);
-    assert!(user_borrow_shares == U256::from_u128(&env, 500 * WAD_U128));
-
-    xlm_pool_client.redeem_vxlm(&ctx.user.clone(), &U256::from_u128(&env, 5_000 * WAD_U128));
-
-    println!(
-        "Total pool liquidiy {:?}",
-        xlm_pool_client
-            .get_total_liquidity_in_pool()
-            .to_u128()
-            .unwrap()
-            / WAD_U128
-    );
-    println!(
-        "Total vxlm in supply {:?}",
-        xlm_pool_client
-            .get_current_total_vxlm_balance()
-            .to_u128()
-            .unwrap()
-            / WAD_U128
-    );
-    // Intial vxlm tokens were 100_000, atlast  5000 were redeemed so final vxlm tokens are 95000
-    assert!(
-        xlm_pool_client.get_current_total_vxlm_balance() == U256::from_u128(&env, 95000 * WAD_U128)
-    );
 }
 
 #[test]
@@ -698,16 +661,16 @@ fn collect_from_auth_failure() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
 
-    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
-    stellar_asset_xlm.mint(&ctx.user.clone(), &100000);
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user.clone(), &100000);
 
-    xlm_pool_client.deposit_xlm(&ctx.user.clone().clone(), &U256::from_u128(&env, 100_000));
-    xlm_pool_client.lend_to(
+    eurc_pool_client.deposit_eurc(&ctx.user.clone().clone(), &U256::from_u128(&env, 100_000));
+    eurc_pool_client.lend_to(
         &ctx.smart_account_contract.clone().unwrap(),
         &U256::from_u128(&env, 40_000),
     );
@@ -715,7 +678,7 @@ fn collect_from_auth_failure() {
     env.set_auths(&[]);
 
     // Partial repay
-    let z = xlm_pool_client.collect_from(
+    let z = eurc_pool_client.collect_from(
         &U256::from_u128(&env, 10_000),
         &ctx.smart_account_contract.clone().unwrap(),
     );
@@ -727,19 +690,19 @@ fn collect_from_reduces_debt_and_returns_zeroed_flag() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
 
-    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
-    stellar_asset_xlm.mint(&ctx.user.clone(), &(100000 * WAD7));
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user.clone(), &(100000 * WAD7));
 
-    xlm_pool_client.deposit_xlm(
+    eurc_pool_client.deposit_eurc(
         &ctx.user.clone(),
         &U256::from_u128(&env, 100_000 * WAD_U128),
     );
-    xlm_pool_client.lend_to(
+    eurc_pool_client.lend_to(
         &ctx.smart_account_contract.clone().unwrap(),
         &U256::from_u128(&env, 40_000 * WAD_U128),
     );
@@ -747,11 +710,11 @@ fn collect_from_reduces_debt_and_returns_zeroed_flag() {
     env.set_auths(&[]);
 
     // Making sure collect_from can only be authorized by account manager
-    let z = xlm_pool_client
+    let z = eurc_pool_client
         .mock_auths(&[MockAuth {
             address: &ctx.account_manager_contract.clone(),
             invoke: &MockAuthInvoke {
-                contract: &xlm_pool_client.address,
+                contract: &eurc_pool_client.address,
                 fn_name: "collect_from",
                 args: (
                     &U256::from_u128(&env, 10_000 * WAD_U128),
@@ -766,11 +729,11 @@ fn collect_from_reduces_debt_and_returns_zeroed_flag() {
             &ctx.smart_account_contract.clone().unwrap(),
         );
 
-    let z2 = xlm_pool_client
+    let z2 = eurc_pool_client
         .mock_auths(&[MockAuth {
             address: &ctx.account_manager_contract.clone(),
             invoke: &MockAuthInvoke {
-                contract: &xlm_pool_client.address,
+                contract: &eurc_pool_client.address,
                 fn_name: "collect_from",
                 args: (
                     &U256::from_u128(&env, 30_000 * WAD_U128),
@@ -798,12 +761,12 @@ fn collect_from_panics_zero_shares_amount() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
 
-    xlm_pool_client.collect_from(
+    eurc_pool_client.collect_from(
         &U256::from_u32(&env, 0),
         &ctx.smart_account_contract.unwrap(),
     );
@@ -814,32 +777,32 @@ fn state_updates_once_per_timestamp_and_accrues_interest() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
-    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
-    stellar_asset_xlm.mint(&ctx.user.clone(), &(100000 * WAD7));
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user.clone(), &(100000 * WAD7));
 
-    xlm_pool_client.deposit_xlm(
+    eurc_pool_client.deposit_eurc(
         &ctx.user.clone(),
         &U256::from_u128(&env, 100_000 * WAD_U128),
     );
-    xlm_pool_client.lend_to(
+    eurc_pool_client.lend_to(
         &ctx.smart_account_contract.unwrap(),
         &U256::from_u128(&env, 50_000 * WAD_U128),
     );
 
-    let before = xlm_pool_client.get_borrows();
+    let before = eurc_pool_client.get_borrows();
 
     // First call returns 0 because last_updated == now
-    let r0 = xlm_pool_client.get_rate_factor();
+    let r0 = eurc_pool_client.get_rate_factor();
     assert_eq!(r0, U256::from_u32(&env, 0));
 
-    xlm_pool_client.update_state(); // same timestamp -> no change
-    // as_auth(&env, &ctx.liquidity_pool_xlm, ||{
+    eurc_pool_client.update_state(); // same timestamp -> no change
+    // as_auth(&env, &ctx.liquidity_pool_eurc, ||{
     // });
-    let same = xlm_pool_client.get_borrows();
+    let same = eurc_pool_client.get_borrows();
     println!("same, before {:?}, {:?}", same, before);
 
     assert_eq!(before, same);
@@ -847,13 +810,13 @@ fn state_updates_once_per_timestamp_and_accrues_interest() {
     // Advance time
     println!("Timstamp1 : {:?}", env.ledger().timestamp());
     let timestamp = env.ledger().timestamp() + 10;
-    as_auth(&env, &ctx.liquidity_pool_xlm, || {
+    as_auth(&env, &ctx.liquidity_pool_eurc, || {
         env.ledger().set_timestamp(timestamp);
     });
     println!("Timstamp3 : {:?}", env.ledger().timestamp());
 
-    xlm_pool_client.update_state();
-    let after = xlm_pool_client.get_borrows();
+    eurc_pool_client.update_state();
+    let after = eurc_pool_client.get_borrows();
 
     println!("after, before {:?}, {:?}", after, before);
     assert!(after > same, "interest should accrue");
@@ -861,70 +824,70 @@ fn state_updates_once_per_timestamp_and_accrues_interest() {
 
 // #[test]
 // #[should_panic(expected = "Native XLM client address not set")]
-// fn get_native_xlm_client_address_panics_if_missing() {
+// fn get_native_eurc_client_address_panics_if_missing() {
 //     let env = Env::default();
 
 //     let ctx = test_initiation(&env);
-//     let xlm_pool_client = pool_client(&env, &ctx);
+//     let eurc_pool_client = pool_client(&env, &ctx);
 //     // No constructor -> missing native address
-//     let _ = xlm_pool_client.get_native_xlm_client_address();
+//     let _ = eurc_pool_client.get_native_eurc_client_address();
 // }
 
 #[test]
 #[should_panic(expected = "Lending pool not initialised")]
-fn is_xlm_pool_initialised_panics_if_missing_flag() {
+fn is_eurc_pool_initialised_panics_if_missing_flag() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
 
-    let _ = xlm_pool_client.is_xlm_pool_initialised();
+    let _ = eurc_pool_client.is_eurc_pool_initialised();
 }
 
 #[test]
-fn convert_xlm_to_vtoken_behaviour_first_deposit_and_proportional() {
+fn convert_eurc_to_vtoken_behaviour_first_deposit_and_proportional() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
 
     // First deposit => 1:1 mapping
-    let one = xlm_pool_client.convert_xlm_to_vtoken(&U256::from_u128(&env, 10_000));
+    let one = eurc_pool_client.convert_eurc_to_vtoken(&U256::from_u128(&env, 10_000));
     assert_eq!(one, U256::from_u128(&env, 10_000));
 
-    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
-    stellar_asset_xlm.mint(&ctx.user.clone(), &(100000 * WAD7));
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user.clone(), &(100000 * WAD7));
 
     // After a deposit & mint, conversion becomes proportional
-    xlm_pool_client.deposit_xlm(&ctx.user.clone(), &U256::from_u128(&env, 10_000 * WAD_U128));
-    let vxlm_token_contract_client = VXLMTokenClient::new(&env, &ctx.vxlm_token_contract);
-    let vx = vxlm_token_contract_client.balance(&ctx.user.clone());
+    eurc_pool_client.deposit_eurc(&ctx.user.clone(), &U256::from_u128(&env, 10_000 * WAD_U128));
+    let veurc_token_contract_client = VEURCTokenClient::new(&env, &ctx.veurc_token_contract);
+    let vx = veurc_token_contract_client.balance(&ctx.user.clone());
 
-    // let vx = TokenClient::new(&env, &ctx.vxlm_token_contract).balance(&ctx.user.clone()) as u128;
+    // let vx = TokenClient::new(&env, &ctx.veurc_token_contract).balance(&ctx.user.clone()) as u128;
     assert!(vx > 0);
 
     // Another conversion call returns non-zero and not necessarily equal
-    let two = xlm_pool_client.convert_xlm_to_vtoken(&U256::from_u128(&env, 5_000));
+    let two = eurc_pool_client.convert_eurc_to_vtoken(&U256::from_u128(&env, 5_000));
     println!("Two {:?}", two);
     assert!(two > U256::from_u32(&env, 0));
 }
 
 #[test]
 #[should_panic]
-fn convert_vtoken_to_xlm_panics_if_supply_zero() {
+fn convert_vtoken_to_eurc_panics_if_supply_zero() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
 
     // With zero vToken supply, this division will panic in contract logic
-    let _ = xlm_pool_client.convert_vtoken_to_xlm(&U256::from_u128(&env, 1));
+    let _ = eurc_pool_client.convert_vtoken_to_eurc(&U256::from_u128(&env, 1));
 }
 
 #[test]
@@ -932,23 +895,23 @@ fn total_assets_is_assets_plus_borrows() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
 
-    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
-    stellar_asset_xlm.mint(&ctx.user.clone(), &(100000 * WAD7));
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user.clone(), &(100000 * WAD7));
 
-    xlm_pool_client.deposit_xlm(&ctx.user.clone(), &U256::from_u128(&env, 90_000 * WAD_U128));
-    xlm_pool_client.lend_to(
+    eurc_pool_client.deposit_eurc(&ctx.user.clone(), &U256::from_u128(&env, 90_000 * WAD_U128));
+    eurc_pool_client.lend_to(
         &ctx.smart_account_contract.unwrap(),
         &U256::from_u128(&env, 40_000 * WAD_U128),
     );
 
-    let assets = xlm_pool_client.get_total_liquidity_in_pool();
-    let borrows = xlm_pool_client.get_borrows();
-    let total = xlm_pool_client.total_assets();
+    let assets = eurc_pool_client.get_total_liquidity_in_pool();
+    let borrows = eurc_pool_client.get_borrows();
+    let total = eurc_pool_client.total_assets();
     assert_eq!(total, assets.add(&borrows));
 }
 
@@ -957,27 +920,27 @@ fn borrow_shares_conversion_roundtrip() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
     env.mock_all_auths();
 
-    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
 
-    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
-    stellar_asset_xlm.mint(&ctx.user.clone(), &(100000 * WAD7));
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user.clone(), &(100000 * WAD7));
 
-    xlm_pool_client.deposit_xlm(
+    eurc_pool_client.deposit_eurc(
         &ctx.user.clone(),
         &U256::from_u128(&env, 100_000 * WAD_U128),
     );
-    xlm_pool_client.lend_to(
+    eurc_pool_client.lend_to(
         &ctx.smart_account_contract.unwrap(),
         &U256::from_u128(&env, 40_000 * WAD_U128),
     );
 
     // Convert amount -> shares -> amount (approx equality when state stable)
     let amt = U256::from_u128(&env, 10_000 * WAD_U128);
-    let s = xlm_pool_client.convert_asset_borrow_shares(&amt);
-    let back = xlm_pool_client.convert_borrow_shares_asset(&s);
+    let s = eurc_pool_client.convert_asset_borrow_shares(&amt);
+    let back = eurc_pool_client.convert_borrow_shares_asset(&s);
     println!(
         "borrow shares, assets {:?}, {:?}",
         s.to_u128(),

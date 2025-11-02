@@ -4,7 +4,12 @@ use soroban_sdk::{contractimpl, log};
 use crate::types::RiskEngineError;
 use crate::types::RiskEngineKey;
 
-const BALANCE_TO_BORROW_THRESHOLD: u128 = 11000000;
+// 1.1 * e18
+pub const BALANCE_TO_BORROW_THRESHOLD: u128 = 11_0000000_00000_00000;
+pub const WAD_U128: u128 = 10000_0000_00000_00000; //1e18
+const TLL_LEDGERS_YEAR: u32 = 6307200;
+const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
+const _TLL_LEDGERS_MONTH: u32 = 518400;
 
 #[contract]
 pub struct RiskEngineContract;
@@ -18,12 +23,14 @@ impl RiskEngineContract {
         env.storage()
             .persistent()
             .set(&RiskEngineKey::RegistryContract, &registry_contract);
+        Self::extend_ttl_risk(&env, RiskEngineKey::Admin);
+        Self::extend_ttl_risk(&env, RiskEngineKey::RegistryContract);
     }
 
     pub fn is_borrow_allowed(
         env: &Env,
         symbol: Symbol,
-        borrow_amount: U256,
+        borrow_amount_wad: U256,
         margin_account: Address,
     ) -> Result<bool, RiskEngineError> {
         let registry_addr = Self::get_registry_address(&env);
@@ -32,22 +39,26 @@ impl RiskEngineContract {
         let oracle_client = oracle_contract::Client::new(env, &oracle_contract_addr);
 
         let (price, decimals) = oracle_client.get_price_latest(&symbol);
-        let oracle_price = U256::from_u128(&env, price);
-        let borrow_value = borrow_amount.mul(&oracle_price);
+        let wad_scale = WAD_U128 / (10_u32.pow(decimals) as u128);
+        let price_wad = price * wad_scale;
 
-        let current_balance = Self::get_current_total_balance(&env, margin_account.clone())?;
-        let current_debt = Self::get_current_total_borrows(&env, margin_account.clone())?;
+        let oracle_price_wad = U256::from_u128(&env, price_wad);
+        let borrow_value_wad = Self::mul_wad_down(&env, borrow_amount_wad, oracle_price_wad);
+        // let borrow_value = borrow_amount.mul(&oracle_price);
+
+        let current_balance_wad = Self::get_current_total_balance(&env, margin_account.clone())?;
+        let current_debt_wad = Self::get_current_total_borrows(&env, margin_account.clone())?;
 
         log!(
             &env,
             "Current balance and debt before {}",
-            current_balance,
-            current_debt
+            current_balance_wad,
+            current_debt_wad
         );
         let res = Self::is_account_healthy(
             env,
-            current_balance.add(&borrow_value),
-            current_debt.add(&borrow_value),
+            current_balance_wad.add(&borrow_value_wad),
+            current_debt_wad.add(&borrow_value_wad),
         )?;
         Ok(res)
     }
@@ -55,7 +66,7 @@ impl RiskEngineContract {
     pub fn is_withdraw_allowed(
         env: &Env,
         symbol: Symbol,
-        withdraw_amount: U256,
+        withdraw_amount_wad: U256,
         margin_account: Address,
     ) -> Result<bool, RiskEngineError> {
         let registry_contract: Address = Self::get_registry_address(&env);
@@ -73,18 +84,22 @@ impl RiskEngineContract {
 
         let oracle_client = oracle_contract::Client::new(&env, &oracle_contract_address);
         let (price, decimals) = oracle_client.get_price_latest(&symbol);
-        let oracle_price = U256::from_u128(&env, price);
-        let withdraw_value = withdraw_amount.mul(&oracle_price);
+        let wad_scale = WAD_U128 / (10_u32.pow(decimals) as u128);
+        let price_wad = price * wad_scale;
+        let oracle_price_wad = U256::from_u128(&env, price_wad);
+        // let withdraw_value = withdraw_amount_wad.mul(&oracle_price_wad);
 
-        let current_account_balance =
+        let withdraw_value_wad = Self::mul_wad_down(&env, withdraw_amount_wad, oracle_price_wad);
+
+        let current_account_balance_wad =
             Self::get_current_total_balance(&env, margin_account.clone()).unwrap();
-        let current_account_debt =
+        let current_account_debt_wad =
             Self::get_current_total_borrows(&env, margin_account.clone()).unwrap();
 
         let res = Self::is_account_healthy(
             env,
-            current_account_balance.sub(&withdraw_value),
-            current_account_debt,
+            current_account_balance_wad.sub(&withdraw_value_wad),
+            current_account_debt_wad,
         )
         .unwrap();
 
@@ -93,21 +108,21 @@ impl RiskEngineContract {
 
     pub fn is_account_healthy(
         env: &Env,
-        total_account_balance: U256,
-        total_account_debt: U256,
+        total_account_balance_wad: U256,
+        total_account_debt_wad: U256,
     ) -> Result<bool, RiskEngineError> {
         log!(
             &env,
             "Total account balance, debt",
-            total_account_balance,
-            total_account_debt
+            total_account_balance_wad,
+            total_account_debt_wad
         );
-        if total_account_debt == U256::from_u128(&env, 0) {
+        if total_account_debt_wad == U256::from_u128(&env, 0) {
             log!(&env, "Yes account is HEALTHY!");
             return Ok(true);
         } else {
-            let res = (total_account_balance.div(&total_account_debt))
-                .mul(&U256::from_u128(&env, 10000000))
+            let res = (total_account_balance_wad.mul(&U256::from_u128(&env, WAD_U128)))
+                .div(&total_account_debt_wad)
                 > U256::from_u128(&env, BALANCE_TO_BORROW_THRESHOLD);
             log!(&env, "Is Account is healthy : ", res);
             return Ok(res);
@@ -125,21 +140,34 @@ impl RiskEngineContract {
             smart_account_contract::Client::new(&env, &margin_account.clone());
         let collateral_token_symbols: Vec<Symbol> =
             smart_account_contract_client.get_all_collateral_tokens();
+        log!(
+            &env,
+            "collateral_token_symbols are ",
+            collateral_token_symbols
+        );
 
         let oracle_address = registry_client.get_oracle_contract_address();
         let oracle_client = oracle_contract::Client::new(env, &oracle_address);
 
-        let mut total_account_balance_usd: U256 = U256::from_u128(&env, 0);
+        let mut total_account_balance_usd_wad: U256 = U256::from_u128(&env, 0);
         for token in collateral_token_symbols.iter() {
-            let token_balance =
+            let token_balance_wad =
                 smart_account_contract_client.get_collateral_token_balance(&token.clone());
 
             let (oracle_price_usd, decimals) = oracle_client.get_price_latest(&token);
+            let wad_scale = WAD_U128 / (10_u32.pow(decimals) as u128);
+            let oracle_price_wad_usd = oracle_price_usd * wad_scale;
 
-            total_account_balance_usd = total_account_balance_usd
-                .add(&token_balance.mul(&U256::from_u128(&env, oracle_price_usd)));
+            // Mutliply balance with oracle price
+            let balance_wad = Self::mul_wad_down(
+                &env,
+                token_balance_wad,
+                U256::from_u128(&env, oracle_price_wad_usd),
+            );
+
+            total_account_balance_usd_wad = total_account_balance_usd_wad.add(&balance_wad);
         }
-        Ok(total_account_balance_usd)
+        Ok(total_account_balance_usd_wad)
     }
 
     pub fn get_current_total_borrows(
@@ -154,20 +182,49 @@ impl RiskEngineContract {
 
         let borrowed_token_symbols = smart_account_contract_client.get_all_borrowed_tokens();
 
-        let mut total_account_debt_usd: U256 = U256::from_u128(&env, 0);
+        let mut total_account_debt_usd_wad: U256 = U256::from_u128(&env, 0);
 
         for tokenx in borrowed_token_symbols.iter() {
-            let token_balance =
+            let token_balance_wad =
                 smart_account_contract_client.get_borrowed_token_debt(&tokenx.clone());
 
             let oracle_contract_address: Address = registry_client.get_oracle_contract_address();
             let oracle_client = oracle_contract::Client::new(env, &oracle_contract_address);
             let (oracle_price_usd, decimals) = oracle_client.get_price_latest(&tokenx);
 
-            total_account_debt_usd = total_account_debt_usd
-                .add(&token_balance.mul(&U256::from_u128(&env, oracle_price_usd)));
+            let wad_scale = WAD_U128 / (10_u32.pow(decimals) as u128);
+            let oracle_price_wad_usd = oracle_price_usd * wad_scale;
+
+            log!(
+                &env,
+                "oracle_price_wad_usd is ",
+                oracle_price_wad_usd,
+                tokenx
+            );
+
+            // Mutliply balance with oracle price
+            let balance_wad = Self::mul_wad_down(
+                &env,
+                token_balance_wad,
+                U256::from_u128(&env, oracle_price_wad_usd),
+            );
+            log!(&env, "balance_wad is ", balance_wad, tokenx);
+
+            total_account_debt_usd_wad = total_account_debt_usd_wad.add(&balance_wad);
+            log!(
+                &env,
+                "total_account_debt_usd_wad is ",
+                total_account_debt_usd_wad,
+                tokenx
+            );
         }
-        Ok(total_account_debt_usd)
+        Ok(total_account_debt_usd_wad)
+    }
+
+    fn extend_ttl_risk(env: &Env, key: RiskEngineKey) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);
     }
 
     fn get_registry_address(env: &Env) -> Address {
@@ -175,6 +232,10 @@ impl RiskEngineContract {
             .persistent()
             .get(&RiskEngineKey::RegistryContract)
             .expect("Failed to fetch registry contract address")
+    }
+
+    pub fn mul_wad_down(env: &Env, a: U256, b: U256) -> U256 {
+        a.mul(&b).div(&U256::from_u128(&env, WAD_U128))
     }
 }
 

@@ -2,6 +2,7 @@
 
 use std::u128;
 
+use account_manager_contract::account_manager::WAD_U128;
 use lending_protocol_xlm::liquidity_pool_xlm::LiquidityPoolXLM;
 use registry_contract::registry::{RegistryContract, RegistryContractClient};
 use risk_engine_contract::risk_engine::RiskEngineContract;
@@ -11,6 +12,8 @@ use soroban_sdk::{
     testutils::{Address as _, Events, MockAuth, MockAuthInvoke},
     token::{self, StellarAssetClient},
 };
+
+const WAD7: i128 = 10000000;
 
 const SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/release-with-logs/smart_account_contract.wasm");
@@ -340,23 +343,34 @@ fn collateral_balance_transfer_success() {
 
     as_auth(&env, &manager, || {
         sa.add_collateral_token(&Symbol::new(&env, "XLM"));
-        sa.set_collateral_token_balance(&Symbol::new(&env, "XLM"), &U256::from_u128(&env, 5000));
+        sa.set_collateral_token_balance(
+            &Symbol::new(&env, "XLM"),
+            &U256::from_u128(&env, 5000 * WAD_U128),
+        );
+        let balance = sa.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+        println!("Balance is {:?}", balance.to_u128());
     });
 
     // Allowing mock auth for minting and then removing it
     env.mock_all_auths();
     let stellar_asset_xlm = StellarAssetClient::new(&env, &cc.xlm_address);
-    stellar_asset_xlm.mint(&sa.address, &5000);
+    stellar_asset_xlm.mint(&sa.address, &(5000 * 10000000));
     env.set_auths(&[]);
 
     as_auth(&env, &manager, || {
-        sa.remove_collateral_token_balance(&user.clone(), &Symbol::new(&env, "XLM"), &1000);
+        sa.remove_collateral_token_balance(
+            &user.clone(),
+            &Symbol::new(&env, "XLM"),
+            &(1000 * WAD_U128),
+        );
+        let balance_after = sa.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+        println!("Balance after is {:?}", balance_after.to_u128());
     });
 
     let bal = sa.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
     let xlm = token::Client::new(&env, &cc.xlm_address);
-    assert_eq!(xlm.balance(&sa.address), 4000);
-    assert_eq!(bal, U256::from_u128(&env, 4000));
+    assert_eq!(xlm.balance(&sa.address), 4000 * 10000000);
+    assert_eq!(bal, U256::from_u128(&env, 4000 * WAD_U128));
 }
 
 #[test]
@@ -467,9 +481,9 @@ fn sweep_to_transfers_all_collateral_balances() {
     let stellar_asset_xlm = StellarAssetClient::new(&env, &cc.xlm_address);
     let stellar_asset_usdc = StellarAssetClient::new(&env, &cc.usdc_address);
     let stellar_asset_eurc = StellarAssetClient::new(&env, &cc.eurc_address);
-    stellar_asset_xlm.mint(&sa_addr, &1000);
-    stellar_asset_usdc.mint(&sa_addr, &2000);
-    stellar_asset_eurc.mint(&sa_addr, &3000);
+    stellar_asset_xlm.mint(&sa_addr, &(1000 * WAD7));
+    stellar_asset_usdc.mint(&sa_addr, &(2000 * WAD7));
+    stellar_asset_eurc.mint(&sa_addr, &(3000 * WAD7));
     env.set_auths(&[]);
 
     // Set collateral tokens and balances (authorized)
@@ -478,9 +492,18 @@ fn sweep_to_transfers_all_collateral_balances() {
         sa.add_collateral_token(&Symbol::new(&env, "USDC"));
         sa.add_collateral_token(&Symbol::new(&env, "EURC"));
 
-        sa.set_collateral_token_balance(&Symbol::new(&env, "XLM"), &U256::from_u128(&env, 1000));
-        sa.set_collateral_token_balance(&Symbol::new(&env, "USDC"), &U256::from_u128(&env, 2000));
-        sa.set_collateral_token_balance(&Symbol::new(&env, "EURC"), &U256::from_u128(&env, 3000));
+        sa.set_collateral_token_balance(
+            &Symbol::new(&env, "XLM"),
+            &U256::from_u128(&env, 1000 * WAD_U128),
+        );
+        sa.set_collateral_token_balance(
+            &Symbol::new(&env, "USDC"),
+            &U256::from_u128(&env, 2000 * WAD_U128),
+        );
+        sa.set_collateral_token_balance(
+            &Symbol::new(&env, "EURC"),
+            &U256::from_u128(&env, 3000 * WAD_U128),
+        );
     });
 
     // Perform sweep
@@ -494,9 +517,9 @@ fn sweep_to_transfers_all_collateral_balances() {
     let eurc = token::Client::new(&env, &cc.eurc_address);
 
     // Recipient should receive all token balances
-    assert_eq!(xlm.balance(&recipient), 1000);
-    assert_eq!(usdc.balance(&recipient), 2000);
-    assert_eq!(eurc.balance(&recipient), 3000);
+    assert_eq!(xlm.balance(&recipient), 1000 * WAD7);
+    assert_eq!(usdc.balance(&recipient), 2000 * WAD7);
+    assert_eq!(eurc.balance(&recipient), 3000 * WAD7);
 
     // Smart account balances should now be 0
     assert_eq!(xlm.balance(&sa_addr), 0);

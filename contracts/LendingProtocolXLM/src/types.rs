@@ -18,21 +18,21 @@ pub enum DataKey {
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[contracttype]
 pub enum PoolDataKey {
-    Initialised,               // Whether the pool has been deployed
-    Lenders(Symbol),           // List of all lenders for particular asset symbol
-    PoolAddress(Symbol),       // Pool Address for each token
-    TotalBorrowShares,         // Total borrow shares of all users
-    UserBorrowShares(Address), // Borrow shares of a user
-    LastUpdatedTime,           // Last time the pool data was updated
-    Borrows,                   // Total borrowed asset value
+    Initialised,                  // Whether the pool has been deployed
+    Lenders(Symbol),              // List of all lenders for particular asset symbol
+    PoolAddress(Symbol),          // Pool Address for each token
+    TotalBorrowSharesWAD,         // Total borrow shares of all users
+    UserBorrowSharesWAD(Address), // Borrow shares of a user
+    LastUpdatedTime,              // Last time the pool data was updated
+    BorrowsWAD,                   // Total borrowed asset value
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[contracttype]
 pub enum TokenDataKey {
-    TotalTokensMinted(Symbol),
-    TotalTokensBurnt(Symbol),
-    CurrentVTokenBalance(Symbol),
+    TotalTokensMintedWAD(Symbol),
+    TotalTokensBurntWAD(Symbol),
+    // CurrentVTokenBalanceWAD(Symbol),
     // VTokenBalance(Address, Symbol),
     VTokenValue(Symbol),
     VTokenContractAddress(Symbol),

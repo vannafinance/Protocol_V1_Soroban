@@ -6,8 +6,8 @@
 
 use std::ops::Add;
 
-use account_manager_contract::account_manager::AccountManagerContractClient;
 use account_manager_contract::account_manager::{self, AccountManagerContract};
+use account_manager_contract::account_manager::{AccountManagerContractClient, WAD_U128};
 use lending_protocol_xlm::liquidity_pool_xlm::{self, LiquidityPoolXLM, LiquidityPoolXLMClient};
 use oracle_contract::oracle_service::{OracleContract, OracleContractClient};
 use registry_contract::registry::RegistryContract;
@@ -25,6 +25,7 @@ use vxlm_token_contract::v_xlm::VXLMTokenClient;
 
 const SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/release-with-logs/smart_account_contract.wasm");
+const WAD7: i128 = 10000000;
 
 pub struct ContractAddresses {
     admin: Addr,
@@ -173,22 +174,22 @@ fn liquidity_pool_lenders_initialise(env: &Env, contracts: &ContractAddresses) {
     registry_client.set_native_xlm_contract_address(&contracts.xlm_address);
     let lender_addr1 = Addr::generate(&env);
     let lender_addr2 = Addr::generate(&env);
-
     let lender_addr3 = Addr::generate(&env);
-
     let lender_addr4 = Addr::generate(&env);
 
     let stellar_asset = StellarAssetClient::new(&env, &contracts.xlm_address);
 
-    stellar_asset.mint(&lender_addr1, &1000000000i128);
-    stellar_asset.mint(&lender_addr2, &1000000000i128);
-    stellar_asset.mint(&lender_addr3, &1000000000i128);
-    stellar_asset.mint(&lender_addr4, &1000000000i128);
+    let mint_amt = 1000000000i128 * WAD7;
 
-    let amount1 = U256::from_u32(&env, 400);
-    let amount2 = U256::from_u32(&env, 500);
-    let amount3 = U256::from_u32(&env, 600);
-    let amount4 = U256::from_u32(&env, 700);
+    stellar_asset.mint(&lender_addr1, &mint_amt);
+    stellar_asset.mint(&lender_addr2, &mint_amt);
+    stellar_asset.mint(&lender_addr3, &mint_amt);
+    stellar_asset.mint(&lender_addr4, &mint_amt);
+
+    let amount1 = U256::from_u128(&env, 400 * WAD_U128);
+    let amount2 = U256::from_u128(&env, 500 * WAD_U128);
+    let amount3 = U256::from_u128(&env, 600 * WAD_U128);
+    let amount4 = U256::from_u128(&env, 700 * WAD_U128);
 
     let x = lp_xlm_client.initialize_pool_xlm(&contracts.vxlm_token_contract);
     // println!("response from : {:?} ", x);
@@ -203,10 +204,10 @@ fn liquidity_pool_lenders_initialise(env: &Env, contracts: &ContractAddresses) {
         "Balance after depositing: {:?}",
         xlm_token_client.balance(&lender_addr1)
     );
-    assert!(xlm_token_client.balance(&lender_addr1) == 999999600);
-    assert!(xlm_token_client.balance(&lender_addr2) == 999999500);
-    assert!(xlm_token_client.balance(&lender_addr3) == 999999400);
-    assert!(xlm_token_client.balance(&lender_addr4) == 999999300);
+    assert!(xlm_token_client.balance(&lender_addr1) == 999999600 * WAD7);
+    assert!(xlm_token_client.balance(&lender_addr2) == 999999500 * WAD7);
+    assert!(xlm_token_client.balance(&lender_addr3) == 999999400 * WAD7);
+    assert!(xlm_token_client.balance(&lender_addr4) == 999999300 * WAD7);
 }
 
 fn oracle_price_feed_setup(env: &Env, contracts: &mut ContractAddresses) -> Addr {
@@ -304,10 +305,10 @@ fn all_integrated_tests_start() {
     let registry_client = RegistryContractClient::new(&env, &contracts.registry_contract);
     registry_client.set_native_xlm_contract_address(&xlm_token.address());
 
-    stellar_asset.mint(&lender_addr, &1000000000i128);
+    stellar_asset.mint(&lender_addr, &(1000000000i128 * WAD7));
 
-    let amount = U256::from_u32(&env, 400);
-    let amountx = U256::from_u32(&env, 40);
+    let amount = U256::from_u128(&env, (400 * WAD_U128));
+    let amountx = U256::from_u128(&env, 40 * WAD_U128);
 
     let x = lp_xlm_client.initialize_pool_xlm(&vxlm_token_contract_address);
     // println!("response from : {:?} ", x);
@@ -397,8 +398,8 @@ fn account_manager_flows() {
             .eq(&U256::from_u32(&env, 10))
     );
 
-    stellar_asset_xlm.mint(&trader_address, &10000i128);
-    stellar_asset_xlm.mint(&trader_address2, &10000i128);
+    stellar_asset_xlm.mint(&trader_address, &(10000i128 * WAD7));
+    stellar_asset_xlm.mint(&trader_address2, &(10000i128 * WAD7));
 
     println!(
         "Account manager address is {:?}",
@@ -419,13 +420,13 @@ fn account_manager_flows() {
     account_manager_client.deposit_collateral_tokens(
         &margin_acc1,
         &Symbol::new(&env, "XLM"),
-        &U256::from_u128(&env, 100),
+        &U256::from_u128(&env, 100 * WAD_U128),
     );
 
     account_manager_client.deposit_collateral_tokens(
         &margin_acc2,
         &Symbol::new(&env, "XLM"),
-        &U256::from_u128(&env, 999),
+        &U256::from_u128(&env, 999 * WAD_U128),
     );
 
     let collateral_bal = margin_client1.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
@@ -440,7 +441,7 @@ fn account_manager_flows() {
     account_manager_client.withdraw_collateral_balance(
         &margin_acc1,
         &Symbol::new(&env, "XLM"),
-        &U256::from_u128(&env, 80),
+        &U256::from_u128(&env, 80 * WAD_U128),
     );
 }
 
@@ -531,7 +532,7 @@ fn test_trader_borrow_logic() {
             .eq(&U256::from_u32(&env, 10))
     );
 
-    stellar_asset_usdc.mint(&trader_address, &10000i128);
+    stellar_asset_usdc.mint(&trader_address, &(10000i128 * WAD7));
     let usdc_symbol = Symbol::new(&env, "USDC");
     let xlm_symbol = Symbol::new(&env, "XLM");
 
@@ -544,30 +545,38 @@ fn test_trader_borrow_logic() {
     account_manager_client.deposit_collateral_tokens(
         &margin_acc1,
         &usdc_symbol,
-        &U256::from_u128(&env, 100),
+        &U256::from_u128(&env, 100 * WAD_U128),
     );
 
     let collateral_bal = margin_client1.get_collateral_token_balance(&usdc_symbol);
-    assert!(collateral_bal.eq(&U256::from_u128(&env, 100)));
+    assert!(collateral_bal.eq(&U256::from_u128(&env, 100 * WAD_U128)));
 
     account_manager_client.withdraw_collateral_balance(
         &margin_acc1,
         &usdc_symbol,
-        &U256::from_u128(&env, 10),
+        &U256::from_u128(&env, 10 * WAD_U128),
     );
 
     let collateral_balxy = margin_client1.get_collateral_token_balance(&usdc_symbol);
-    assert!(collateral_balxy.eq(&U256::from_u128(&env, 90)));
+    assert!(collateral_balxy.eq(&U256::from_u128(&env, 90 * WAD_U128)));
 
-    account_manager_client.borrow(&margin_acc1, &U256::from_u128(&env, 10), &xlm_symbol);
+    account_manager_client.borrow(
+        &margin_acc1,
+        &U256::from_u128(&env, 10 * WAD_U128),
+        &xlm_symbol,
+    );
     let borrowd_xlm = margin_client1.get_borrowed_token_debt(&xlm_symbol);
-    assert!(borrowd_xlm.eq(&U256::from_u128(&env, 10)));
+    assert!(borrowd_xlm.eq(&U256::from_u128(&env, 10 * WAD_U128)));
 
     let xlm = token::Client::new(&env, &contracts.xlm_address);
     println!("Balance before repay{:?}", xlm.balance(&margin_acc1));
 
-    account_manager_client.repay(&U256::from_u128(&env, 8), &xlm_symbol, &margin_acc1);
-    assert!(xlm.balance(&margin_acc1).eq(&2));
+    account_manager_client.repay(
+        &U256::from_u128(&env, 8 * WAD_U128),
+        &xlm_symbol,
+        &margin_acc1,
+    );
+    assert!(xlm.balance(&margin_acc1).eq(&(2 * WAD7)));
 }
 
 #[test]
@@ -886,7 +895,7 @@ fn repay_xlm_failure() {
     let trader = Addr::generate(&env);
     // mint some usdc to trader (so they can deposit as collateral)
     let usdc_token = StellarAssetClient::new(&env, &contracts.usdc_address);
-    usdc_token.mint(&trader, &10_000i128);
+    usdc_token.mint(&trader, &(10_000i128 * WAD7));
 
     let smart_acc = account_manager_client.create_account(&trader);
 
@@ -894,13 +903,13 @@ fn repay_xlm_failure() {
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
         &Symbol::new(&env, "USDC"),
-        &U256::from_u128(&env, 100),
+        &U256::from_u128(&env, 100 * WAD_U128),
     );
 
     // Now attempt to borrow XLM (risk engine consults oracle + collateral)
     account_manager_client.borrow(
         &smart_acc,
-        &U256::from_u128(&env, 10),
+        &U256::from_u128(&env, 10 * WAD_U128),
         &Symbol::new(&env, "XLM"),
     );
 
@@ -946,7 +955,7 @@ fn borrow_and_repay_xlm_flow() {
     let trader = Addr::generate(&env);
     // mint some usdc to trader (so they can deposit as collateral)
     let usdc_token = StellarAssetClient::new(&env, &contracts.usdc_address);
-    usdc_token.mint(&trader, &10_000i128);
+    usdc_token.mint(&trader, &(10_000i128 * WAD7));
 
     let smart_acc = account_manager_client.create_account(&trader);
 
@@ -954,13 +963,13 @@ fn borrow_and_repay_xlm_flow() {
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
         &Symbol::new(&env, "USDC"),
-        &U256::from_u128(&env, 100),
+        &U256::from_u128(&env, 100 * WAD_U128),
     );
 
     // Now attempt to borrow XLM (risk engine consults oracle + collateral)
     account_manager_client.borrow(
         &smart_acc,
-        &U256::from_u128(&env, 10),
+        &U256::from_u128(&env, 10 * WAD_U128),
         &Symbol::new(&env, "XLM"),
     );
 
@@ -973,11 +982,11 @@ fn borrow_and_repay_xlm_flow() {
     // Smart account should have received XLM tokens from pool; confirm balance > 0
     let xlm_token = token::Client::new(&env, &contracts.xlm_address);
     let bal = xlm_token.balance(&smart_acc);
-    assert!(bal == 10_i128);
+    assert!(bal == 10_i128 * WAD7);
 
     // Now repay partial amount (repay 5 XLM)
     account_manager_client.repay(
-        &U256::from_u128(&env, 5),
+        &U256::from_u128(&env, 5 * WAD_U128),
         &Symbol::new(&env, "XLM"),
         &smart_acc,
     );

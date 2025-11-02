@@ -12,6 +12,7 @@ use crate::types::{
 
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
+pub const WAD_U128: u128 = 10000_0000_00000_00000; // 1e18
 
 pub mod smart_account_contract {
     soroban_sdk::contractimport!(
@@ -188,12 +189,12 @@ impl AccountManagerContract {
         env: Env,
         smart_account: Address,
         token_symbol: Symbol,
-        token_amount: U256,
+        token_amount_wad: U256,
     ) -> Result<(), AccountManagerError> {
         let trader_address = Self::get_trader_address(&env, smart_account.clone());
         trader_address.require_auth();
 
-        if token_amount.eq(&U256::from_u128(&env, 0)) {
+        if token_amount_wad.eq(&U256::from_u128(&env, 0)) {
             panic!("Cannot deposit a zero amount");
         }
 
@@ -213,7 +214,7 @@ impl AccountManagerContract {
             smart_account_client.add_collateral_token(&token_symbol.clone());
         }
 
-        let amount_u128: u128 = token_amount.to_u128().unwrap_or_else(|| {
+        let amount_wad_u128: u128 = token_amount_wad.to_u128().unwrap_or_else(|| {
             panic_with_error!(&env, AccountManagerError::IntegerConversionError)
         });
 
@@ -223,22 +224,25 @@ impl AccountManagerContract {
         if token_symbol == Symbol::new(&env, "XLM") {
             let native_xlm_address = registry_client.get_xlm_contract_adddress();
             let xlm_token = token::Client::new(&env, &native_xlm_address);
-            xlm_token.transfer(&trader_address, &smart_account, &(amount_u128 as i128));
+            let amount_scaled = Self::scale_for_operation(amount_wad_u128, xlm_token.decimals());
+            xlm_token.transfer(&trader_address, &smart_account, &amount_scaled);
         } else if token_symbol == Symbol::new(&env, "USDC") {
             let usdc_contract_address = registry_client.get_usdc_contract_address();
             let usdc_token = token::Client::new(&env, &usdc_contract_address);
-            usdc_token.transfer(&trader_address, &smart_account, &(amount_u128 as i128));
+            let amount_scaled = Self::scale_for_operation(amount_wad_u128, usdc_token.decimals());
+            usdc_token.transfer(&trader_address, &smart_account, &amount_scaled);
         } else if token_symbol == Symbol::new(&env, "EURC") {
             let eurc_contract_address = registry_client.get_eurc_contract_address();
             let eurc_token = token::Client::new(&env, &eurc_contract_address);
-            eurc_token.transfer(&trader_address, &smart_account, &(amount_u128 as i128));
+            let amount_scaled = Self::scale_for_operation(amount_wad_u128, eurc_token.decimals());
+            eurc_token.transfer(&trader_address, &smart_account, &amount_scaled);
         } else {
             panic!("Collateral not allowed for this token symbol");
         }
 
-        let existing_bal = smart_account_client.get_collateral_token_balance(&token_symbol);
-        let final_bal = existing_bal.add(&token_amount);
-        smart_account_client.set_collateral_token_balance(&token_symbol, &final_bal);
+        let existing_bal_wad = smart_account_client.get_collateral_token_balance(&token_symbol);
+        let final_bal_wad = existing_bal_wad.add(&token_amount_wad);
+        smart_account_client.set_collateral_token_balance(&token_symbol, &final_bal_wad);
 
         Ok(())
     }
@@ -247,12 +251,12 @@ impl AccountManagerContract {
         env: Env,
         smart_account: Address,
         token_symbol: Symbol,
-        token_amount: U256,
+        token_amount_wad: U256,
     ) -> Result<(), AccountManagerError> {
         let trader_address = Self::get_trader_address(&env, smart_account.clone());
         trader_address.require_auth();
 
-        if token_amount.eq(&U256::from_u128(&env, 0)) {
+        if token_amount_wad.eq(&U256::from_u128(&env, 0)) {
             panic!("Cannot withdraw a zero amount");
         }
 
@@ -268,11 +272,12 @@ impl AccountManagerContract {
         let risk_engine_address = registry_client.get_risk_engine_address();
         let risk_engine_client = risk_engine_contract::Client::new(&env, &risk_engine_address);
 
-        if !risk_engine_client.is_withdraw_allowed(&token_symbol, &token_amount, &smart_account) {
+        if !risk_engine_client.is_withdraw_allowed(&token_symbol, &token_amount_wad, &smart_account)
+        {
             panic!("Account is unhealthy! withdraw is not allowed");
         }
 
-        let amount_u128: u128 = token_amount.to_u128().unwrap_or_else(|| {
+        let amount_u128: u128 = token_amount_wad.to_u128().unwrap_or_else(|| {
             panic_with_error!(&env, AccountManagerError::IntegerConversionError)
         });
 
@@ -686,6 +691,9 @@ impl AccountManagerContract {
         smart_account
     }
 
+    fn scale_for_operation(amount_wad: u128, xlm_decimals: u32) -> i128 {
+        ((amount_wad * 10u128.pow(xlm_decimals)) / WAD_U128) as i128
+    }
     /// To be implemented
     pub fn approve() {}
 

@@ -11,6 +11,7 @@ use crate::types::{
 
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
+const WAD_U128: u128 = 10000_0000_00000_00000; // 10^18 for decimals
 
 #[contract]
 pub struct SmartAccountContract;
@@ -80,51 +81,36 @@ impl SmartAccountContract {
     pub fn remove_borrowed_token_balance(
         env: Env,
         token_symbol: Symbol,
-        amount: u128,
+        amount_wad: u128,
     ) -> Result<(), SmartAccountError> {
         // Auth is being handled at token level
         // Self::check_auth(&env, token_symbol.clone()).unwrap();
 
         let registry_address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
+        let this_account = env.current_contract_address();
 
         if token_symbol == Symbol::new(&env, "XLM") {
             let pool_xlm_address = registry_client.get_lendingpool_xlm();
             pool_xlm_address.require_auth();
-            log!(&env, "Auth done, transfering amount", amount);
             let native_xlm_address = registry_client.get_xlm_contract_adddress();
-
             let xlm_token = token::Client::new(&env, &native_xlm_address);
-            let balance = xlm_token.balance(&env.current_contract_address());
-            log!(&env, "Current balance in margin account is ", balance);
-
-            xlm_token.transfer(
-                &env.current_contract_address(),
-                &pool_xlm_address,
-                &(amount as i128),
-            );
+            let amount_scaled = Self::scale_for_operation(amount_wad, xlm_token.decimals());
+            xlm_token.transfer(&this_account, &pool_xlm_address, &amount_scaled);
         } else if token_symbol == Symbol::new(&env, "USDC") {
             let pool_usdc_address = registry_client.get_lendingpool_usdc();
             pool_usdc_address.require_auth();
             let native_usdc_address = registry_client.get_usdc_contract_address();
-
             let usdc_token = token::Client::new(&env, &native_usdc_address);
-            usdc_token.transfer(
-                &env.current_contract_address(),
-                &pool_usdc_address,
-                &(amount as i128),
-            );
+            let amount_scaled = Self::scale_for_operation(amount_wad, usdc_token.decimals());
+            usdc_token.transfer(&this_account, &pool_usdc_address, &amount_scaled);
         } else if token_symbol == Symbol::new(&env, "EURC") {
             let pool_eurc_address = registry_client.get_lendingpool_eurc();
             pool_eurc_address.require_auth();
             let native_eurc_address = registry_client.get_eurc_contract_address();
-
             let eurc_token = token::Client::new(&env, &native_eurc_address);
-            eurc_token.transfer(
-                &env.current_contract_address(),
-                &pool_eurc_address,
-                &(amount as i128),
-            );
+            let amount_scaled = Self::scale_for_operation(amount_wad, eurc_token.decimals());
+            eurc_token.transfer(&this_account, &pool_eurc_address, &amount_scaled);
         }
         Ok(())
     }
@@ -133,53 +119,60 @@ impl SmartAccountContract {
         env: &Env,
         user_address: Address,
         token_symbol: Symbol,
-        amount: u128,
+        amount_wad: u128,
     ) -> Result<(), SmartAccountError> {
         let account_manager = Self::get_account_manager(&env);
         account_manager.require_auth();
+        Self::remove_collateral_token_bal_internal(env, user_address, token_symbol, amount_wad)
+    }
+
+    fn remove_collateral_token_bal_internal(
+        env: &Env,
+        user_address: Address,
+        token_symbol: Symbol,
+        amount_wad: u128,
+    ) -> Result<(), SmartAccountError> {
         let registry_address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
+        let this_account = env.current_contract_address();
 
         if token_symbol == Symbol::new(&env, "XLM") {
             let native_xlm_address = registry_client.get_xlm_contract_adddress();
-
             let xlm_token = token::Client::new(&env, &native_xlm_address);
-            xlm_token.transfer(
-                &env.current_contract_address(),
-                &user_address,
-                &(amount as i128),
+            let amount_scaled = Self::scale_for_operation(amount_wad, xlm_token.decimals());
+            let bal_before = xlm_token.balance(&this_account);
+            xlm_token.transfer(&this_account, &user_address, &amount_scaled);
+            let bal_after = xlm_token.balance(&this_account);
+            log!(
+                &env,
+                "Transfering xlm ",
+                amount_scaled,
+                bal_before,
+                bal_after
             );
         } else if token_symbol == Symbol::new(&env, "USDC") {
             let native_usdc_address = registry_client.get_usdc_contract_address();
-
             let usdc_token = token::Client::new(&env, &native_usdc_address);
-            usdc_token.transfer(
-                &env.current_contract_address(),
-                &user_address,
-                &(amount as i128),
-            );
+            let amount_scaled = Self::scale_for_operation(amount_wad, usdc_token.decimals());
+            usdc_token.transfer(&this_account, &user_address, &amount_scaled);
         } else if token_symbol == Symbol::new(&env, "EURC") {
             let native_eurc_address = registry_client.get_eurc_contract_address();
-
             let eurc_token = token::Client::new(&env, &native_eurc_address);
-            eurc_token.transfer(
-                &env.current_contract_address(),
-                &user_address,
-                &(amount as i128),
-            );
+            let amount_scaled = Self::scale_for_operation(amount_wad, eurc_token.decimals());
+            eurc_token.transfer(&this_account, &user_address, &amount_scaled);
         }
 
-        let collateral_balance =
-            Self::get_collateral_token_balance(&env, token_symbol.clone()).unwrap();
-        let balance_after_deduction = collateral_balance.sub(&U256::from_u128(&env, amount));
+        let collateral_balance_wad = Self::get_collateral_token_balance(&env, token_symbol.clone());
+        let balance_after_deduction_wad =
+            collateral_balance_wad.sub(&U256::from_u128(&env, amount_wad));
 
-        let key_a = SmartAccountDataKey::CollateralBalance(token_symbol.clone());
-        env.storage()
-            .persistent()
-            .set(&key_a, &balance_after_deduction);
-        Self::extend_ttl_smart_account(&env, key_a);
+        Self::set_collateral_token_bal_internal(
+            env,
+            token_symbol.clone(),
+            balance_after_deduction_wad.clone(),
+        );
 
-        if balance_after_deduction == U256::from_u128(&env, 0) {
+        if balance_after_deduction_wad == U256::from_u128(&env, 0) {
             Self::remove_collateral_token(&env, token_symbol.clone()).unwrap();
         }
 
@@ -190,85 +183,66 @@ impl SmartAccountContract {
         let account_manager: Address = Self::get_account_manager(&env);
         account_manager.require_auth();
 
-        let all_collateral_tokens = Self::get_all_collateral_tokens(env).unwrap();
+        let all_collateral_tokens = Self::get_all_collateral_tokens(env);
         for coltoken in all_collateral_tokens.iter() {
-            let coltokenbalance =
-                Self::get_collateral_token_balance(env, coltoken.clone()).unwrap();
+            let coltokenbalance = Self::get_collateral_token_balance(env, coltoken.clone());
 
             let col_token_amount = coltokenbalance.to_u128().unwrap_or_else(|| {
                 panic_with_error!(&env, SmartAccountError::IntegerConversionError)
             });
 
-            Self::remove_collateral_token_balance(
+            Self::remove_collateral_token_bal_internal(
                 env,
                 to_address.clone(),
                 coltoken,
                 col_token_amount,
             )
-            .unwrap();
+            .expect("Failed to remove collateral token balance");
         }
         Ok(())
     }
 
     pub fn has_debt(env: &Env) -> bool {
-        let has_debt = env
-            .storage()
+        env.storage()
             .persistent()
             .get(&SmartAccountDataKey::HasDebt)
-            .unwrap_or_else(|| false);
-        has_debt
+            .unwrap_or_else(|| false)
     }
 
-    pub fn set_has_debt(
-        env: &Env,
-        has_debt: bool,
-        token_symbol: Symbol,
-    ) -> Result<(), SmartAccountError> {
-        Self::check_auth(&env, token_symbol).unwrap();
+    pub fn set_has_debt(env: &Env, has_debt: bool, token_symbol: Symbol) {
+        Self::check_auth(&env, token_symbol);
+        Self::set_has_debt_internal(env, has_debt);
+    }
 
+    fn set_has_debt_internal(env: &Env, has_debt: bool) {
         env.storage()
             .persistent()
             .set(&SmartAccountDataKey::HasDebt, &has_debt);
         Self::extend_ttl_smart_account(&env, SmartAccountDataKey::HasDebt);
-        Ok(())
     }
 
-    pub fn get_all_borrowed_tokens(env: &Env) -> Result<Vec<Symbol>, SmartAccountError> {
-        // let account_manager: Address = Self::get_account_manager(env);
-        // account_manager.require_auth();
+    pub fn get_all_borrowed_tokens(env: &Env) -> Vec<Symbol> {
         let borrowed_tokens_list: Vec<Symbol> = env
             .storage()
             .persistent()
             .get(&SmartAccountDataKey::BorrowedTokensList)
             .unwrap_or_else(|| Vec::new(&env));
-        Ok(borrowed_tokens_list)
+        borrowed_tokens_list
     }
 
     pub fn add_borrowed_token(env: &Env, token_symbol: Symbol) -> Result<(), SmartAccountError> {
-        Self::check_auth(&env, token_symbol.clone()).unwrap();
-        let mut borrowed_tokens_list: Vec<Symbol> = env
-            .storage()
-            .persistent()
-            .get(&SmartAccountDataKey::BorrowedTokensList)
-            .unwrap_or_else(|| Vec::new(&env));
+        Self::check_auth(&env, token_symbol.clone());
+        let mut borrowed_tokens_list: Vec<Symbol> = Self::get_all_borrowed_tokens(env);
         if !borrowed_tokens_list.contains(&token_symbol.clone()) {
             borrowed_tokens_list.push_back(token_symbol);
         }
-        env.storage().persistent().set(
-            &SmartAccountDataKey::BorrowedTokensList,
-            &borrowed_tokens_list,
-        );
-        Self::extend_ttl_smart_account(&env, SmartAccountDataKey::BorrowedTokensList);
+        Self::set_borrowed_token_list(env, borrowed_tokens_list);
         Ok(())
     }
 
     pub fn remove_borrowed_token(env: &Env, token_symbol: Symbol) -> Result<(), SmartAccountError> {
-        Self::check_auth(&env, token_symbol.clone()).unwrap();
-        let mut borrowed_tokens_list: Vec<Symbol> = env
-            .storage()
-            .persistent()
-            .get(&SmartAccountDataKey::BorrowedTokensList)
-            .unwrap_or_else(|| Vec::new(&env));
+        Self::check_auth(&env, token_symbol.clone());
+        let mut borrowed_tokens_list: Vec<Symbol> = Self::get_all_borrowed_tokens(env);
         if borrowed_tokens_list.contains(&token_symbol.clone()) {
             let index = borrowed_tokens_list
                 .first_index_of(token_symbol.clone())
@@ -277,81 +251,82 @@ impl SmartAccountContract {
         }
 
         if borrowed_tokens_list.is_empty() {
-            // AUth might fail here, since this is an internal call, Check!!!
-            Self::set_has_debt(&env, false, token_symbol).unwrap();
+            Self::set_has_debt_internal(&env, false);
         }
-
-        env.storage().persistent().set(
-            &SmartAccountDataKey::BorrowedTokensList,
-            &borrowed_tokens_list,
-        );
-        Self::extend_ttl_smart_account(&env, SmartAccountDataKey::BorrowedTokensList);
+        Self::set_borrowed_token_list(env, borrowed_tokens_list);
         Ok(())
     }
 
-    pub fn get_all_collateral_tokens(env: &Env) -> Result<Vec<Symbol>, SmartAccountError> {
+    fn set_borrowed_token_list(env: &Env, list: Vec<Symbol>) {
+        env.storage()
+            .persistent()
+            .set(&SmartAccountDataKey::BorrowedTokensList, &list);
+        Self::extend_ttl_smart_account(&env, SmartAccountDataKey::BorrowedTokensList);
+    }
+
+    pub fn get_all_collateral_tokens(env: &Env) -> Vec<Symbol> {
         let collateral_tokens_list: Vec<Symbol> = env
             .storage()
             .persistent()
             .get(&SmartAccountDataKey::CollateralTokensList)
             .unwrap_or_else(|| Vec::new(&env));
-        Ok(collateral_tokens_list)
+        collateral_tokens_list
     }
 
     pub fn add_collateral_token(env: &Env, token_symbol: Symbol) -> Result<(), SmartAccountError> {
         let account_manager = Self::get_account_manager(&env);
         account_manager.require_auth();
 
-        let mut exisiting_tokens = Self::get_all_collateral_tokens(&env).unwrap();
-        if !exisiting_tokens.contains(&token_symbol) {
-            exisiting_tokens.push_back(token_symbol);
+        let mut existing_tokens = Self::get_all_collateral_tokens(&env);
+        if !existing_tokens.contains(&token_symbol) {
+            existing_tokens.push_back(token_symbol);
         }
-
-        env.storage().persistent().set(
-            &SmartAccountDataKey::CollateralTokensList,
-            &exisiting_tokens,
-        );
-        Self::extend_ttl_smart_account(&env, SmartAccountDataKey::CollateralTokensList);
+        Self::set_collateral_tokens_list(env, existing_tokens);
         Ok(())
     }
 
-    pub fn remove_collateral_token(
-        env: &Env,
-        token_symbol: Symbol,
-    ) -> Result<(), SmartAccountError> {
-        let mut existing_tokens: Vec<Symbol> = Self::get_all_collateral_tokens(&env).unwrap();
+    fn remove_collateral_token(env: &Env, token_symbol: Symbol) -> Result<(), SmartAccountError> {
+        let mut existing_tokens: Vec<Symbol> = Self::get_all_collateral_tokens(&env);
         if existing_tokens.contains(&token_symbol) {
             let index = existing_tokens.first_index_of(&token_symbol).unwrap();
             existing_tokens.remove(index);
         }
+        Self::set_collateral_tokens_list(env, existing_tokens);
         Ok(())
     }
 
-    pub fn get_collateral_token_balance(
-        env: &Env,
-        token_symbol: Symbol,
-    ) -> Result<U256, SmartAccountError> {
-        let key_a = SmartAccountDataKey::CollateralBalance(token_symbol.clone());
+    fn set_collateral_tokens_list(env: &Env, list: Vec<Symbol>) {
+        env.storage()
+            .persistent()
+            .set(&SmartAccountDataKey::CollateralTokensList, &list);
+        Self::extend_ttl_smart_account(&env, SmartAccountDataKey::CollateralTokensList);
+    }
+
+    pub fn get_collateral_token_balance(env: &Env, token_symbol: Symbol) -> U256 {
+        let key_a = SmartAccountDataKey::CollateralBalanceWAD(token_symbol.clone());
         let token_balance = env
             .storage()
             .persistent()
             .get(&key_a)
             .unwrap_or_else(|| U256::from_u128(&env, 0));
-        Ok(token_balance)
+        token_balance
     }
 
     pub fn set_collateral_token_balance(
         env: &Env,
         token_symbol: Symbol,
-        balance: U256,
+        balance_wad: U256,
     ) -> Result<(), SmartAccountError> {
         let account_manager = Self::get_account_manager(&env);
         account_manager.require_auth();
-
-        let key_a = SmartAccountDataKey::CollateralBalance(token_symbol.clone());
-        env.storage().persistent().set(&key_a, &balance);
-        Self::extend_ttl_smart_account(&env, key_a);
+        Self::set_collateral_token_bal_internal(env, token_symbol, balance_wad);
         Ok(())
+    }
+
+    fn set_collateral_token_bal_internal(env: &Env, token_symbol: Symbol, balance_wad: U256) {
+        let key_a = SmartAccountDataKey::CollateralBalanceWAD(token_symbol.clone());
+        env.storage().persistent().set(&key_a, &balance_wad);
+        Self::extend_ttl_smart_account(&env, key_a);
     }
 
     pub fn get_borrowed_token_debt(
@@ -360,36 +335,29 @@ impl SmartAccountContract {
     ) -> Result<U256, SmartAccountError> {
         let registry_address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
+        let this_account = env.current_contract_address();
 
         if token_symbol == Symbol::new(&env, "XLM") {
             let pool_xlm_address = registry_client.get_lendingpool_xlm();
-            let xlm_client = lending_protocol_xlm::Client::new(&env, &pool_xlm_address);
+            let xlm_pool_client = lending_protocol_xlm::Client::new(&env, &pool_xlm_address);
 
-            let xlm_debt = xlm_client.get_borrow_balance(&env.current_contract_address());
+            let xlm_debt = xlm_pool_client.get_borrow_balance(&this_account);
             return Ok(xlm_debt);
         } else if token_symbol == Symbol::new(&env, "USDC") {
             let pool_usdc_address = registry_client.get_lendingpool_usdc();
-            let usdc_client = lending_protocol_usdc::Client::new(&env, &pool_usdc_address);
+            let usdc_pool_client = lending_protocol_usdc::Client::new(&env, &pool_usdc_address);
 
-            let usdc_debt = usdc_client.get_borrow_balance(&env.current_contract_address());
+            let usdc_debt = usdc_pool_client.get_borrow_balance(&this_account);
             return Ok(usdc_debt);
         } else if token_symbol == Symbol::new(&env, "EURC") {
             let pool_eurc_address = registry_client.get_lendingpool_eurc();
-            let eurc_client = lending_protocol_eurc::Client::new(&env, &pool_eurc_address);
+            let eurc_pool_client = lending_protocol_eurc::Client::new(&env, &pool_eurc_address);
 
-            let eurc_debt = eurc_client.get_borrow_balance(&env.current_contract_address());
+            let eurc_debt = eurc_pool_client.get_borrow_balance(&this_account);
             return Ok(eurc_debt);
         } else {
             panic!("User doen't have a borrows in the given token");
         }
-
-        // let key_b = SmartAccountDataKey::BorrowedDebt(token_symbol.clone());
-        // let token_debt = env
-        //     .storage()
-        //     .persistent()
-        //     .get(&key_b)
-        //     .unwrap_or_else(|| U256::from_u128(&env, 0));
-        // Ok(token_debt)
     }
 
     pub fn is_account_active(env: &Env) -> bool {
@@ -399,7 +367,7 @@ impl SmartAccountContract {
             .unwrap_or(false)
     }
 
-    fn check_auth(env: &Env, token_symbol: Symbol) -> Result<(), SmartAccountError> {
+    fn check_auth(env: &Env, token_symbol: Symbol) {
         let registry_address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
 
@@ -418,7 +386,10 @@ impl SmartAccountContract {
         } else {
             panic!("Non existent lending pool, Auth failed!!");
         }
-        Ok(())
+    }
+
+    fn scale_for_operation(amount_wad: u128, xlm_decimals: u32) -> i128 {
+        ((amount_wad * 10u128.pow(xlm_decimals)) / WAD_U128) as i128
     }
 
     fn extend_ttl_smart_account(env: &Env, key: SmartAccountDataKey) {
