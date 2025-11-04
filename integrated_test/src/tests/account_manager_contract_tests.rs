@@ -811,6 +811,61 @@ fn deposit_xlm_and_withdraw_success() {
 }
 
 #[test]
+#[should_panic(expected = "Cannot withdraw more value than the current collateral value")]
+fn deposit_xlm_and_withdraw_failure() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contracts = test_initiation(&env);
+
+    // initialize lending pool and fund it
+    liquidity_pool_lenders_initialise(&env, &contracts);
+
+    // register token contracts (already registered in test_initiation), use them
+    let xlm_token = StellarAssetClient::new(&env, &contracts.xlm_address);
+
+    // set admin values and allow XLM as collateral
+    let account_manager_client =
+        AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
+    account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 5));
+    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "XLM"));
+
+    // create trader and account
+    let trader = Addr::generate(&env);
+    xlm_token.mint(&trader, &(10_000i128 * WAD7));
+
+    let smart_acc = account_manager_client.create_account(&trader);
+
+    // deposit 100 XLM (account_manager will transfer from trader -> smart_account)
+    account_manager_client.deposit_collateral_tokens(
+        &smart_acc,
+        &Symbol::new(&env, "XLM"),
+        &U256::from_u128(&env, 100 * WAD_U128),
+    );
+
+    // check smart account collateral balance
+    let smart_client = SmartAccountContractClient::new(&env, &smart_acc);
+    let bal = smart_client.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+    assert_eq!(bal, U256::from_u128(&env, 100 * WAD_U128));
+
+    account_manager_client.borrow(
+        &smart_acc,
+        &U256::from_u128(&env, 10 * WAD_U128),
+        &Symbol::new(&env, "XLM"),
+    );
+
+    // attempt to withdraw 500 XLM (withdraw should fail)
+    account_manager_client.withdraw_collateral_balance(
+        &smart_acc,
+        &Symbol::new(&env, "XLM"),
+        &U256::from_u128(&env, 500 * WAD_U128),
+    );
+
+    // let bal_after = smart_client.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+    // assert_eq!(bal_after, U256::from_u128(&env, 50 * WAD_U128));
+}
+
+#[test]
 #[should_panic(expected = "User doesn't have collateral in this token")]
 fn withdraw_without_collateral_should_panic() {
     let env = Env::default();
@@ -828,8 +883,6 @@ fn withdraw_without_collateral_should_panic() {
         &Symbol::new(&env, "USDC"),
         &U256::from_u128(&env, 10),
     );
-
-    // assert!(e.eq(AccountManagerError::UserDoesntHaveCollateralToken));
 }
 
 #[test]

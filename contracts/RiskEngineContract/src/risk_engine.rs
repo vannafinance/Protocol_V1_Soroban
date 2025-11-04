@@ -87,14 +87,18 @@ impl RiskEngineContract {
         let wad_scale = WAD_U128 / (10_u32.pow(decimals) as u128);
         let price_wad = price * wad_scale;
         let oracle_price_wad = U256::from_u128(&env, price_wad);
-        // let withdraw_value = withdraw_amount_wad.mul(&oracle_price_wad);
 
-        let withdraw_value_wad = Self::mul_wad_down(&env, withdraw_amount_wad, oracle_price_wad);
+        let withdraw_value_wad =
+            Self::mul_wad_down(&env, withdraw_amount_wad.clone(), oracle_price_wad);
 
         let current_account_balance_wad =
             Self::get_current_total_balance(&env, margin_account.clone()).unwrap();
         let current_account_debt_wad =
             Self::get_current_total_borrows(&env, margin_account.clone()).unwrap();
+
+        if withdraw_amount_wad > current_account_balance_wad {
+            panic!("Cannot withdraw more value than the current collateral value")
+        }
 
         let res = Self::is_account_healthy(
             env,
