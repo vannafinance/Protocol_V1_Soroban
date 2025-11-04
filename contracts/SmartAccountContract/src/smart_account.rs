@@ -1,7 +1,8 @@
 use core::panic;
 
 use soroban_sdk::{
-    Address, Env, Symbol, U256, Vec, contract, contractimpl, log, panic_with_error, token,
+    Address, Env, Symbol, U256, Vec, contract, contractimpl, log, panic_with_error, symbol_short,
+    token,
 };
 
 use crate::types::{
@@ -12,6 +13,9 @@ use crate::types::{
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 const WAD_U128: u128 = 10000_0000_00000_00000; // 10^18 for decimals
+const XLM_SYMBOL: Symbol = symbol_short!("XLM");
+const USDC_SYMBOL: Symbol = symbol_short!("USDC");
+const EURC_SYMBOL: Symbol = symbol_short!("EURC");
 
 #[contract]
 pub struct SmartAccountContract;
@@ -90,21 +94,21 @@ impl SmartAccountContract {
         let registry_client = registry_contract::Client::new(&env, &registry_address);
         let this_account = env.current_contract_address();
 
-        if token_symbol == Symbol::new(&env, "XLM") {
+        if token_symbol == XLM_SYMBOL {
             let pool_xlm_address = registry_client.get_lendingpool_xlm();
             pool_xlm_address.require_auth();
             let native_xlm_address = registry_client.get_xlm_contract_adddress();
             let xlm_token = token::Client::new(&env, &native_xlm_address);
             let amount_scaled = Self::scale_for_operation(amount_wad, xlm_token.decimals());
             xlm_token.transfer(&this_account, &pool_xlm_address, &amount_scaled);
-        } else if token_symbol == Symbol::new(&env, "USDC") {
+        } else if token_symbol == USDC_SYMBOL {
             let pool_usdc_address = registry_client.get_lendingpool_usdc();
             pool_usdc_address.require_auth();
             let native_usdc_address = registry_client.get_usdc_contract_address();
             let usdc_token = token::Client::new(&env, &native_usdc_address);
             let amount_scaled = Self::scale_for_operation(amount_wad, usdc_token.decimals());
             usdc_token.transfer(&this_account, &pool_usdc_address, &amount_scaled);
-        } else if token_symbol == Symbol::new(&env, "EURC") {
+        } else if token_symbol == EURC_SYMBOL {
             let pool_eurc_address = registry_client.get_lendingpool_eurc();
             pool_eurc_address.require_auth();
             let native_eurc_address = registry_client.get_eurc_contract_address();
@@ -136,7 +140,7 @@ impl SmartAccountContract {
         let registry_client = registry_contract::Client::new(&env, &registry_address);
         let this_account = env.current_contract_address();
 
-        if token_symbol == Symbol::new(&env, "XLM") {
+        if token_symbol == XLM_SYMBOL {
             let native_xlm_address = registry_client.get_xlm_contract_adddress();
             let xlm_token = token::Client::new(&env, &native_xlm_address);
             let amount_scaled = Self::scale_for_operation(amount_wad, xlm_token.decimals());
@@ -150,12 +154,12 @@ impl SmartAccountContract {
                 bal_before,
                 bal_after
             );
-        } else if token_symbol == Symbol::new(&env, "USDC") {
+        } else if token_symbol == USDC_SYMBOL {
             let native_usdc_address = registry_client.get_usdc_contract_address();
             let usdc_token = token::Client::new(&env, &native_usdc_address);
             let amount_scaled = Self::scale_for_operation(amount_wad, usdc_token.decimals());
             usdc_token.transfer(&this_account, &user_address, &amount_scaled);
-        } else if token_symbol == Symbol::new(&env, "EURC") {
+        } else if token_symbol == EURC_SYMBOL {
             let native_eurc_address = registry_client.get_eurc_contract_address();
             let eurc_token = token::Client::new(&env, &native_eurc_address);
             let amount_scaled = Self::scale_for_operation(amount_wad, eurc_token.decimals());
@@ -337,19 +341,19 @@ impl SmartAccountContract {
         let registry_client = registry_contract::Client::new(&env, &registry_address);
         let this_account = env.current_contract_address();
 
-        if token_symbol == Symbol::new(&env, "XLM") {
+        if token_symbol == XLM_SYMBOL {
             let pool_xlm_address = registry_client.get_lendingpool_xlm();
             let xlm_pool_client = lending_protocol_xlm::Client::new(&env, &pool_xlm_address);
 
             let xlm_debt = xlm_pool_client.get_borrow_balance(&this_account);
             return Ok(xlm_debt);
-        } else if token_symbol == Symbol::new(&env, "USDC") {
+        } else if token_symbol == USDC_SYMBOL {
             let pool_usdc_address = registry_client.get_lendingpool_usdc();
             let usdc_pool_client = lending_protocol_usdc::Client::new(&env, &pool_usdc_address);
 
             let usdc_debt = usdc_pool_client.get_borrow_balance(&this_account);
             return Ok(usdc_debt);
-        } else if token_symbol == Symbol::new(&env, "EURC") {
+        } else if token_symbol == EURC_SYMBOL {
             let pool_eurc_address = registry_client.get_lendingpool_eurc();
             let eurc_pool_client = lending_protocol_eurc::Client::new(&env, &pool_eurc_address);
 
@@ -371,15 +375,15 @@ impl SmartAccountContract {
         let registry_address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
 
-        if token_symbol == Symbol::new(&env, "XLM") {
+        if token_symbol == XLM_SYMBOL {
             let pool_xlm_address = registry_client.get_lendingpool_xlm();
             // make sure only the lending pool has auth to call this function by adding authorization
             pool_xlm_address.require_auth();
-        } else if token_symbol == Symbol::new(&env, "USDC") {
+        } else if token_symbol == USDC_SYMBOL {
             let pool_usdc_address = registry_client.get_lendingpool_usdc();
             // make sure only the lending pool has auth to call this function by adding authorization
             pool_usdc_address.require_auth();
-        } else if token_symbol == Symbol::new(&env, "EURC") {
+        } else if token_symbol == EURC_SYMBOL {
             let pool_eurc_address = registry_client.get_lendingpool_eurc();
             // make sure only the lending pool has auth to call this function by adding authorization
             pool_eurc_address.require_auth();

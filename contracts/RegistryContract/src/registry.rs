@@ -1,8 +1,4 @@
-use core::ops::Add;
-
-use soroban_sdk::{
-    Address, BytesN, Env, String, Symbol, Vec, contract, contractimpl, symbol_short,
-};
+use soroban_sdk::{Address, BytesN, Env, Symbol, Vec, contract, contractimpl, symbol_short};
 
 use crate::types::{RegistryContractError, RegistryKey};
 
@@ -338,6 +334,8 @@ impl RegistryContract {
             &RegistryKey::OwnerAddress(smart_account.clone()),
             &None::<Address>,
         );
+        Self::extend_ttl_registry(&env, RegistryKey::OwnerAddress(smart_account.clone()));
+
         Ok(true)
     }
 

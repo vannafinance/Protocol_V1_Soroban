@@ -2,22 +2,8 @@ use soroban_sdk::{Address, String, Symbol, contracttype};
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[contracttype]
-pub enum DataKey {
-    //// WORK IN PROGRESS.. Data structures may change for better optimisation
-    /// Sample
-    Admin,
-    PriceData(String),   // Asset pair price data
-    Oracle,              // Authorized oracle address
-    User(Address),       // User account data
-    Loan(u32),           // Loan details (global loan ID)
-    LoanCounter,         // Global loan counter
-    Governance,          // Governance parameters
-    StdReferenceAddress, // Oracle reference address
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[contracttype]
 pub enum PoolDataKey {
+    Admin,
     Initialised,                  // Whether the pool has been deployed
     Lenders(Symbol),              // List of all lenders for particular asset symbol
     PoolAddress(Symbol),          // Pool Address for each token
@@ -36,7 +22,7 @@ pub enum TokenDataKey {
     // VTokenBalance(Address, Symbol),
     VTokenValue(Symbol),
     VTokenContractAddress(Symbol),
-    NativeXLMClientAddress,
+    NativeXLMAddress,
     TokenIssuerAddress,
 }
 

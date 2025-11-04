@@ -4,9 +4,10 @@ use crate::errors::{InterestRateError, LendingError};
 use crate::events::{
     LendingDepositEvent, LendingTokenBurnEvent, LendingTokenMintEvent, LendingWithdrawEvent,
 };
-use crate::types::{ContractDetails, DataKey, PoolDataKey, TokenDataKey};
+use crate::types::{ContractDetails, PoolDataKey, TokenDataKey};
 use soroban_sdk::{
-    Address, Env, String, Symbol, U256, Vec, contract, contractimpl, log, panic_with_error, token,
+    Address, Env, String, Symbol, U256, Vec, contract, contractimpl, log, panic_with_error,
+    symbol_short, token,
 };
 
 pub mod rate_model_contract {
@@ -39,6 +40,8 @@ pub struct LiquidityPoolUSDC;
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 const _TLL_LEDGERS_MONTH: u32 = 518400;
+const USDC_SYMBOL: Symbol = symbol_short!("USDC");
+const VUSDC_SYMBOL: Symbol = symbol_short!("VUSDC");
 
 pub const WAD_U128: u128 = 10000_0000_00000_00000; // 1e18
 
@@ -53,9 +56,9 @@ impl LiquidityPoolUSDC {
         rate_model: Address,
         token_issuer: Address,
     ) {
-        let key = DataKey::Admin;
+        let key = PoolDataKey::Admin;
 
-        env.storage().persistent().set(&DataKey::Admin, &admin);
+        env.storage().persistent().set(&PoolDataKey::Admin, &admin);
         Self::extend_ttl_datakey(&env, key);
 
         env.events().publish(("constructor", "admin_set"), &admin);
@@ -81,11 +84,10 @@ impl LiquidityPoolUSDC {
         env.events()
             .publish(("constructor", "rate_model_set"), &rate_model);
 
-        env.storage().persistent().set(
-            &TokenDataKey::NativeUSDCClientAddress,
-            &native_token_address,
-        );
-        Self::extend_ttl_tokendatakey(&env, TokenDataKey::NativeUSDCClientAddress);
+        env.storage()
+            .persistent()
+            .set(&TokenDataKey::NativeUSDCAddress, &native_token_address);
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::NativeUSDCAddress);
         env.events()
             .publish(("constructor", "native_usdc_set"), &native_token_address);
 
@@ -102,15 +104,15 @@ impl LiquidityPoolUSDC {
         let admin_existing = Self::get_admin(&env).unwrap();
         admin_existing.require_auth();
 
-        let key = DataKey::Admin;
+        let key = PoolDataKey::Admin;
 
-        env.storage().persistent().set(&DataKey::Admin, &admin);
+        env.storage().persistent().set(&PoolDataKey::Admin, &admin);
         Self::extend_ttl_datakey(&env, key);
         Ok(String::from_str(&env, "Adminkey set successfully reset"))
     }
 
     pub fn get_admin(env: &Env) -> Result<Address, LendingError> {
-        let key = DataKey::Admin;
+        let key = PoolDataKey::Admin;
         let admin_address: Address = env
             .storage()
             .persistent()
@@ -123,27 +125,19 @@ impl LiquidityPoolUSDC {
         env: Env,
         vusdc_token_contract_address: Address,
     ) -> Result<String, LendingError> {
-        let admin: Address = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Admin)
-            .expect("Admin not set");
-
+        let admin: Address = Self::get_admin(&env).unwrap();
         admin.require_auth();
 
-        let vusdc_symbol = Symbol::new(&env, "VUSDC");
         env.storage().persistent().set(
-            &TokenDataKey::VTokenContractAddress(vusdc_symbol.clone()),
+            &TokenDataKey::VTokenContractAddress(VUSDC_SYMBOL),
             &vusdc_token_contract_address,
         );
-        Self::extend_ttl_tokendatakey(
-            &env,
-            TokenDataKey::VTokenContractAddress(vusdc_symbol.clone()),
-        );
+        Self::extend_ttl_tokendatakey(&env, TokenDataKey::VTokenContractAddress(VUSDC_SYMBOL));
 
         env.storage()
             .persistent()
-            .set(&PoolDataKey::Initialised, &true); // Store the USDC this contract handles
+            .set(&PoolDataKey::Initialised, &true);
+        Self::extend_ttl_pooldatakey(&env, PoolDataKey::Initialised);
 
         env.events()
             .publish(("initialize_pool_usdc", "usdc_pool_initialized"), true);
@@ -197,7 +191,7 @@ impl LiquidityPoolUSDC {
                 lender: lender.clone(),
                 amount: amount_wad,
                 timestamp: env.ledger().timestamp(),
-                asset_symbol: Symbol::new(&env, "USDC"),
+                asset_symbol: USDC_SYMBOL,
             },
         );
     }
@@ -210,11 +204,11 @@ impl LiquidityPoolUSDC {
 
         let vusdc_token_contract_address: Address = Self::get_vtoken_contract_address(env);
 
-        let usdc_token_client =
+        let vusdc_token_client =
             vusdc_token_contract::Client::new(&env, &vusdc_token_contract_address);
         let vusdc_balance_wad = Self::scale_for_balance(
-            usdc_token_client.balance(&lender),
-            usdc_token_client.decimals(),
+            vusdc_token_client.balance(&lender),
+            vusdc_token_client.decimals(),
         );
         let vusdc_balance_wad_u256 = U256::from_u128(&env, vusdc_balance_wad as u128);
 
@@ -261,7 +255,7 @@ impl LiquidityPoolUSDC {
                 lender: lender,
                 vtoken_amount: tokens_to_redeem_wad,
                 timestamp: env.ledger().timestamp(),
-                asset_symbol: Symbol::new(&env, "USDC"),
+                asset_symbol: USDC_SYMBOL,
             },
         );
     }
@@ -317,17 +311,9 @@ impl LiquidityPoolUSDC {
             &amount_scaled,
         );
 
-        // let bal = usdc_token.balance(&smart_account);
-        // log!(
-        //     &env,
-        //     "Balance of margin account after lending {:?}",
-        //     bal,
-        //     smart_account.clone()
-        // );
-
         let smart_account_client = smart_account_contract::Client::new(&env, &smart_account);
-        smart_account_client.add_borrowed_token(&Symbol::new(&env, "USDC"));
-        smart_account_client.set_has_debt(&true, &Symbol::new(&env, "USDC"));
+        smart_account_client.add_borrowed_token(&USDC_SYMBOL);
+        smart_account_client.set_has_debt(&true, &USDC_SYMBOL);
 
         Ok(is_first_borrow)
     }
@@ -361,8 +347,7 @@ impl LiquidityPoolUSDC {
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
 
         let smart_account_client = smart_account_contract::Client::new(&env, &trader_smart_account);
-        smart_account_client
-            .remove_borrowed_token_balance(&Symbol::new(&env, "USDC"), &amount_wad_u128);
+        smart_account_client.remove_borrowed_token_balance(&USDC_SYMBOL, &amount_wad_u128);
 
         log!(&env, "reached3344", user_borrow_shares_wad, borrows_wad);
         let res1 = user_borrow_shares_wad.sub(&borrow_shares_wad);
@@ -375,12 +360,14 @@ impl LiquidityPoolUSDC {
         log!(&env, "reached7788");
 
         if res1 == U256::from_u32(&env, 0) {
-            smart_account_client.remove_borrowed_token(&Symbol::new(&env, "USDC"));
+            smart_account_client.remove_borrowed_token(&USDC_SYMBOL);
         }
 
         Self::set_user_borrow_shares(env, trader_smart_account.clone(), res1.clone());
         Self::set_total_borrow_shares(env, res2);
         env.storage().persistent().set(&key_c, &res3);
+        Self::extend_ttl_pooldatakey(env, key_c);
+
         return Ok(res1 == U256::from_u32(&env, 0));
     }
 
@@ -391,23 +378,17 @@ impl LiquidityPoolUSDC {
 
         let vusdc_token_contract_address: Address = Self::get_vtoken_contract_address(env);
 
-        let usdc_token_client =
+        let vusdc_token_client =
             vusdc_token_contract::Client::new(&env, &vusdc_token_contract_address);
 
         let tokens_to_mint_scaled =
-            Self::scale_for_operation(tokens_to_mint_wad_u128, usdc_token_client.decimals());
+            Self::scale_for_operation(tokens_to_mint_wad_u128, vusdc_token_client.decimals());
 
-        // mint tokens to his address.
-        usdc_token_client.mint(&lender, &tokens_to_mint_scaled); // Mint tokens to recipient
-
-        // // Update total token balance available right now
-        // let current_total_token_balance_wad = Self::get_current_total_vusdc_balance(env);
-        // let new_total_token_balance_wad = current_total_token_balance_wad.add(&tokens_to_mint_wad);
-        // Self::set_total_vtoken_balance(env, &new_total_token_balance_wad);
+        vusdc_token_client.mint(&lender, &tokens_to_mint_scaled); // Mint tokens to recipient
 
         let total_minted_wad = Self::get_total_vusdc_minted(env);
         let new_total_minted_wad = total_minted_wad.add(&tokens_to_mint_wad);
-        let key_y = TokenDataKey::TotalTokensMintedWAD(Symbol::new(&env, "VUSDC"));
+        let key_y = TokenDataKey::TotalTokensMintedWAD(VUSDC_SYMBOL);
         env.storage()
             .persistent()
             .set(&key_y, &new_total_minted_wad);
@@ -419,7 +400,7 @@ impl LiquidityPoolUSDC {
                 lender: lender.clone(),
                 token_amount: tokens_to_mint_wad,
                 timestamp: env.ledger().timestamp(),
-                token_symbol: Symbol::new(&env, "VUSDC"),
+                token_symbol: VUSDC_SYMBOL,
             },
         );
     }
@@ -431,21 +412,17 @@ impl LiquidityPoolUSDC {
 
         let vusdc_token_contract_address: Address = Self::get_vtoken_contract_address(env);
 
-        let usdc_token_client =
+        let vusdc_token_client =
             vusdc_token_contract::Client::new(&env, &vusdc_token_contract_address);
 
         let tokens_to_burn_scaled =
-            Self::scale_for_operation(tokens_to_burn_wad_u128, usdc_token_client.decimals());
+            Self::scale_for_operation(tokens_to_burn_wad_u128, vusdc_token_client.decimals());
         // burn tokens from his address.
-        usdc_token_client.burn(&lender, &tokens_to_burn_scaled);
-
-        // let current_total_token_balance_wad = Self::get_current_total_vusdc_balance(env);
-        // let new_total_token_balance_wad = current_total_token_balance_wad.sub(&tokens_to_burn_wad);
-        // Self::set_total_vtoken_balance(env, &new_total_token_balance_wad);
+        vusdc_token_client.burn(&lender, &tokens_to_burn_scaled);
 
         let total_burnt_wad = Self::get_total_vusdc_burnt(env);
         let new_total_burnt_wad = total_burnt_wad.add(&tokens_to_burn_wad);
-        let key_a = TokenDataKey::TotalTokensBurntWAD(Symbol::new(&env, "VUSDC"));
+        let key_a = TokenDataKey::TotalTokensBurntWAD(VUSDC_SYMBOL);
         env.storage().persistent().set(&key_a, &new_total_burnt_wad);
         Self::extend_ttl_tokendatakey(&env, key_a);
 
@@ -455,7 +432,7 @@ impl LiquidityPoolUSDC {
                 lender: lender.clone(),
                 token_amount: tokens_to_burn_wad,
                 timestamp: env.ledger().timestamp(),
-                token_symbol: Symbol::new(&env, "VUSDC"),
+                token_symbol: VUSDC_SYMBOL,
                 // token_value,
             },
         );
@@ -496,10 +473,8 @@ impl LiquidityPoolUSDC {
 
     pub fn update_state(env: &Env) {
         let lastupdatetime = Self::get_last_updated_time(&env);
+        let key = PoolDataKey::LastUpdatedTime;
         if lastupdatetime == env.ledger().timestamp() {
-            env.storage()
-                .persistent()
-                .set(&PoolDataKey::LastUpdatedTime, &env.ledger().timestamp());
             log!(&env, "Time not elapsed, no update state");
             return;
         }
@@ -513,22 +488,18 @@ impl LiquidityPoolUSDC {
             .unwrap_or_else(|| U256::from_u128(&env, 0));
         log!(&env, "Existing borrows", borrows_wad);
         let rate_factor_wad = Self::get_rate_factor(&env).unwrap();
-        // let interest_accrued = Self::mul_wad_down(env, &borrows, &rate_factor);
         let interest_accrued_wad = Self::mul_wad_down(env, &borrows_wad, &rate_factor_wad);
-
-        // let interest_accrued_wad = borrows_wad.mul(&rate_factor_wad);
         log!(&env, "interest_accrued iss", interest_accrued_wad);
-
         let res_wad = borrows_wad.add(&interest_accrued_wad);
-
         log!(&env, "interest_accrued borrows", res_wad);
-
         env.storage().persistent().set(&key_c, &res_wad);
         log!(&env, "Just updated state at!", env.ledger().timestamp());
+        Self::extend_ttl_pooldatakey(env, key_c);
 
         env.storage()
             .persistent()
-            .set(&PoolDataKey::LastUpdatedTime, &env.ledger().timestamp());
+            .set(&key, &env.ledger().timestamp());
+        Self::extend_ttl_pooldatakey(env, key);
     }
 
     pub fn before_deposit(env: &Env) {
@@ -556,8 +527,8 @@ impl LiquidityPoolUSDC {
     pub fn get_borrow_balance(env: &Env, trader: Address) -> U256 {
         let key_a = PoolDataKey::UserBorrowSharesWAD(trader.clone());
         let user_borrow_shares_wad: U256 = env.storage().persistent().get(&key_a).unwrap();
-        let res = Self::convert_borrow_shares_asset(env, user_borrow_shares_wad);
-        res
+        let res_wad = Self::convert_borrow_shares_asset(env, user_borrow_shares_wad);
+        res_wad
     }
 
     pub fn get_total_borrow_shares(env: &Env) -> U256 {
@@ -568,7 +539,7 @@ impl LiquidityPoolUSDC {
             .unwrap_or_else(|| U256::from_u128(&env, 0))
     }
 
-    pub fn set_total_borrow_shares(env: &Env, res: U256) {
+    fn set_total_borrow_shares(env: &Env, res: U256) {
         let key_b = PoolDataKey::TotalBorrowSharesWAD;
         env.storage().persistent().set(&key_b, &res);
         Self::extend_ttl_pooldatakey(env, key_b);
@@ -583,7 +554,6 @@ impl LiquidityPoolUSDC {
 
     pub fn get_borrows(env: &Env) -> U256 {
         let key_c = PoolDataKey::BorrowsWAD;
-
         let borrows_wad: U256 = env
             .storage()
             .persistent()
@@ -591,7 +561,6 @@ impl LiquidityPoolUSDC {
             .unwrap_or_else(|| U256::from_u128(&env, 0));
         let rate_factor_wad = Self::get_rate_factor(&env).unwrap();
         let res = Self::mul_wad_down(&env, &borrows_wad, &rate_factor_wad);
-        // let res = borrows.mul(&);
         let result_wad = borrows_wad.add(&res);
         result_wad
     }
@@ -620,7 +589,6 @@ impl LiquidityPoolUSDC {
             .get(&key_c)
             .unwrap_or_else(|| U256::from_u128(&env, 0));
         let liquidity_wad = Self::get_total_liquidity_in_pool(&env);
-        // let liquidity_wad = Self::up_wad(&env, liquidity);
         log!(&env, "Total liquidity in the pool wad", (liquidity_wad));
         log!(&env, "Total borrows in the pool wad", (borrows_wad));
 
@@ -643,10 +611,13 @@ impl LiquidityPoolUSDC {
     }
 
     pub fn get_last_updated_time(env: &Env) -> u64 {
-        env.storage()
-            .persistent()
-            .get(&PoolDataKey::LastUpdatedTime)
-            .unwrap_or_else(|| env.ledger().timestamp())
+        let key = PoolDataKey::LastUpdatedTime;
+        env.storage().persistent().get(&key).unwrap_or_else(|| {
+            let time: u64 = env.ledger().timestamp();
+            env.storage().persistent().set(&key, &time);
+            Self::extend_ttl_pooldatakey(env, key);
+            time
+        })
     }
 
     pub fn get_current_total_vusdc_balance(env: &Env) -> U256 {
@@ -657,36 +628,25 @@ impl LiquidityPoolUSDC {
         let total_supply_wad = Self::scale_for_balance(total_supply, usdc_token_client.decimals());
         log!(&env, "total supply vusdc wad", total_supply_wad);
         U256::from_u128(&env, total_supply_wad as u128)
-
-        // env.storage()
-        //     .persistent()
-        //     .get(&TokenDataKey::CurrentVTokenBalanceWAD(Symbol::new(
-        //         &env, "VUSDC",
-        //     )))
-        //     .unwrap_or_else(|| U256::from_u128(&env, 0))
     }
 
     pub fn get_total_vusdc_minted(env: &Env) -> U256 {
         env.storage()
             .persistent()
-            .get(&TokenDataKey::TotalTokensMintedWAD(Symbol::new(
-                &env, "VUSDC",
-            )))
+            .get(&TokenDataKey::TotalTokensMintedWAD(VUSDC_SYMBOL))
             .unwrap_or_else(|| U256::from_u128(&env, 0))
     }
 
     pub fn get_total_vusdc_burnt(env: &Env) -> U256 {
         env.storage()
             .persistent()
-            .get(&TokenDataKey::TotalTokensBurntWAD(Symbol::new(
-                &env, "VUSDC",
-            )))
+            .get(&TokenDataKey::TotalTokensBurntWAD(VUSDC_SYMBOL))
             .unwrap_or_else(|| U256::from_u128(&env, 0))
     }
 
     // Helper function to add lender to list
     fn add_lender_to_list_usdc(env: &Env, lender: &Address) {
-        let key_b = PoolDataKey::Lenders(Symbol::new(&env, "USDC"));
+        let key_b = PoolDataKey::Lenders(USDC_SYMBOL);
         let mut lenders: Vec<Address> = env
             .storage()
             .persistent()
@@ -705,7 +665,7 @@ impl LiquidityPoolUSDC {
         let list_address: Vec<Address> = env
             .storage()
             .persistent()
-            .get(&PoolDataKey::Lenders(Symbol::new(&env, "USDC")))
+            .get(&PoolDataKey::Lenders(USDC_SYMBOL))
             .unwrap_or_else(|| Vec::new(&env));
         list_address
     }
@@ -724,25 +684,17 @@ impl LiquidityPoolUSDC {
     pub fn get_native_usdc_client_address(env: &Env) -> Address {
         env.storage()
             .persistent()
-            .get(&TokenDataKey::NativeUSDCClientAddress)
+            .get(&TokenDataKey::NativeUSDCAddress)
             .unwrap_or_else(|| panic!("Native USDC client address not set"))
     }
 
     fn get_vtoken_contract_address(env: &Env) -> Address {
-        let vusdc_symbol = Symbol::new(&env, "VUSDC");
+        let vusdc_symbol = VUSDC_SYMBOL;
         env.storage()
             .persistent()
             .get(&TokenDataKey::VTokenContractAddress(vusdc_symbol))
             .unwrap_or_else(|| panic!("Failed to fetch VUSDC Token contract address"))
     }
-
-    // fn set_total_vtoken_balance(env: &Env, new_total_token_balance_wad: &U256) {
-    //     let key_x = TokenDataKey::CurrentVTokenBalanceWAD(Symbol::new(&env, "VUSDC"));
-    //     env.storage()
-    //         .persistent()
-    //         .set(&key_x, new_total_token_balance_wad);
-    //     Self::extend_ttl_tokendatakey(&env, key_x);
-    // }
 
     pub fn up_wad(env: &Env, x: U256) -> U256 {
         x.mul(&U256::from_u128(&env, WAD_U128))
@@ -785,9 +737,14 @@ impl LiquidityPoolUSDC {
     //  Converting VUSDC to USDC
     pub fn convert_vtoken_to_usdc(env: &Env, vtokens_to_be_burnt_wad: U256) -> U256 {
         let pool_balance_wad = Self::get_total_liquidity_in_pool(env);
+        log!(&env, "Pool balance wad", pool_balance_wad);
         let v_token_supply_wad = Self::get_current_total_vusdc_balance(env);
+        log!(&env, "v_token_supply_wad", v_token_supply_wad);
+
         let res = vtokens_to_be_burnt_wad.mul(&pool_balance_wad);
         let resx_wad = res.div(&v_token_supply_wad);
+        log!(&env, "resx_wad", resx_wad);
+
         resx_wad
     }
 
@@ -798,7 +755,7 @@ impl LiquidityPoolUSDC {
             .expect("Failed to fetch registry contract")
     }
 
-    fn extend_ttl_datakey(env: &Env, key: DataKey) {
+    fn extend_ttl_datakey(env: &Env, key: PoolDataKey) {
         env.storage()
             .persistent()
             .extend_ttl(&key, TLL_LEDGERS_YEAR, TLL_LEDGERS_10YEAR);

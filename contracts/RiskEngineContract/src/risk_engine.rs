@@ -251,30 +251,6 @@ pub mod smart_account_contract {
     );
 }
 
-pub mod rate_model_contract {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/rate_model_contract.wasm"
-    );
-}
-
-pub mod lending_protocol_xlm {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/lending_protocol_xlm.wasm"
-    );
-}
-
-pub mod lending_protocol_usdc {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/lending_protocol_usdc.wasm"
-    );
-}
-
-pub mod lending_protocol_eurc {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/lending_protocol_eurc.wasm"
-    );
-}
-
 pub mod registry_contract {
     soroban_sdk::contractimport!(
         file = "../../target/wasm32v1-none/release/registry_contract.wasm"
