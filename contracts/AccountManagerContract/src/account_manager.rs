@@ -279,8 +279,8 @@ impl AccountManagerContract {
 
         let registry_address = Self::get_registry_address(env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
-        let risk_engine_address = registry_client.get_risk_engine_address();
-        let risk_engine_client = risk_engine_contract::Client::new(&env, &risk_engine_address);
+        let risk_engine_client =
+            risk_engine_contract::Client::new(&env, &registry_client.get_risk_engine_address());
 
         if !risk_engine_client.is_borrow_allowed(
             &token_symbol.clone(),
@@ -290,24 +290,32 @@ impl AccountManagerContract {
             panic!("Borrowing is not allowed for this user");
         }
 
+        let smart_account_client = smart_account_contract::Client::new(&env, &smart_account);
+
         if token_symbol == XLM_SYMBOL {
             let pool_xlm_contract = registry_client.get_lendingpool_xlm();
             let xlm_client: lending_protocol_xlm::Client<'_> =
                 lending_protocol_xlm::Client::new(&env, &pool_xlm_contract);
 
             xlm_client.lend_to(&smart_account, &borrow_amount_wad);
+            smart_account_client.add_borrowed_token(&XLM_SYMBOL);
+            smart_account_client.set_has_debt(&true);
         } else if token_symbol == USDC_SYMBOL {
             let pool_usdc_contract = registry_client.get_lendingpool_usdc();
 
             let usdc_client: lending_protocol_usdc::Client<'_> =
                 lending_protocol_usdc::Client::new(&env, &pool_usdc_contract);
             usdc_client.lend_to(&smart_account, &borrow_amount_wad);
+            smart_account_client.add_borrowed_token(&USDC_SYMBOL);
+            smart_account_client.set_has_debt(&true);
         } else if token_symbol == EURC_SYMBOL {
             let pool_eurc_contract = registry_client.get_lendingpool_eurc();
 
             let eurc_client: lending_protocol_eurc::Client<'_> =
                 lending_protocol_eurc::Client::new(&env, &pool_eurc_contract);
             eurc_client.lend_to(&smart_account, &borrow_amount_wad);
+            smart_account_client.add_borrowed_token(&EURC_SYMBOL);
+            smart_account_client.set_has_debt(&true);
         } else {
             panic!("No lending pool available for given token_symbol");
         }
@@ -331,14 +339,14 @@ impl AccountManagerContract {
 
     pub fn repay(
         env: Env,
-        repay_amount: U256,
+        repay_amount_wad: U256,
         token_symbol: Symbol,
         smart_account: Address,
     ) -> Result<(), AccountManagerError> {
         let trader_address = Self::get_trader_address(&env, &smart_account);
         trader_address.require_auth();
 
-        if repay_amount.eq(&U256::from_u128(&env, 0)) {
+        if repay_amount_wad.eq(&U256::from_u128(&env, 0)) {
             panic!("Cannot repay a zero amount");
         }
 
@@ -353,21 +361,37 @@ impl AccountManagerContract {
             panic!("User doen't have debt in the token symbol passed");
         }
 
+        let amount_wad_u128: u128 = repay_amount_wad.to_u128().unwrap_or_else(|| {
+            panic_with_error!(&env, AccountManagerError::IntegerConversionError)
+        });
+
         let _debt = smart_account_client.get_borrowed_token_debt(&token_symbol.clone());
         // !! Should we check if the repay amount is greater than the debt amount?
 
         if token_symbol == XLM_SYMBOL {
             let pool_xlm_contract = registry_client.get_lendingpool_xlm();
             let xlm_client = lending_protocol_xlm::Client::new(&env, &pool_xlm_contract);
-            xlm_client.collect_from(&repay_amount, &smart_account);
+            let bool = xlm_client.collect_from(&repay_amount_wad, &smart_account);
+            smart_account_client.remove_borrowed_token_balance(&XLM_SYMBOL, &amount_wad_u128);
+            if bool {
+                smart_account_client.remove_borrowed_token(&XLM_SYMBOL);
+            }
         } else if token_symbol == USDC_SYMBOL {
             let pool_usdc_contract = registry_client.get_lendingpool_usdc();
             let usdc_client = lending_protocol_usdc::Client::new(&env, &pool_usdc_contract);
-            usdc_client.collect_from(&repay_amount, &smart_account);
+            let bool = usdc_client.collect_from(&repay_amount_wad, &smart_account);
+            smart_account_client.remove_borrowed_token_balance(&USDC_SYMBOL, &amount_wad_u128);
+            if bool {
+                smart_account_client.remove_borrowed_token(&USDC_SYMBOL);
+            }
         } else if token_symbol == EURC_SYMBOL {
             let pool_eurc_contract = registry_client.get_lendingpool_eurc();
             let eurc_client = lending_protocol_eurc::Client::new(&env, &pool_eurc_contract);
-            eurc_client.collect_from(&repay_amount, &smart_account);
+            let bool = eurc_client.collect_from(&repay_amount_wad, &smart_account);
+            smart_account_client.remove_borrowed_token_balance(&EURC_SYMBOL, &amount_wad_u128);
+            if bool {
+                smart_account_client.remove_borrowed_token(&EURC_SYMBOL);
+            }
         } else {
             panic!("No lending pool available for given token_symbol");
         }
@@ -379,7 +403,7 @@ impl AccountManagerContract {
             ),
             TraderRepayEvent {
                 smart_account: smart_account,
-                token_amount: repay_amount,
+                token_amount: repay_amount_wad,
                 timestamp: env.ledger().timestamp(),
                 token_symbol,
             },
@@ -403,9 +427,8 @@ impl AccountManagerContract {
             panic!("Cannot liquidate when account is healthy!!");
         }
 
-        let smart_account_contract_client =
-            smart_account_contract::Client::new(&env, &smart_account);
-        let all_borrowed_tokens = smart_account_contract_client.get_all_borrowed_tokens();
+        let smart_account_client = smart_account_contract::Client::new(&env, &smart_account);
+        let all_borrowed_tokens = smart_account_client.get_all_borrowed_tokens();
 
         for tokenx in all_borrowed_tokens.iter() {
             if tokenx == XLM_SYMBOL {
@@ -413,27 +436,48 @@ impl AccountManagerContract {
                 let xlm_client: lending_protocol_xlm::Client<'_> =
                     lending_protocol_xlm::Client::new(&env, &pool_xlm_contract);
                 let liquidate_amount = xlm_client.get_borrow_balance(&smart_account);
-                xlm_client.collect_from(&liquidate_amount, &smart_account);
+                let amount_wad_u128: u128 = liquidate_amount.to_u128().unwrap_or_else(|| {
+                    panic_with_error!(&env, AccountManagerError::IntegerConversionError)
+                });
+                let bool = xlm_client.collect_from(&liquidate_amount, &smart_account);
+                smart_account_client.remove_borrowed_token_balance(&XLM_SYMBOL, &amount_wad_u128);
+                if bool {
+                    smart_account_client.remove_borrowed_token(&XLM_SYMBOL);
+                }
             } else if tokenx == USDC_SYMBOL {
                 let pool_usdc_contract = registry_client.get_lendingpool_usdc();
                 let usdc_client: lending_protocol_usdc::Client<'_> =
                     lending_protocol_usdc::Client::new(&env, &pool_usdc_contract);
                 let liquidate_amount = usdc_client.get_borrow_balance(&smart_account);
 
-                usdc_client.collect_from(&liquidate_amount, &smart_account);
+                let amount_wad_u128: u128 = liquidate_amount.to_u128().unwrap_or_else(|| {
+                    panic_with_error!(&env, AccountManagerError::IntegerConversionError)
+                });
+                let bool = usdc_client.collect_from(&liquidate_amount, &smart_account);
+                smart_account_client.remove_borrowed_token_balance(&USDC_SYMBOL, &amount_wad_u128);
+                if bool {
+                    smart_account_client.remove_borrowed_token(&USDC_SYMBOL);
+                }
             } else if tokenx == EURC_SYMBOL {
                 let pool_eurc_contract = registry_client.get_lendingpool_eurc();
                 let eurc_client: lending_protocol_eurc::Client<'_> =
                     lending_protocol_eurc::Client::new(&env, &pool_eurc_contract);
                 let liquidate_amount = eurc_client.get_borrow_balance(&smart_account);
 
-                eurc_client.collect_from(&liquidate_amount, &smart_account);
+                let amount_wad_u128: u128 = liquidate_amount.to_u128().unwrap_or_else(|| {
+                    panic_with_error!(&env, AccountManagerError::IntegerConversionError)
+                });
+                let bool = eurc_client.collect_from(&liquidate_amount, &smart_account);
+                smart_account_client.remove_borrowed_token_balance(&EURC_SYMBOL, &amount_wad_u128);
+                if bool {
+                    smart_account_client.remove_borrowed_token(&EURC_SYMBOL);
+                }
             } else {
                 panic!("This token pool doesn't exist")
             }
         }
 
-        smart_account_contract_client.sweep_to(&trader_address);
+        smart_account_client.sweep_to(&trader_address);
 
         env.events().publish(
             (

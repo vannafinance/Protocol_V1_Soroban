@@ -1,13 +1,15 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    Address, BytesN, Env, IntoVal, Vec,
-    testutils::{Address as _, BytesN as _, MockAuth, MockAuthInvoke},
+    Address, BytesN, Env, IntoVal, Symbol, Vec, testutils::{Address as _, BytesN as _, MockAuth, MockAuthInvoke}
 };
 
 use registry_contract::registry::{RegistryContract, RegistryContractClient};
 use registry_contract::types::{RegistryContractError, RegistryKey};
 use soroban_sdk::symbol_short;
+const XLM_SYMBOL: Symbol = symbol_short!("XLM");
+const USDC_SYMBOL: Symbol = symbol_short!("USDC");
+const EURC_SYMBOL: Symbol = symbol_short!("EURC");
 
 fn setup() -> (Env, Address, RegistryContractClient<'static>) {
     let env = Env::default();

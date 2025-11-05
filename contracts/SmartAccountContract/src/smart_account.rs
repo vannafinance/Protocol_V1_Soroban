@@ -87,8 +87,8 @@ impl SmartAccountContract {
         token_symbol: Symbol,
         amount_wad: u128,
     ) -> Result<(), SmartAccountError> {
-        // Auth is being handled at token level
-        // Self::check_auth(&env, token_symbol.clone()).unwrap();
+        let account_manager: Address = Self::get_account_manager(&env);
+        account_manager.require_auth();
 
         let registry_address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
@@ -96,21 +96,18 @@ impl SmartAccountContract {
 
         if token_symbol == XLM_SYMBOL {
             let pool_xlm_address = registry_client.get_lendingpool_xlm();
-            pool_xlm_address.require_auth();
             let native_xlm_address = registry_client.get_xlm_contract_adddress();
             let xlm_token = token::Client::new(&env, &native_xlm_address);
             let amount_scaled = Self::scale_for_operation(amount_wad, xlm_token.decimals());
             xlm_token.transfer(&this_account, &pool_xlm_address, &amount_scaled);
         } else if token_symbol == USDC_SYMBOL {
             let pool_usdc_address = registry_client.get_lendingpool_usdc();
-            pool_usdc_address.require_auth();
             let native_usdc_address = registry_client.get_usdc_contract_address();
             let usdc_token = token::Client::new(&env, &native_usdc_address);
             let amount_scaled = Self::scale_for_operation(amount_wad, usdc_token.decimals());
             usdc_token.transfer(&this_account, &pool_usdc_address, &amount_scaled);
         } else if token_symbol == EURC_SYMBOL {
             let pool_eurc_address = registry_client.get_lendingpool_eurc();
-            pool_eurc_address.require_auth();
             let native_eurc_address = registry_client.get_eurc_contract_address();
             let eurc_token = token::Client::new(&env, &native_eurc_address);
             let amount_scaled = Self::scale_for_operation(amount_wad, eurc_token.decimals());
@@ -213,8 +210,10 @@ impl SmartAccountContract {
             .unwrap_or_else(|| false)
     }
 
-    pub fn set_has_debt(env: &Env, has_debt: bool, token_symbol: Symbol) {
-        Self::check_auth(&env, token_symbol);
+    pub fn set_has_debt(env: &Env, has_debt: bool) {
+        let account_manager: Address = Self::get_account_manager(&env);
+        account_manager.require_auth();
+
         Self::set_has_debt_internal(env, has_debt);
     }
 
@@ -235,7 +234,8 @@ impl SmartAccountContract {
     }
 
     pub fn add_borrowed_token(env: &Env, token_symbol: Symbol) -> Result<(), SmartAccountError> {
-        Self::check_auth(&env, token_symbol.clone());
+        let account_manager: Address = Self::get_account_manager(&env);
+        account_manager.require_auth();
         let mut borrowed_tokens_list: Vec<Symbol> = Self::get_all_borrowed_tokens(env);
         if !borrowed_tokens_list.contains(&token_symbol.clone()) {
             borrowed_tokens_list.push_back(token_symbol);
@@ -245,7 +245,9 @@ impl SmartAccountContract {
     }
 
     pub fn remove_borrowed_token(env: &Env, token_symbol: Symbol) -> Result<(), SmartAccountError> {
-        Self::check_auth(&env, token_symbol.clone());
+        let account_manager: Address = Self::get_account_manager(&env);
+        account_manager.require_auth();
+
         let mut borrowed_tokens_list: Vec<Symbol> = Self::get_all_borrowed_tokens(env);
         if borrowed_tokens_list.contains(&token_symbol.clone()) {
             let index = borrowed_tokens_list
@@ -371,26 +373,26 @@ impl SmartAccountContract {
             .unwrap_or(false)
     }
 
-    fn check_auth(env: &Env, token_symbol: Symbol) {
-        let registry_address = Self::get_registry_address(&env);
-        let registry_client = registry_contract::Client::new(&env, &registry_address);
+    // fn check_auth(env: &Env, token_symbol: Symbol) {
+    //     let registry_address = Self::get_registry_address(&env);
+    //     let registry_client = registry_contract::Client::new(&env, &registry_address);
 
-        if token_symbol == XLM_SYMBOL {
-            let pool_xlm_address = registry_client.get_lendingpool_xlm();
-            // make sure only the lending pool has auth to call this function by adding authorization
-            pool_xlm_address.require_auth();
-        } else if token_symbol == USDC_SYMBOL {
-            let pool_usdc_address = registry_client.get_lendingpool_usdc();
-            // make sure only the lending pool has auth to call this function by adding authorization
-            pool_usdc_address.require_auth();
-        } else if token_symbol == EURC_SYMBOL {
-            let pool_eurc_address = registry_client.get_lendingpool_eurc();
-            // make sure only the lending pool has auth to call this function by adding authorization
-            pool_eurc_address.require_auth();
-        } else {
-            panic!("Non existent lending pool, Auth failed!!");
-        }
-    }
+    //     if token_symbol == XLM_SYMBOL {
+    //         let pool_xlm_address = registry_client.get_lendingpool_xlm();
+    //         // make sure only the lending pool has auth to call this function by adding authorization
+    //         pool_xlm_address.require_auth();
+    //     } else if token_symbol == USDC_SYMBOL {
+    //         let pool_usdc_address = registry_client.get_lendingpool_usdc();
+    //         // make sure only the lending pool has auth to call this function by adding authorization
+    //         pool_usdc_address.require_auth();
+    //     } else if token_symbol == EURC_SYMBOL {
+    //         let pool_eurc_address = registry_client.get_lendingpool_eurc();
+    //         // make sure only the lending pool has auth to call this function by adding authorization
+    //         pool_eurc_address.require_auth();
+    //     } else {
+    //         panic!("Non existent lending pool, Auth failed!!");
+    //     }
+    // }
 
     fn scale_for_operation(amount_wad: u128, xlm_decimals: u32) -> i128 {
         ((amount_wad * 10u128.pow(xlm_decimals)) / WAD_U128) as i128

@@ -15,9 +15,7 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    self as sdk, Address, BytesN, Env, IntoVal, String, Symbol, U256, Vec, contract, contractimpl,
-    testutils::{Address as _, Events as _, Ledger, MockAuth, MockAuthInvoke},
-    token::TokenClient,
+    self as sdk, Address, BytesN, Env, IntoVal, String, Symbol, U256, Vec, contract, contractimpl, symbol_short, testutils::{Address as _, Events as _, Ledger, MockAuth, MockAuthInvoke}, token::TokenClient
 };
 
 use account_manager_contract::account_manager::AccountManagerContractClient;
@@ -42,6 +40,9 @@ const SMART_ACCOUNT_WASM: &[u8] =
 
 const WAD_U128: u128 = 10000_0000_00000_00000; // 1e18
 const WAD7: i128 = 10000000;
+const XLM_SYMBOL: Symbol = symbol_short!("XLM");
+const USDC_SYMBOL: Symbol = symbol_short!("USDC");
+const EURC_SYMBOL: Symbol = symbol_short!("EURC");
 
 // ---------- Helpers: deploy contracts & tokens --------------------------------
 pub mod helpers {
@@ -213,9 +214,9 @@ pub mod helpers {
     }
 
     fn oracle_price_feed_test_initiation(env: &Env, contracts: &mut ContractAddresses) -> Addr {
-        let usdc_symbol = Symbol::new(&env, "USDC");
-        let xlm_symbol = Symbol::new(&env, "XLM");
-        let eurc_symbol = Symbol::new(&env, "EURC");
+        let usdc_symbol = USDC_SYMBOL;
+        let xlm_symbol = XLM_SYMBOL;
+        let eurc_symbol = EURC_SYMBOL;
 
         let wasm_hash = env
             .deployer()

@@ -311,9 +311,9 @@ impl LiquidityPoolUSDC {
             &amount_scaled,
         );
 
-        let smart_account_client = smart_account_contract::Client::new(&env, &smart_account);
-        smart_account_client.add_borrowed_token(&USDC_SYMBOL);
-        smart_account_client.set_has_debt(&true, &USDC_SYMBOL);
+        // let smart_account_client = smart_account_contract::Client::new(&env, &smart_account);
+        // smart_account_client.add_borrowed_token(&USDC_SYMBOL);
+        // smart_account_client.set_has_debt(&true, &USDC_SYMBOL);
 
         Ok(is_first_borrow)
     }
@@ -346,8 +346,8 @@ impl LiquidityPoolUSDC {
             .to_u128()
             .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
 
-        let smart_account_client = smart_account_contract::Client::new(&env, &trader_smart_account);
-        smart_account_client.remove_borrowed_token_balance(&USDC_SYMBOL, &amount_wad_u128);
+        // let smart_account_client = smart_account_contract::Client::new(&env, &trader_smart_account);
+        // smart_account_client.remove_borrowed_token_balance(&USDC_SYMBOL, &amount_wad_u128);
 
         log!(&env, "reached3344", user_borrow_shares_wad, borrows_wad);
         let res1 = user_borrow_shares_wad.sub(&borrow_shares_wad);
@@ -359,9 +359,9 @@ impl LiquidityPoolUSDC {
         let res3 = borrows_wad.sub(&amount_wad);
         log!(&env, "reached7788");
 
-        if res1 == U256::from_u32(&env, 0) {
-            smart_account_client.remove_borrowed_token(&USDC_SYMBOL);
-        }
+        // if res1 == U256::from_u32(&env, 0) {
+        //     smart_account_client.remove_borrowed_token(&USDC_SYMBOL);
+        // }
 
         Self::set_user_borrow_shares(env, trader_smart_account.clone(), res1.clone());
         Self::set_total_borrow_shares(env, res2);

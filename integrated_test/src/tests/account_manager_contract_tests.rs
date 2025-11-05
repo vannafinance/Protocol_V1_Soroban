@@ -17,7 +17,7 @@ use sep_40_oracle::testutils::{self, Asset, MockPriceOracle, MockPriceOracleClie
 // use sep_40_oracle::{Asset as MAsset, PriceData, PriceFeedClient, PriceFeedTrait};
 use smart_account_contract::smart_account::SmartAccountContractClient;
 use soroban_sdk::token::StellarAssetClient;
-use soroban_sdk::{Address as Addr, String, Symbol, U256};
+use soroban_sdk::{Address as Addr, String, Symbol, U256, symbol_short};
 use soroban_sdk::{Env, Vec, testutils::Address};
 use soroban_sdk::{log, token};
 use vxlm_token_contract::v_xlm::VXLMToken;
@@ -26,6 +26,9 @@ use vxlm_token_contract::v_xlm::VXLMTokenClient;
 const SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/release-with-logs/smart_account_contract.wasm");
 const WAD7: i128 = 10000000;
+const XLM_SYMBOL: Symbol = symbol_short!("XLM");
+const USDC_SYMBOL: Symbol = symbol_short!("USDC");
+const EURC_SYMBOL: Symbol = symbol_short!("EURC");
 
 pub struct ContractAddresses {
     admin: Addr,
@@ -211,9 +214,9 @@ fn liquidity_pool_lenders_initialise(env: &Env, contracts: &ContractAddresses) {
 }
 
 fn oracle_price_feed_setup(env: &Env, contracts: &mut ContractAddresses) -> Addr {
-    let usdc_symbol = Symbol::new(&env, "USDC");
-    let xlm_symbol = Symbol::new(&env, "XLM");
-    let eurc_symbol = Symbol::new(&env, "EURC");
+    let usdc_symbol = USDC_SYMBOL;
+    let xlm_symbol = XLM_SYMBOL;
+    let eurc_symbol = EURC_SYMBOL;
 
     let wasm_hash = env
         .deployer()
@@ -412,27 +415,27 @@ fn account_manager_flows() {
     let margin_client2 =
         smart_account_contract::smart_account::SmartAccountContractClient::new(&env, &margin_acc2);
 
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "XLM"));
+    account_manager_client.set_iscollateral_allowed(&XLM_SYMBOL);
 
-    let collateral_balx = margin_client1.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+    let collateral_balx = margin_client1.get_collateral_token_balance(&XLM_SYMBOL);
     println!("COllateral balance before XLM is {:?}", collateral_balx);
 
     account_manager_client.deposit_collateral_tokens(
         &margin_acc1,
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
         &U256::from_u128(&env, 100 * WAD_U128),
     );
 
     account_manager_client.deposit_collateral_tokens(
         &margin_acc2,
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
         &U256::from_u128(&env, 999 * WAD_U128),
     );
 
-    let collateral_bal = margin_client1.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+    let collateral_bal = margin_client1.get_collateral_token_balance(&XLM_SYMBOL);
     println!("COllateral balance after XLM is {:?}", collateral_bal);
 
-    let collateral_bal = margin_client2.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+    let collateral_bal = margin_client2.get_collateral_token_balance(&XLM_SYMBOL);
     println!(
         "COllateral balance of Trader 2 after XLM is {:?}",
         collateral_bal
@@ -440,7 +443,7 @@ fn account_manager_flows() {
 
     account_manager_client.withdraw_collateral_balance(
         &margin_acc1,
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
         &U256::from_u128(&env, 80 * WAD_U128),
     );
 }
@@ -451,9 +454,9 @@ fn test_oracle_price() {
     env.mock_all_auths();
     let contracts = test_initiation(&env);
 
-    let usdc_symbol = Symbol::new(&env, "USDC");
-    let xlm_symbol = Symbol::new(&env, "XLM");
-    let eurc_symbol = Symbol::new(&env, "EURC");
+    let usdc_symbol = USDC_SYMBOL;
+    let xlm_symbol = XLM_SYMBOL;
+    let eurc_symbol = EURC_SYMBOL;
 
     let price_feed_client = MockPriceOracleClient::new(&env, &contracts.mock_oracle_address);
     let assets = Vec::from_array(
@@ -490,7 +493,7 @@ fn test_oracle_price() {
 
     let oracle_client = OracleContractClient::new(&env, &oracle_address);
 
-    let (price, decimals) = oracle_client.get_price_latest(&Symbol::new(&env, "USDC"));
+    let (price, decimals) = oracle_client.get_price_latest(&USDC_SYMBOL);
     println!("Oracle price : {:?}", price);
     assert!(price == 28437629 && decimals == 2);
 }
@@ -533,8 +536,8 @@ fn test_trader_borrow_logic() {
     );
 
     stellar_asset_usdc.mint(&trader_address, &(10000i128 * WAD7));
-    let usdc_symbol = Symbol::new(&env, "USDC");
-    let xlm_symbol = Symbol::new(&env, "XLM");
+    let usdc_symbol = USDC_SYMBOL;
+    let xlm_symbol = XLM_SYMBOL;
 
     let margin_client1 = SmartAccountContractClient::new(&env, &margin_acc1);
     account_manager_client.set_iscollateral_allowed(&usdc_symbol);
@@ -611,8 +614,8 @@ fn test_trader_borrow_failures() {
     account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
 
     stellar_asset_usdc.mint(&trader_address, &10000i128);
-    let usdc_symbol = Symbol::new(&env, "USDC");
-    let xlm_symbol = Symbol::new(&env, "XLM");
+    let usdc_symbol = USDC_SYMBOL;
+    let xlm_symbol = XLM_SYMBOL;
 
     let margin_client1 = SmartAccountContractClient::new(&env, &margin_acc1);
     account_manager_client.set_iscollateral_allowed(&usdc_symbol);
@@ -706,7 +709,7 @@ fn deposit_xlm_failure() {
     let account_manager_client =
         AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
     account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 5));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "XLM"));
+    account_manager_client.set_iscollateral_allowed(&XLM_SYMBOL);
 
     // create trader and account
     let trader = Addr::generate(&env);
@@ -717,7 +720,7 @@ fn deposit_xlm_failure() {
     // deposit 100 XLM (account_manager will transfer from trader -> smart_account)
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
         &U256::from_u128(&env, 0),
     );
 }
@@ -737,7 +740,7 @@ fn withdraw_xlm_failure() {
     let account_manager_client =
         AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
     account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 5));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "XLM"));
+    account_manager_client.set_iscollateral_allowed(&XLM_SYMBOL);
 
     // create trader and account
     let trader = Addr::generate(&env);
@@ -748,19 +751,19 @@ fn withdraw_xlm_failure() {
     // deposit 100 XLM (account_manager will transfer from trader -> smart_account)
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
         &U256::from_u128(&env, 100),
     );
 
     // check smart account collateral balance
     let smart_client = SmartAccountContractClient::new(&env, &smart_acc);
-    let bal = smart_client.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+    let bal = smart_client.get_collateral_token_balance(&XLM_SYMBOL);
     assert_eq!(bal, U256::from_u128(&env, 100));
 
     // attempt to withdraw 50 XLM (since we mocked auths & prices reasonable, risk engine should allow)
     account_manager_client.withdraw_collateral_balance(
         &smart_acc,
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
         &U256::from_u128(&env, 0),
     );
 }
@@ -779,7 +782,7 @@ fn deposit_xlm_and_withdraw_success() {
     let account_manager_client =
         AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
     account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 5));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "XLM"));
+    account_manager_client.set_iscollateral_allowed(&XLM_SYMBOL);
 
     // create trader and account
     let trader = Addr::generate(&env);
@@ -790,23 +793,23 @@ fn deposit_xlm_and_withdraw_success() {
     // deposit 100 XLM (account_manager will transfer from trader -> smart_account)
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
         &U256::from_u128(&env, 100),
     );
 
     // check smart account collateral balance
     let smart_client = SmartAccountContractClient::new(&env, &smart_acc);
-    let bal = smart_client.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+    let bal = smart_client.get_collateral_token_balance(&XLM_SYMBOL);
     assert_eq!(bal, U256::from_u128(&env, 100));
 
     // attempt to withdraw 50 XLM (since we mocked auths & prices reasonable, risk engine should allow)
     account_manager_client.withdraw_collateral_balance(
         &smart_acc,
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
         &U256::from_u128(&env, 50),
     );
 
-    let bal_after = smart_client.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+    let bal_after = smart_client.get_collateral_token_balance(&XLM_SYMBOL);
     assert_eq!(bal_after, U256::from_u128(&env, 50));
 }
 
@@ -828,7 +831,7 @@ fn deposit_xlm_and_withdraw_failure() {
     let account_manager_client =
         AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
     account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 5));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "XLM"));
+    account_manager_client.set_iscollateral_allowed(&XLM_SYMBOL);
 
     // create trader and account
     let trader = Addr::generate(&env);
@@ -839,29 +842,29 @@ fn deposit_xlm_and_withdraw_failure() {
     // deposit 100 XLM (account_manager will transfer from trader -> smart_account)
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
         &U256::from_u128(&env, 100 * WAD_U128),
     );
 
     // check smart account collateral balance
     let smart_client = SmartAccountContractClient::new(&env, &smart_acc);
-    let bal = smart_client.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+    let bal = smart_client.get_collateral_token_balance(&XLM_SYMBOL);
     assert_eq!(bal, U256::from_u128(&env, 100 * WAD_U128));
 
     account_manager_client.borrow(
         &smart_acc,
         &U256::from_u128(&env, 10 * WAD_U128),
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
     );
 
     // attempt to withdraw 500 XLM (withdraw should fail)
     account_manager_client.withdraw_collateral_balance(
         &smart_acc,
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
         &U256::from_u128(&env, 500 * WAD_U128),
     );
 
-    // let bal_after = smart_client.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+    // let bal_after = smart_client.get_collateral_token_balance(&XLM_SYMBOL);
     // assert_eq!(bal_after, U256::from_u128(&env, 50 * WAD_U128));
 }
 
@@ -880,7 +883,7 @@ fn withdraw_without_collateral_should_panic() {
     // immediately attempt withdraw (no collateral) -> should panic
     let e = account_manager_client.withdraw_collateral_balance(
         &smart_acc,
-        &Symbol::new(&env, "USDC"),
+        &USDC_SYMBOL,
         &U256::from_u128(&env, 10 * WAD_U128),
     );
 }
@@ -901,8 +904,8 @@ fn borrow_xlm_failure() {
 
     // create trader + smart account and allow USDC/XLM as collaterals
     account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "USDC"));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "XLM"));
+    account_manager_client.set_iscollateral_allowed(&USDC_SYMBOL);
+    account_manager_client.set_iscollateral_allowed(&XLM_SYMBOL);
 
     let trader = Addr::generate(&env);
     // mint some usdc to trader (so they can deposit as collateral)
@@ -914,7 +917,7 @@ fn borrow_xlm_failure() {
     // deposit 100 USDC collateral
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
-        &Symbol::new(&env, "USDC"),
+        &USDC_SYMBOL,
         &U256::from_u128(&env, 100 * WAD_U128),
     );
 
@@ -922,7 +925,7 @@ fn borrow_xlm_failure() {
     account_manager_client.borrow(
         &smart_acc,
         &U256::from_u128(&env, 0),
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
     );
 }
 
@@ -942,8 +945,8 @@ fn repay_xlm_failure() {
 
     // create trader + smart account and allow USDC/XLM as collaterals
     account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "USDC"));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "XLM"));
+    account_manager_client.set_iscollateral_allowed(&USDC_SYMBOL);
+    account_manager_client.set_iscollateral_allowed(&XLM_SYMBOL);
 
     let trader = Addr::generate(&env);
     // mint some usdc to trader (so they can deposit as collateral)
@@ -955,7 +958,7 @@ fn repay_xlm_failure() {
     // deposit 100 USDC collateral
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
-        &Symbol::new(&env, "USDC"),
+        &USDC_SYMBOL,
         &U256::from_u128(&env, 100 * WAD_U128),
     );
 
@@ -963,14 +966,14 @@ fn repay_xlm_failure() {
     account_manager_client.borrow(
         &smart_acc,
         &U256::from_u128(&env, 10 * WAD_U128),
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
     );
 
     // After borrow, the smart_account should have a borrow recorded via pool logic.
     let smart_client = SmartAccountContractClient::new(&env, &smart_acc);
     // borrowed tokens list should contain XLM
     let borrowed = smart_client.get_all_borrowed_tokens();
-    assert!(borrowed.contains(Symbol::new(&env, "XLM")));
+    assert!(borrowed.contains(XLM_SYMBOL));
 
     // Smart account should have received XLM tokens from pool; confirm balance > 0
     let xlm_token = token::Client::new(&env, &contracts.xlm_address);
@@ -980,7 +983,7 @@ fn repay_xlm_failure() {
     // Now repay partial amount (repay 5 XLM)
     account_manager_client.repay(
         &U256::from_u128(&env, 0),
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
         &smart_acc,
     );
 
@@ -1002,8 +1005,8 @@ fn borrow_and_repay_xlm_flow() {
 
     // create trader + smart account and allow USDC/XLM as collaterals
     account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "USDC"));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "XLM"));
+    account_manager_client.set_iscollateral_allowed(&USDC_SYMBOL);
+    account_manager_client.set_iscollateral_allowed(&XLM_SYMBOL);
 
     let trader = Addr::generate(&env);
     // mint some usdc to trader (so they can deposit as collateral)
@@ -1015,7 +1018,7 @@ fn borrow_and_repay_xlm_flow() {
     // deposit 100 USDC collateral
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
-        &Symbol::new(&env, "USDC"),
+        &USDC_SYMBOL,
         &U256::from_u128(&env, 100 * WAD_U128),
     );
 
@@ -1023,14 +1026,14 @@ fn borrow_and_repay_xlm_flow() {
     account_manager_client.borrow(
         &smart_acc,
         &U256::from_u128(&env, 10 * WAD_U128),
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
     );
 
     // After borrow, the smart_account should have a borrow recorded via pool logic.
     let smart_client = SmartAccountContractClient::new(&env, &smart_acc);
     // borrowed tokens list should contain XLM
     let borrowed = smart_client.get_all_borrowed_tokens();
-    assert!(borrowed.contains(Symbol::new(&env, "XLM")));
+    assert!(borrowed.contains(XLM_SYMBOL));
 
     // Smart account should have received XLM tokens from pool; confirm balance > 0
     let xlm_token = token::Client::new(&env, &contracts.xlm_address);
@@ -1040,7 +1043,7 @@ fn borrow_and_repay_xlm_flow() {
     // Now repay partial amount (repay 5 XLM)
     account_manager_client.repay(
         &U256::from_u128(&env, 5 * WAD_U128),
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
         &smart_acc,
     );
 
@@ -1073,7 +1076,7 @@ fn delete_account_with_debt() {
     let account_manager_client =
         AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
     account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "USDC"));
+    account_manager_client.set_iscollateral_allowed(&USDC_SYMBOL);
 
     // create trader & deposit USDC collateral, then borrow
     let trader = Addr::generate(&env);
@@ -1083,7 +1086,7 @@ fn delete_account_with_debt() {
     let smart_acc = account_manager_client.create_account(&trader);
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
-        &Symbol::new(&env, "USDC"),
+        &USDC_SYMBOL,
         &U256::from_u128(&env, 100),
     );
 
@@ -1091,7 +1094,7 @@ fn delete_account_with_debt() {
     account_manager_client.borrow(
         &smart_acc,
         &U256::from_u128(&env, 10),
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
     );
 
     // now attempt to delete account -> should panic because smart_account.has_debt() == true
@@ -1109,7 +1112,7 @@ fn settle_account_invokes_repay_for_all_borrows() {
     let account_manager_client =
         AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
     account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "USDC"));
+    account_manager_client.set_iscollateral_allowed(&USDC_SYMBOL);
 
     let trader = Addr::generate(&env);
     let usdc_token = StellarAssetClient::new(&env, &contracts.usdc_address);
@@ -1118,7 +1121,7 @@ fn settle_account_invokes_repay_for_all_borrows() {
     let smart_acc = account_manager_client.create_account(&trader);
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
-        &Symbol::new(&env, "USDC"),
+        &USDC_SYMBOL,
         &U256::from_u128(&env, 100),
     );
 
@@ -1126,7 +1129,7 @@ fn settle_account_invokes_repay_for_all_borrows() {
     account_manager_client.borrow(
         &smart_acc,
         &U256::from_u128(&env, 5),
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
     );
 
     // Call settle_account (should call repay internally for outstanding tokens)
@@ -1137,7 +1140,7 @@ fn settle_account_invokes_repay_for_all_borrows() {
     let smart_client = SmartAccountContractClient::new(&env, &smart_acc);
     // borrowed tokens list should not contain XLM after repay
     let borrowed = smart_client.get_all_borrowed_tokens();
-    assert!(!borrowed.contains(Symbol::new(&env, "XLM")));
+    assert!(!borrowed.contains(XLM_SYMBOL));
 
     // Smart account should have 0 XLM tokens after repay
     let xlm_token = token::Client::new(&env, &contracts.xlm_address);
@@ -1156,7 +1159,7 @@ fn close_account_and_activate_again() {
     let account_manager_client =
         AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
     account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "USDC"));
+    account_manager_client.set_iscollateral_allowed(&USDC_SYMBOL);
 
     let trader = Addr::generate(&env);
     let usdc_token = StellarAssetClient::new(&env, &contracts.usdc_address);
@@ -1165,7 +1168,7 @@ fn close_account_and_activate_again() {
     let smart_acc = account_manager_client.create_account(&trader);
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
-        &Symbol::new(&env, "USDC"),
+        &USDC_SYMBOL,
         &U256::from_u128(&env, 100),
     );
 
@@ -1173,7 +1176,7 @@ fn close_account_and_activate_again() {
     account_manager_client.borrow(
         &smart_acc,
         &U256::from_u128(&env, 5),
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
     );
 
     // Call settle_account (should call repay internally for outstanding tokens)
@@ -1184,7 +1187,7 @@ fn close_account_and_activate_again() {
     let smart_client = SmartAccountContractClient::new(&env, &smart_acc);
     // borrowed tokens list should not contain XLM after repay
     let borrowed = smart_client.get_all_borrowed_tokens();
-    assert!(!borrowed.contains(Symbol::new(&env, "XLM")));
+    assert!(!borrowed.contains(XLM_SYMBOL));
 
     // Smart account should have 0 XLM tokens after repay
     let xlm_token = token::Client::new(&env, &contracts.xlm_address);
@@ -1222,7 +1225,7 @@ fn liquidate_account_test_failure() {
     let account_manager_client =
         AccountManagerContractClient::new(&env, &contracts.account_manager_contract);
     account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
-    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "USDC"));
+    account_manager_client.set_iscollateral_allowed(&USDC_SYMBOL);
 
     let trader = Addr::generate(&env);
     let usdc_token = StellarAssetClient::new(&env, &contracts.usdc_address);
@@ -1231,7 +1234,7 @@ fn liquidate_account_test_failure() {
     let smart_acc = account_manager_client.create_account(&trader);
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
-        &Symbol::new(&env, "USDC"),
+        &USDC_SYMBOL,
         &U256::from_u128(&env, 100),
     );
 
@@ -1239,7 +1242,7 @@ fn liquidate_account_test_failure() {
     account_manager_client.borrow(
         &smart_acc,
         &U256::from_u128(&env, 5),
-        &Symbol::new(&env, "XLM"),
+        &XLM_SYMBOL,
     );
 
     // Call settle_account (should call repay internally for outstanding tokens)
@@ -1251,7 +1254,7 @@ fn liquidate_account_test_failure() {
     let smart_client = SmartAccountContractClient::new(&env, &smart_acc);
     // borrowed tokens list should not contain XLM after repay
     let borrowed = smart_client.get_all_borrowed_tokens();
-    assert!(!borrowed.contains(Symbol::new(&env, "XLM")));
+    assert!(!borrowed.contains(XLM_SYMBOL));
 
     // Smart account should have 0 XLM tokens after repay
     let xlm_token = token::Client::new(&env, &contracts.xlm_address);
@@ -1265,9 +1268,9 @@ fn liquidate_account_test_success() {
     env.mock_all_auths();
     let contracts = test_initiation(&env);
 
-    let xlm_symbol = Symbol::new(&env, "XLM");
-    let usdc_symbol = Symbol::new(&env, "USDC");
-    let eurc_symbol = Symbol::new(&env, "EURC");
+    let xlm_symbol = XLM_SYMBOL;
+    let usdc_symbol = USDC_SYMBOL;
+    let eurc_symbol = EURC_SYMBOL;
 
     liquidity_pool_lenders_initialise(&env, &contracts);
 
@@ -1306,7 +1309,7 @@ fn liquidate_account_test_success() {
     let smart_client = SmartAccountContractClient::new(&env, &smart_acc);
     // borrowed tokens list should not contain XLM after repay
     let borrowed = smart_client.get_all_borrowed_tokens();
-    assert!(!borrowed.contains(Symbol::new(&env, "XLM")));
+    assert!(!borrowed.contains(XLM_SYMBOL));
 
     // Smart account should have 0 XLM tokens after repay
     let xlm_token = token::Client::new(&env, &contracts.xlm_address);

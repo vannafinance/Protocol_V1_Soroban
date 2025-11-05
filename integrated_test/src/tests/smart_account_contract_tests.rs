@@ -8,10 +8,11 @@ use registry_contract::registry::{RegistryContract, RegistryContractClient};
 use risk_engine_contract::risk_engine::RiskEngineContract;
 use smart_account_contract::smart_account::{SmartAccountContract, SmartAccountContractClient};
 use soroban_sdk::{
-    Address, Env, IntoVal, Symbol, U256,
-    testutils::{Address as _, Events, MockAuth, MockAuthInvoke},
-    token::{self, StellarAssetClient},
+    Address, Env, IntoVal, Symbol, U256, symbol_short, testutils::{Address as _, Events, MockAuth, MockAuthInvoke}, token::{self, StellarAssetClient}
 };
+const XLM_SYMBOL: Symbol = symbol_short!("XLM");
+const USDC_SYMBOL: Symbol = symbol_short!("USDC");
+const EURC_SYMBOL: Symbol = symbol_short!("EURC");
 
 const WAD7: i128 = 10000000;
 
@@ -282,7 +283,7 @@ fn add_collateral_token_requires_manager_auth_failure() {
     let user = Address::generate(&env);
     let sa = new_smart_account(&env, &manager, &cc.registry_contract, &user);
 
-    sa.add_collateral_token(&Symbol::new(&env, "XLM"));
+    sa.add_collateral_token(&XLM_SYMBOL);
 }
 
 #[test]
@@ -294,11 +295,11 @@ fn add_collateral_token_requires_manager_auth_success() {
     let sa = new_smart_account(&env, &manager, &cc.registry_contract, &user);
 
     as_auth(&env, &manager, || {
-        sa.add_collateral_token(&Symbol::new(&env, "XLM"));
+        sa.add_collateral_token(&XLM_SYMBOL);
     });
 
     let toks = sa.get_all_collateral_tokens();
-    assert!(toks.contains(&Symbol::new(&env, "XLM")));
+    assert!(toks.contains(&XLM_SYMBOL));
 }
 
 #[test]
@@ -311,9 +312,9 @@ fn collateral_balance_transfer_and_cleanup_failure() {
     let sa = new_smart_account(&env, &manager, &cc.registry_contract, &user);
 
     as_auth(&env, &manager, || {
-        sa.add_collateral_token(&Symbol::new(&env, "XLM"));
+        sa.add_collateral_token(&XLM_SYMBOL);
     });
-    sa.set_collateral_token_balance(&Symbol::new(&env, "XLM"), &U256::from_u128(&env, 5000));
+    sa.set_collateral_token_balance(&XLM_SYMBOL, &U256::from_u128(&env, 5000));
 }
 
 #[test]
@@ -326,11 +327,11 @@ fn remove_collateral_balance_and_cleanup_failure() {
     let sa = new_smart_account(&env, &manager, &cc.registry_contract, &user);
 
     as_auth(&env, &manager, || {
-        sa.add_collateral_token(&Symbol::new(&env, "XLM"));
-        sa.set_collateral_token_balance(&Symbol::new(&env, "XLM"), &U256::from_u128(&env, 5000));
+        sa.add_collateral_token(&XLM_SYMBOL);
+        sa.set_collateral_token_balance(&XLM_SYMBOL, &U256::from_u128(&env, 5000));
     });
 
-    sa.remove_collateral_token_balance(&user.clone(), &Symbol::new(&env, "XLM"), &1000);
+    sa.remove_collateral_token_balance(&user.clone(), &XLM_SYMBOL, &1000);
 }
 
 #[test]
@@ -342,12 +343,12 @@ fn collateral_balance_transfer_success() {
     let sa = new_smart_account(&env, &manager, &cc.registry_contract, &user);
 
     as_auth(&env, &manager, || {
-        sa.add_collateral_token(&Symbol::new(&env, "XLM"));
+        sa.add_collateral_token(&XLM_SYMBOL);
         sa.set_collateral_token_balance(
-            &Symbol::new(&env, "XLM"),
+            &XLM_SYMBOL,
             &U256::from_u128(&env, 5000 * WAD_U128),
         );
-        let balance = sa.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+        let balance = sa.get_collateral_token_balance(&XLM_SYMBOL);
         println!("Balance is {:?}", balance.to_u128());
     });
 
@@ -360,14 +361,14 @@ fn collateral_balance_transfer_success() {
     as_auth(&env, &manager, || {
         sa.remove_collateral_token_balance(
             &user.clone(),
-            &Symbol::new(&env, "XLM"),
+            &XLM_SYMBOL,
             &(1000 * WAD_U128),
         );
-        let balance_after = sa.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+        let balance_after = sa.get_collateral_token_balance(&XLM_SYMBOL);
         println!("Balance after is {:?}", balance_after.to_u128());
     });
 
-    let bal = sa.get_collateral_token_balance(&Symbol::new(&env, "XLM"));
+    let bal = sa.get_collateral_token_balance(&XLM_SYMBOL);
     let xlm = token::Client::new(&env, &cc.xlm_address);
     assert_eq!(xlm.balance(&sa.address), 4000 * 10000000);
     assert_eq!(bal, U256::from_u128(&env, 4000 * WAD_U128));
@@ -382,7 +383,7 @@ fn set_debt_flag_failure() {
     let user = Address::generate(&env);
     let sa = new_smart_account(&env, &manager, &cc.registry_contract, &user);
 
-    sa.set_has_debt(&true, &Symbol::new(&env, "XLM"));
+    sa.set_has_debt(&true);
 }
 
 #[test]
@@ -394,13 +395,11 @@ fn add_borrowed_token_auth_failure() {
     let user = Address::generate(&env);
     let sa = new_smart_account(&env, &manager, &cc.registry_contract, &user);
 
-    // sa.set_has_debt(&true, &Symbol::new(&env, "XLM"));
-    as_auth(&env, &cc.liquidity_pool_xlm, || {
-        sa.set_has_debt(&true, &Symbol::new(&env, "XLM"))
-    });
+    // sa.set_has_debt(&true, &XLM_SYMBOL);
+    as_auth(&env, &cc.liquidity_pool_xlm, || sa.set_has_debt(&true));
     assert!(sa.has_debt());
 
-    sa.add_borrowed_token(&Symbol::new(&env, "XLM"));
+    sa.add_borrowed_token(&XLM_SYMBOL);
 }
 
 #[test]
@@ -412,19 +411,17 @@ fn remove_borrowed_token_auth_failure() {
     let user = Address::generate(&env);
     let sa = new_smart_account(&env, &manager, &cc.registry_contract, &user);
 
-    // sa.set_has_debt(&true, &Symbol::new(&env, "XLM"));
-    as_auth(&env, &cc.liquidity_pool_xlm, || {
-        sa.set_has_debt(&true, &Symbol::new(&env, "XLM"))
-    });
+    // sa.set_has_debt(&true, &XLM_SYMBOL);
+    as_auth(&env, &cc.liquidity_pool_xlm, || sa.set_has_debt(&true));
     assert!(sa.has_debt());
 
     as_auth(&env, &cc.liquidity_pool_xlm, || {
-        sa.add_borrowed_token(&Symbol::new(&env, "XLM"));
+        sa.add_borrowed_token(&XLM_SYMBOL);
     });
     let list = sa.get_all_borrowed_tokens();
-    assert!(list.contains(&Symbol::new(&env, "XLM")));
+    assert!(list.contains(&XLM_SYMBOL));
 
-    sa.remove_borrowed_token(&Symbol::new(&env, "XLM"));
+    sa.remove_borrowed_token(&XLM_SYMBOL);
 }
 
 #[test]
@@ -435,25 +432,23 @@ fn borrowed_token_auth_and_debt_flag_success() {
     let user = Address::generate(&env);
     let sa = new_smart_account(&env, &manager, &cc.registry_contract, &user);
 
-    as_auth(&env, &cc.liquidity_pool_xlm, || {
-        sa.set_has_debt(&true, &Symbol::new(&env, "XLM"))
-    });
+    as_auth(&env, &cc.account_manager_contract, || sa.set_has_debt(&true));
     assert!(sa.has_debt());
 
-    as_auth(&env, &cc.liquidity_pool_xlm, || {
-        sa.add_borrowed_token(&Symbol::new(&env, "XLM"))
+    as_auth(&env, &cc.account_manager_contract, || {
+        sa.add_borrowed_token(&XLM_SYMBOL)
     });
     let list = sa.get_all_borrowed_tokens();
-    assert!(list.contains(&Symbol::new(&env, "XLM")));
+    assert!(list.contains(&XLM_SYMBOL));
 
-    as_auth(&env, &cc.liquidity_pool_xlm, || {
-        sa.remove_borrowed_token(&Symbol::new(&env, "XLM"))
+    as_auth(&env, &cc.account_manager_contract, || {
+        sa.remove_borrowed_token(&XLM_SYMBOL)
     });
     assert!(!sa.has_debt());
 }
 
 #[test]
-#[should_panic(expected = "Non existent lending pool, Auth failed!!")]
+#[should_panic(expected = "Unauthorized function call for address")]
 fn security_check_unsupported_symbol_failure() {
     let env = Env::default();
     let cc = test_initiation(&env);
@@ -461,7 +456,9 @@ fn security_check_unsupported_symbol_failure() {
     let user = Address::generate(&env);
     let sa = new_smart_account(&env, &manager, &cc.registry_contract, &user);
 
-    sa.set_has_debt(&true, &Symbol::new(&env, "FAKE"));
+    as_auth(&env, &cc.liquidity_pool_xlm, ||{
+        sa.set_has_debt(&true);
+    });
 }
 
 /// ✅ Test 1: Happy path — sweeps all collateral tokens to a given address.
@@ -488,20 +485,20 @@ fn sweep_to_transfers_all_collateral_balances() {
 
     // Set collateral tokens and balances (authorized)
     as_auth(&env, &manager, || {
-        sa.add_collateral_token(&Symbol::new(&env, "XLM"));
-        sa.add_collateral_token(&Symbol::new(&env, "USDC"));
-        sa.add_collateral_token(&Symbol::new(&env, "EURC"));
+        sa.add_collateral_token(&XLM_SYMBOL);
+        sa.add_collateral_token(&USDC_SYMBOL);
+        sa.add_collateral_token(&EURC_SYMBOL);
 
         sa.set_collateral_token_balance(
-            &Symbol::new(&env, "XLM"),
+            &XLM_SYMBOL,
             &U256::from_u128(&env, 1000 * WAD_U128),
         );
         sa.set_collateral_token_balance(
-            &Symbol::new(&env, "USDC"),
+            &USDC_SYMBOL,
             &U256::from_u128(&env, 2000 * WAD_U128),
         );
         sa.set_collateral_token_balance(
-            &Symbol::new(&env, "EURC"),
+            &EURC_SYMBOL,
             &U256::from_u128(&env, 3000 * WAD_U128),
         );
     });
@@ -528,7 +525,7 @@ fn sweep_to_transfers_all_collateral_balances() {
 
     // Collateral balances in storage should be cleared to 0
     assert_eq!(
-        sa.get_collateral_token_balance(&Symbol::new(&env, "XLM")),
+        sa.get_collateral_token_balance(&XLM_SYMBOL),
         U256::from_u128(&env, 0)
     );
 }
@@ -583,10 +580,10 @@ fn sweep_to_integer_conversion_error_panics() {
 
     // Set an unreasonably large U256 value to simulate overflow
     as_auth(&env, &manager, || {
-        sa.add_collateral_token(&Symbol::new(&env, "XLM"));
+        sa.add_collateral_token(&XLM_SYMBOL);
         let huge = U256::from_u128(&env, u128::MAX);
         sa.set_collateral_token_balance(
-            &Symbol::new(&env, "XLM"),
+            &XLM_SYMBOL,
             &huge.add(&U256::from_u128(&env, 10)),
         );
     });
