@@ -3,6 +3,8 @@
 
 use lending_protocol_eurc::liquidity_pool_eurc::{LiquidityPoolEURC, LiquidityPoolEURCClient};
 use lending_protocol_usdc::liquidity_pool_usdc::{LiquidityPoolUSDC, LiquidityPoolUSDCClient};
+use risk_engine_contract::types::RiskEngineKey;
+use soroban_sdk::testutils::storage::Persistent;
 use soroban_sdk::{Address, BytesN, Env, Symbol, U256, Vec, testutils::Address as _};
 
 // --- Bring the contract under test into scope
@@ -354,48 +356,35 @@ pub fn as_auth<T>(env: &Env, who: &Address, f: impl FnOnce() -> T) -> T {
     env.as_contract(who, f)
 }
 
-// --------------
-// Tests start
-// --------------
+#[test]
+fn constructor_sets_admin_and_registry() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let registry = Address::generate(&env);
+    let contract_id = Address::generate(&env);
 
-// #[test]
-// #[should_panic(expected = "attempt to divide by zero")]
-// fn borrow_allowed_panics_on_oracle_zero_decimals_div_by_zero() {
-//     let env = Env::default();
-//     let ctx = test_initiation(&env);
-//     env.mock_all_auths();
+    env.register_at(
+        &contract_id,
+        RiskEngineContract,
+        (admin.clone(), registry.clone()),
+    );
 
-//     // Wire a smart account with no balances but that's fine; the panic happens earlier on decimals
-//     // Configure oracle with zero decimals → wad_scale = WAD / 0 → panic
-//     let usdc_symbol = Symbol::new(&env, "USDC");
-//     let xlm_symbol = Symbol::new(&env, "XLM");
-//     let eurc_symbol = Symbol::new(&env, "EURC");
+    as_auth(&env, &contract_id, || {
+        let stored_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&RiskEngineKey::Admin)
+            .unwrap();
+        let stored_registry: Address = env
+            .storage()
+            .persistent()
+            .get(&RiskEngineKey::RegistryContract)
+            .unwrap();
 
-//     let price_feed_client = MockPriceOracleClient::new(&env, &ctx.mock_oracle_address);
-//     let assets = Vec::from_array(
-//         &env,
-//         [
-//             Asset::Other(xlm_symbol.clone()),
-//             Asset::Other(usdc_symbol.clone()),
-//             Asset::Other(eurc_symbol),
-//         ],
-//     );
-//     // Setting decimals to zero should panic
-//     price_feed_client.set_data(
-//         &ctx.admin,
-//         &testutils::Asset::Other(usdc_symbol.clone()),
-//         &assets,
-//         &0,
-//         &3,
-//     );
-
-//     let risk = RiskEngineContractClient::new(&env, &ctx.risk_engine_contract);
-//     let _ = risk.is_borrow_allowed(
-//         &xlm_symbol,
-//         &U256::from_u32(&env, 10),
-//         &ctx.smart_account_contract.unwrap(),
-//     );
-// }
+        assert_eq!(stored_admin, admin);
+        assert_eq!(stored_registry, registry);
+    });
+}
 
 #[test]
 fn withdraw_allowed_returns_true_when_no_debt() {
@@ -445,47 +434,6 @@ fn withdraw_allowed_panics_if_balance_or_debt_queries_error() {
     );
 }
 
-// #[test]
-// #[should_panic(expected = "attempt to divide by zero")]
-// fn get_current_total_balance_panics_on_oracle_decimals_zero() {
-//     let env = Env::default();
-//     let ctx = test_initiation(&env);
-//     env.mock_all_auths();
-
-//     let sa_client =
-//         SmartAccountContractClient::new(&env, &ctx.smart_account_contract.clone().unwrap());
-
-//     let sym = Symbol::new(&env, "EURC");
-//     let usdc_symbol = Symbol::new(&env, "USDC");
-//     let xlm_symbol = Symbol::new(&env, "XLM");
-//     let eurc_symbol = Symbol::new(&env, "EURC");
-
-//     // Give some balance so code definitely multiplies by price
-//     sa_client.add_collateral_token(&sym.clone());
-//     sa_client.set_collateral_token_balance(&sym.clone(), &U256::from_u128(&env, 1_000_000));
-
-//     // Configure oracle with decimals=0 (invalid) → panic on wad_scale division
-//     let price_feed_client = MockPriceOracleClient::new(&env, &ctx.mock_oracle_address);
-//     let assets = Vec::from_array(
-//         &env,
-//         [
-//             Asset::Other(xlm_symbol.clone()),
-//             Asset::Other(usdc_symbol.clone()),
-//             Asset::Other(eurc_symbol),
-//         ],
-//     );
-//     price_feed_client.set_data(
-//         &ctx.admin,
-//         &testutils::Asset::Other(usdc_symbol.clone()),
-//         &assets,
-//         &0,
-//         &3,
-//     );
-
-//     let risk = RiskEngineContractClient::new(&env, &ctx.risk_engine_contract);
-//     let _ = risk.get_current_total_balance(&ctx.smart_account_contract.unwrap());
-// }
-
 #[test]
 fn get_current_total_borrows_sums_prices_and_handles_empty_list() {
     let env = Env::default();
@@ -530,6 +478,138 @@ fn get_current_total_borrows_sums_prices_and_handles_empty_list() {
     let total = risk.get_current_total_borrows(&smart_acc);
     // Expected = (4_000_000 * 5) + (12262415 * 10) with mul_wad_down using same WAD denominator cancels out → 142624150
     assert_eq!(total, U256::from_u128(&env, 142624150 * 100000000000));
+}
+
+#[test]
+fn borrow_allowed_returns_true_when_healthy() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    env.mock_all_auths();
+    initialise_lenders(&env, &ctx);
+    let sym = Symbol::new(&env, "XLM");
+
+    let account_manager_client =
+        AccountManagerContractClient::new(&env, &ctx.account_manager_contract);
+    account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
+    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "USDC"));
+
+    let trader = Addr::generate(&env);
+    let usdc_token = StellarAssetClient::new(&env, &ctx.usdc_address);
+    usdc_token.mint(&trader, &LARGE_AMOUNT);
+
+    let smart_acc = account_manager_client.create_account(&trader);
+
+    let risk = RiskEngineContractClient::new(&env, &ctx.risk_engine_contract);
+    let zero = risk.get_current_total_borrows(&smart_acc);
+    assert_eq!(zero, U256::from_u32(&env, 0));
+
+    account_manager_client.deposit_collateral_tokens(
+        &smart_acc,
+        &Symbol::new(&env, "USDC"),
+        &U256::from_u128(&env, 100 * WAD_U128),
+    );
+
+    let risk_client = RiskEngineContractClient::new(&env, &ctx.risk_engine_contract);
+    let result = risk_client.is_borrow_allowed(
+        &Symbol::new(&env, "XLM"),
+        &U256::from_u128(&env, 1 * WAD_U128),
+        &smart_acc,
+    );
+    assert!(result, "borrow should be allowed for healthy account");
+}
+
+#[test]
+fn borrow_disallowed_when_health_drops_below_threshold() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    env.mock_all_auths();
+    initialise_lenders(&env, &ctx);
+    let sym = Symbol::new(&env, "XLM");
+
+    let account_manager_client =
+        AccountManagerContractClient::new(&env, &ctx.account_manager_contract);
+    account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
+    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "USDC"));
+
+    let trader = Addr::generate(&env);
+    let usdc_token = StellarAssetClient::new(&env, &ctx.usdc_address);
+    usdc_token.mint(&trader, &LARGE_AMOUNT);
+
+    let smart_acc = account_manager_client.create_account(&trader);
+
+    let risk = RiskEngineContractClient::new(&env, &ctx.risk_engine_contract);
+    let zero = risk.get_current_total_borrows(&smart_acc);
+    assert_eq!(zero, U256::from_u32(&env, 0));
+
+    account_manager_client.deposit_collateral_tokens(
+        &smart_acc,
+        &Symbol::new(&env, "USDC"),
+        &U256::from_u128(&env, 10 * WAD_U128),
+    );
+
+    let risk_client = RiskEngineContractClient::new(&env, &ctx.risk_engine_contract);
+    let result = risk_client.is_borrow_allowed(
+        &Symbol::new(&env, "XLM"),
+        &U256::from_u128(&env, 300 * WAD_U128),
+        &smart_acc,
+    );
+    assert!(!result, "borrow should be disallowed if ratio < threshold");
+}
+
+#[test]
+#[should_panic(expected = "Cannot withdraw more value than the current collateral value")]
+fn withdraw_panics_when_exceeding_collateral() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    env.mock_all_auths();
+    initialise_lenders(&env, &ctx);
+    let sym = Symbol::new(&env, "XLM");
+
+    let account_manager_client =
+        AccountManagerContractClient::new(&env, &ctx.account_manager_contract);
+    account_manager_client.set_max_asset_cap(&U256::from_u32(&env, 10));
+    account_manager_client.set_iscollateral_allowed(&Symbol::new(&env, "USDC"));
+
+    let trader = Addr::generate(&env);
+    let usdc_token = StellarAssetClient::new(&env, &ctx.usdc_address);
+    usdc_token.mint(&trader, &LARGE_AMOUNT);
+
+    let smart_acc = account_manager_client.create_account(&trader);
+
+    let risk = RiskEngineContractClient::new(&env, &ctx.risk_engine_contract);
+    let zero = risk.get_current_total_borrows(&smart_acc);
+    assert_eq!(zero, U256::from_u32(&env, 0));
+
+    account_manager_client.deposit_collateral_tokens(
+        &smart_acc,
+        &Symbol::new(&env, "USDC"),
+        &U256::from_u128(&env, 10 * WAD_U128),
+    );
+
+    account_manager_client.borrow(
+        &smart_acc,
+        &U256::from_u128(&env, 10 * WAD_U128),
+        &Symbol::new(&env, "XLM"),
+    );
+
+    let risk_client = RiskEngineContractClient::new(&env, &ctx.risk_engine_contract);
+    let result = risk_client.is_withdraw_allowed(
+        &Symbol::new(&env, "USDC"),
+        &U256::from_u128(&env, 3000 * WAD_U128),
+        &smart_acc,
+    );
+}
+
+#[test]
+fn mul_wad_down_handles_large_values() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let risk = RiskEngineContractClient::new(&env, &ctx.risk_engine_contract);
+
+    let large = U256::from_u128(&env, u128::MAX / 10);
+    let res = risk.mul_wad_down(&large, &large);
+    println!("Res {:?}", res);
+    assert!(res > U256::from_u128(&env, u128::MAX));
 }
 
 #[test]
@@ -646,4 +726,22 @@ fn withdraw_allowed_respects_health_check_false() {
         !allowed,
         "withdraw should be disallowed when it breaks health"
     );
+}
+
+#[test]
+fn extend_ttl_risk_sets_ttl_properly() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let reg = Address::generate(&env);
+    let id = Address::generate(&env);
+
+    env.register_at(&id, RiskEngineContract, (admin.clone(), reg.clone()));
+    as_auth(&env, &id, || {
+        let ttl = env.storage().persistent().get_ttl(&RiskEngineKey::Admin);
+        println!("TTL IS {:?}", ttl);
+        assert!(
+            ttl >= 6_307_200,
+            "TTL should be extended to at least 1 year"
+        );
+    });
 }

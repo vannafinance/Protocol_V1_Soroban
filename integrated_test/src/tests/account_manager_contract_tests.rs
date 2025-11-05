@@ -881,7 +881,7 @@ fn withdraw_without_collateral_should_panic() {
     let e = account_manager_client.withdraw_collateral_balance(
         &smart_acc,
         &Symbol::new(&env, "USDC"),
-        &U256::from_u128(&env, 10),
+        &U256::from_u128(&env, 10 * WAD_U128),
     );
 }
 
@@ -907,7 +907,7 @@ fn borrow_xlm_failure() {
     let trader = Addr::generate(&env);
     // mint some usdc to trader (so they can deposit as collateral)
     let usdc_token = StellarAssetClient::new(&env, &contracts.usdc_address);
-    usdc_token.mint(&trader, &10_000i128);
+    usdc_token.mint(&trader, &(10_000i128 * WAD7));
 
     let smart_acc = account_manager_client.create_account(&trader);
 
@@ -915,7 +915,7 @@ fn borrow_xlm_failure() {
     account_manager_client.deposit_collateral_tokens(
         &smart_acc,
         &Symbol::new(&env, "USDC"),
-        &U256::from_u128(&env, 100),
+        &U256::from_u128(&env, 100 * WAD_U128),
     );
 
     // Now attempt to borrow XLM (risk engine consults oracle + collateral)
