@@ -33,4 +33,5 @@ pub enum ContractDetails {
     RateModel,
     AccountManager,
     Treasury,
+    OriginationFee,
 }

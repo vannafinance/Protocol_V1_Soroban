@@ -15,10 +15,12 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    self as sdk, Address, BytesN, Env, IntoVal, String, Symbol, U256, Vec, contract, contractimpl, symbol_short, testutils::{Address as _, Events as _, Ledger, MockAuth, MockAuthInvoke}, token::TokenClient
+    self as sdk, Address, BytesN, Env, IntoVal, String, Symbol, U256, Vec, contract, contractimpl,
+    symbol_short,
+    testutils::{Address as _, Events as _, Ledger, MockAuth, MockAuthInvoke},
+    token::TokenClient,
 };
 
-use account_manager_contract::account_manager::AccountManagerContractClient;
 use account_manager_contract::account_manager::{self, AccountManagerContract};
 use lending_protocol_xlm::liquidity_pool_xlm::{self, LiquidityPoolXLM, LiquidityPoolXLMClient};
 use oracle_contract::oracle_service::{OracleContract, OracleContractClient};
@@ -29,7 +31,6 @@ use sep_40_oracle::testutils::{self, Asset, MockPriceOracle, MockPriceOracleClie
 use smart_account_contract::smart_account::{SmartAccountContract, SmartAccountContractClient};
 use soroban_sdk::Address as Addr;
 use soroban_sdk::token::StellarAssetClient;
-use soroban_sdk::{log, token};
 use vxlm_token_contract::v_xlm::VXLMToken;
 use vxlm_token_contract::v_xlm::VXLMTokenClient;
 
@@ -37,6 +38,8 @@ const SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/release-with-logs/smart_account_contract.wasm");
 
 const WAD_U128: u128 = 10000_0000_00000_00000; // 1e18
+const WAD16_U128: u128 = 10000_0000_00000_000; // 1e16
+
 const WAD7: i128 = 10000000;
 const XLM_SYMBOL: Symbol = symbol_short!("XLM");
 const USDC_SYMBOL: Symbol = symbol_short!("USDC");
@@ -68,6 +71,7 @@ pub mod helpers {
         pub eurc_address: Address,
         pub mock_oracle_address: Address,
         pub user: Address,
+        pub treasury: Address,
     }
 
     pub fn test_initiation(env: &Env) -> ContractAddresses {
@@ -85,6 +89,7 @@ pub mod helpers {
         let price_feed_add = Address::generate(&env);
         let smart_account_contract = Address::generate(&env);
         let user = Address::generate(&env);
+        let treasury = Address::generate(&env);
 
         let xlm_token = env.register_stellar_asset_contract_v2(admin.clone());
         let usdc_token = env.register_stellar_asset_contract_v2(admin.clone());
@@ -109,6 +114,7 @@ pub mod helpers {
             eurc_address: eurc_token.address(),
             mock_oracle_address: price_feed_add,
             user: user.clone(),
+            treasury: treasury.clone(),
         };
 
         // Deploy account manager contract
@@ -168,6 +174,8 @@ pub mod helpers {
                 contracts.account_manager_contract.clone(),
                 contracts.rate_model_contract.clone(),
                 contracts.admin.clone(),
+                contracts.treasury.clone(),
+                U256::from_u128(&env, 1 * WAD16_U128),
             ),
         );
 
@@ -986,4 +994,144 @@ fn borrow_shares_conversion_roundtrip() {
     );
     assert!(amt == back);
     assert!(back > U256::from_u32(&env, 0));
+}
+
+#[test]
+fn update_origination_fee_and_get_treasury_behaviour() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let xlm_pool_client = pool_client(&env, &ctx);
+
+    // New origination fee
+    let new_fee = U256::from_u128(&env, 12345);
+
+    // Authenticated admin updates origination fee
+    xlm_pool_client
+        .mock_auths(&[MockAuth {
+            address: &ctx.admin,
+            invoke: &MockAuthInvoke {
+                contract: &xlm_pool_client.address,
+                fn_name: "update_origination_fee",
+                args: (&new_fee,).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .update_origination_fee(&new_fee);
+
+    let stored = xlm_pool_client.get_origination_fee();
+    assert_eq!(stored, new_fee);
+
+    let treasury = xlm_pool_client.get_treasury();
+    assert_eq!(treasury, ctx.treasury);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized function call for address")]
+fn update_origination_fee_panics_for_non_admin() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let xlm_pool_client = pool_client(&env, &ctx);
+
+    let new_fee = U256::from_u128(&env, 999);
+    let random_user = Address::generate(&env);
+
+    xlm_pool_client
+        .mock_auths(&[MockAuth {
+            address: &random_user,
+            invoke: &MockAuthInvoke {
+                contract: &xlm_pool_client.address,
+                fn_name: "update_origination_fee",
+                args: (&new_fee,).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .update_origination_fee(&new_fee);
+}
+
+#[test]
+fn add_lender_unique_and_list_retrieval() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let xlm_pool_client = pool_client(&env, &ctx);
+    env.mock_all_auths();
+    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+
+    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
+    stellar_asset_xlm.mint(&ctx.user.clone(), &(100000 * WAD7));
+
+    // Lender deposits twice
+    let amount = U256::from_u128(&env, 1000 * WAD_U128);
+    xlm_pool_client.deposit_xlm(&ctx.user, &amount);
+    xlm_pool_client.deposit_xlm(&ctx.user, &amount);
+
+    let lenders = xlm_pool_client.get_lenders_xlm();
+    assert_eq!(lenders.len(), 1);
+    assert_eq!(lenders.get(0).unwrap(), ctx.user);
+}
+
+#[test]
+fn wad_scaling_roundtrip() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let xlm_pool_client = pool_client(&env, &ctx);
+
+    let x = U256::from_u128(&env, 123456789);
+    let up = xlm_pool_client.up_wad(&x);
+    let down = xlm_pool_client.down_wad(&up);
+    assert_eq!(down, x);
+}
+
+#[test]
+fn get_borrow_balance_returns_correct_value() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let xlm_pool_client = pool_client(&env, &ctx);
+    env.mock_all_auths();
+    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+
+    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
+    stellar_asset_xlm.mint(&ctx.user.clone(), &(100000 * WAD7));
+
+    // Lender deposits twice
+    let amount = U256::from_u128(&env, 10000 * WAD_U128);
+    xlm_pool_client.deposit_xlm(&ctx.user, &amount);
+
+    let trader = ctx.smart_account_contract.clone().unwrap();
+    xlm_pool_client.lend_to(&trader, &U256::from_u128(&env, 5_000 * WAD_U128));
+    let bal = xlm_pool_client.get_borrow_balance(&trader);
+    println!("Borrow balance {:?}", bal.to_u128().unwrap());
+    assert!(bal == U256::from_u128(&env, 5_000 * WAD_U128));
+}
+
+#[test]
+fn get_last_updated_time_sets_once() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let xlm_pool_client = pool_client(&env, &ctx);
+
+    let t1 = xlm_pool_client.get_last_updated_time();
+    let t2 = xlm_pool_client.get_last_updated_time();
+    assert_eq!(t1, t2);
+}
+
+#[test]
+fn current_total_vxlm_balance_reflects_mint_and_burn() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let xlm_pool_client = pool_client(&env, &ctx);
+    env.mock_all_auths();
+    xlm_pool_client.initialize_pool_xlm(&ctx.vxlm_token_contract);
+
+    let stellar_asset_xlm = StellarAssetClient::new(&env, &ctx.xlm_address);
+    stellar_asset_xlm.mint(&ctx.user, &(100000 * WAD7));
+
+    // Deposit
+    xlm_pool_client.deposit_xlm(&ctx.user, &U256::from_u128(&env, 100_000 * WAD_U128));
+    let total1 = xlm_pool_client.get_current_total_vxlm_balance();
+    assert!(total1 > U256::from_u32(&env, 0));
+
+    // Redeem half
+    xlm_pool_client.redeem_vxlm(&ctx.user, &U256::from_u128(&env, 50_000 * WAD_U128));
+    let total2 = xlm_pool_client.get_current_total_vxlm_balance();
+    assert!(total2 < total1);
 }

@@ -15,10 +15,12 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    self as sdk, Address, BytesN, Env, IntoVal, String, Symbol, U256, Vec, contract, contractimpl, symbol_short, testutils::{Address as _, Events as _, Ledger, MockAuth, MockAuthInvoke}, token::TokenClient
+    self as sdk, Address, BytesN, Env, IntoVal, String, Symbol, U256, Vec, contract, contractimpl,
+    symbol_short,
+    testutils::{Address as _, Events as _, Ledger, MockAuth, MockAuthInvoke},
+    token::TokenClient,
 };
 
-use account_manager_contract::account_manager::AccountManagerContractClient;
 use account_manager_contract::account_manager::{self, AccountManagerContract};
 use lending_protocol_eurc::liquidity_pool_eurc::{
     self, LiquidityPoolEURC, LiquidityPoolEURCClient,
@@ -31,7 +33,6 @@ use sep_40_oracle::testutils::{self, Asset, MockPriceOracle, MockPriceOracleClie
 use smart_account_contract::smart_account::{SmartAccountContract, SmartAccountContractClient};
 use soroban_sdk::Address as Addr;
 use soroban_sdk::token::StellarAssetClient;
-use soroban_sdk::{log, token};
 use veurc_token_contract::v_eurc::VEURCToken;
 use veurc_token_contract::v_eurc::VEURCTokenClient;
 
@@ -39,6 +40,8 @@ const SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/release-with-logs/smart_account_contract.wasm");
 
 const WAD_U128: u128 = 10000_0000_00000_00000; // 1e18
+const WAD16_U128: u128 = 10000_0000_00000_000; // 1e16
+
 const WAD7: i128 = 10000000;
 const XLM_SYMBOL: Symbol = symbol_short!("XLM");
 const USDC_SYMBOL: Symbol = symbol_short!("USDC");
@@ -48,7 +51,6 @@ const EURC_SYMBOL: Symbol = symbol_short!("EURC");
 pub mod helpers {
     use rate_model_contract::rate_model::RateModelContract;
     use smart_account_contract::smart_account::SmartAccountContract;
-    use veurc_token_contract::v_eurc::{VEURCToken, VEURCTokenClient};
 
     use super::*;
     // use soroban_token_contract::{Client as TokenClient, Token};
@@ -65,14 +67,13 @@ pub mod helpers {
         pub oracle_contract: Address,
         pub risk_engine_contract: Address,
         pub smart_account_contract: Option<Address>,
-        pub vxlm_token_contract: Address,
-        pub vusdc_token_contract: Address,
         pub veurc_token_contract: Address,
         pub xlm_address: Address,
         pub usdc_address: Address,
         pub eurc_address: Address,
         pub mock_oracle_address: Address,
         pub user: Address,
+        pub treasury: Address,
     }
 
     pub fn test_initiation(env: &Env) -> ContractAddresses {
@@ -86,16 +87,13 @@ pub mod helpers {
         let rate_model_id = Address::generate(&env);
         let oracle_contract_id = Address::generate(&env);
         let risk_engine_contract_id = Address::generate(&env);
-        let vxlm_token_contract_id = Address::generate(&env);
-        let vusdc_token_contract_id = Address::generate(&env);
-
         let veurc_token_contract_id = Address::generate(&env);
-
         let price_feed_add = Address::generate(&env);
         let smart_account_contract = Address::generate(&env);
         let user = Address::generate(&env);
+        let treasury = Address::generate(&env);
 
-        let xlm_token = env.register_stellar_asset_contract_v2(admin.clone());
+        let eurc_token = env.register_stellar_asset_contract_v2(admin.clone());
         let usdc_token = env.register_stellar_asset_contract_v2(admin.clone());
         let eurc_token = env.register_stellar_asset_contract_v2(admin.clone());
 
@@ -112,14 +110,13 @@ pub mod helpers {
             oracle_contract: oracle_contract_id,
             risk_engine_contract: risk_engine_contract_id,
             smart_account_contract: Some(smart_account_contract),
-            vxlm_token_contract: vxlm_token_contract_id,
-            vusdc_token_contract: vusdc_token_contract_id,
             veurc_token_contract: veurc_token_contract_id,
-            xlm_address: xlm_token.address(),
+            xlm_address: eurc_token.address(),
             usdc_address: usdc_token.address(),
             eurc_address: eurc_token.address(),
             mock_oracle_address: price_feed_add,
             user: user.clone(),
+            treasury: treasury.clone(),
         };
 
         // Deploy account manager contract
@@ -162,7 +159,7 @@ pub mod helpers {
         registry_client.set_smart_account_hash(&smart_hash);
         registry_client.set_native_usdc_contract_address(&contracts.usdc_address);
         registry_client.set_native_eurc_contract_address(&contracts.eurc_address);
-        registry_client.set_native_xlm_contract_address(&contracts.xlm_address);
+        registry_client.set_native_eurc_contract_address(&contracts.eurc_address);
         registry_client.set_oracle_contract_address(&contracts.oracle_contract);
         registry_client.set_risk_engine_address(&contracts.risk_engine_contract);
         registry_client.set_lendingpool_eurc(&contracts.liquidity_pool_eurc);
@@ -179,6 +176,8 @@ pub mod helpers {
                 contracts.account_manager_contract.clone(),
                 contracts.rate_model_contract.clone(),
                 contracts.admin.clone(),
+                contracts.treasury.clone(),
+                U256::from_u128(&env, 1 * WAD16_U128),
             ),
         );
 
@@ -188,8 +187,8 @@ pub mod helpers {
         veurc_token_contract_client.initialize(
             &contracts.liquidity_pool_eurc,
             &7_u32,
-            &String::from_str(&env, "VEURC TOKEN"),
-            &String::from_str(&env, "VEURC"),
+            &String::from_str(&env, "VXLM TOKEN"),
+            &String::from_str(&env, "VXLM"),
         );
 
         env.register_at(
@@ -204,8 +203,8 @@ pub mod helpers {
 
         assert!(
             registry_client
-                .get_xlm_contract_adddress()
-                .eq(&contracts.xlm_address)
+                .get_eurc_contract_address()
+                .eq(&contracts.eurc_address)
         );
 
         env.set_auths(&[]);
@@ -282,9 +281,9 @@ fn constructor_and_get_admin_happy_path() {
     let env = Env::default();
 
     let ctx = test_initiation(&env);
-    let xlm_pool_client = pool_client(&env, &ctx);
+    let eurc_pool_client = pool_client(&env, &ctx);
 
-    let admin = xlm_pool_client.get_admin();
+    let admin = eurc_pool_client.get_admin();
     assert_eq!(admin, ctx.admin);
 
     // Events sanity Todo, check events
@@ -298,7 +297,7 @@ fn constructor_and_get_admin_happy_path() {
 //     let env = Env::default();
 //
 //     let ctx = test_initiation(&env);
-//     let xlm_pool_client = pool_client(&env, &ctx);
+//     let eurc_pool_client = pool_client(&env, &ctx);
 
 //     println!("Hellooooo 3344");
 //     // No constructor called => panic
@@ -561,12 +560,12 @@ fn redeem_panics_if_pool_insufficient_balance() {
     eurc_pool_client.deposit_eurc(&ctx.user.clone(), &amount);
 
     let veurc_token_contract_client = VEURCTokenClient::new(&env, &ctx.veurc_token_contract);
-    veurc_token_contract_client.mint(&ctx.user.clone(), &(1_000_000_000i128 * WAD7)); // inflate vXLM artificially
+    veurc_token_contract_client.mint(&ctx.user.clone(), &(1_0000_0000_000i128 * WAD7)); // inflate vXLM artificially
 
     // Now redeem a lot -> should hit InsufficientPoolBalance
     eurc_pool_client.redeem_veurc(
         &ctx.user.clone(),
-        &U256::from_u128(&env, 1_000_000_000 * WAD_U128),
+        &U256::from_u128(&env, 1_0000_0000_000 * WAD_U128),
     );
 }
 
@@ -604,56 +603,106 @@ fn lend_to_requires_account_manager_and_updates_borrows_and_shares() {
 
     eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
     let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
-    stellar_asset_eurc.mint(&ctx.user, &100000);
+    stellar_asset_eurc.mint(&ctx.user, &(100000 * WAD7));
 
     // Seed pool liquidity via user deposit
-    eurc_pool_client.deposit_eurc(&ctx.user.clone(), &U256::from_u128(&env, 100_000));
+    eurc_pool_client.deposit_eurc(
+        &ctx.user.clone(),
+        &U256::from_u128(&env, 100_000 * WAD_U128),
+    );
 
-    // env.register_at(
-    //     &ctx.smart_account_contract.clone().unwrap(),
-    //     SmartAccountContract,
-    //     (
-    //         ctx.account_manager_contract.clone(),
-    //         ctx.registry_contract,
-    //         user,
-    //     ),
-    // );
-
+    let trader = ctx.smart_account_contract.clone().unwrap();
     let first = eurc_pool_client
         .mock_auths(&[MockAuth {
             address: &ctx.account_manager_contract.clone(),
             invoke: &MockAuthInvoke {
                 contract: &eurc_pool_client.address,
                 fn_name: "lend_to",
-                args: (
-                    &ctx.smart_account_contract.clone().unwrap(),
-                    &U256::from_u128(&env, 40_000),
-                )
-                    .into_val(&env),
+                args: (&trader, &U256::from_u128(&env, 40_000 * WAD_U128)).into_val(&env),
                 sub_invokes: &[],
             },
         }])
-        .lend_to(
-            &ctx.smart_account_contract.clone().unwrap(),
-            &U256::from_u128(&env, 40_000),
-        );
+        .lend_to(&trader, &U256::from_u128(&env, 40_000 * WAD_U128));
 
     assert!(first, "first borrow should return true");
 
     // Borrow shares & borrows > 0
     let borrows = eurc_pool_client.get_borrows();
-    assert!(borrows > U256::from_u32(&env, 0));
-    println!("Borrows {:?}", borrows);
+    assert!(borrows == U256::from_u128(&env, 40000 * WAD_U128));
     let shares = eurc_pool_client.get_total_borrow_shares();
-    assert!(shares > U256::from_u32(&env, 0));
-    println!("Shares {:?}", shares);
+    assert!(shares == U256::from_u128(&env, 40000 * WAD_U128));
+    let user_borrow_shares = eurc_pool_client.get_user_borrow_shares(&trader);
+    assert!(user_borrow_shares == U256::from_u128(&env, 40000 * WAD_U128));
 
     // Second borrow returns false
-    let second = eurc_pool_client.lend_to(
-        &ctx.smart_account_contract.unwrap(),
-        &U256::from_u128(&env, 1_000),
-    );
+    let second = eurc_pool_client.lend_to(&trader, &U256::from_u128(&env, 1_000 * WAD_U128));
     assert!(!second);
+
+    // Borrow shares & borrows > 0
+    let borrows = eurc_pool_client.get_borrows();
+    assert!(borrows == U256::from_u128(&env, 41000 * WAD_U128));
+    let shares = eurc_pool_client.get_total_borrow_shares();
+    assert!(shares == U256::from_u128(&env, 41000 * WAD_U128));
+    let user_borrow_shares = eurc_pool_client.get_user_borrow_shares(&trader);
+    assert!(user_borrow_shares == U256::from_u128(&env, 41000 * WAD_U128));
+
+    let trader2 = Address::generate(&env);
+    env.register_at(
+        &trader2,
+        SmartAccountContract,
+        (
+            ctx.clone().account_manager_contract.clone(),
+            ctx.clone().registry_contract,
+            Address::generate(&env).clone(),
+        ),
+    );
+
+    // Third borrow returns false
+    let third = eurc_pool_client.lend_to(&trader2, &U256::from_u128(&env, 1_000 * WAD_U128));
+
+    let borrows = eurc_pool_client.get_borrows();
+    assert!(borrows == U256::from_u128(&env, 42000 * WAD_U128));
+
+    let shares = eurc_pool_client.get_total_borrow_shares();
+    assert!(shares == U256::from_u128(&env, 42000 * WAD_U128));
+
+    let user_borrow_shares = eurc_pool_client.get_user_borrow_shares(&trader2);
+    assert!(user_borrow_shares == U256::from_u128(&env, 1000 * WAD_U128));
+
+    eurc_pool_client.collect_from(&U256::from_u128(&env, 500 * WAD_U128), &trader2);
+
+    let borrows = eurc_pool_client.get_borrows();
+    assert!(borrows == U256::from_u128(&env, 41500 * WAD_U128));
+
+    let shares = eurc_pool_client.get_total_borrow_shares();
+    assert!(shares == U256::from_u128(&env, 41500 * WAD_U128));
+
+    let user_borrow_shares = eurc_pool_client.get_user_borrow_shares(&trader2);
+    assert!(user_borrow_shares == U256::from_u128(&env, 500 * WAD_U128));
+
+    eurc_pool_client.redeem_veurc(&ctx.user.clone(), &U256::from_u128(&env, 5_000 * WAD_U128));
+
+    println!(
+        "Total pool liquidiy {:?}",
+        eurc_pool_client
+            .get_total_liquidity_in_pool()
+            .to_u128()
+            .unwrap()
+            / WAD_U128
+    );
+    println!(
+        "Total veurc in supply {:?}",
+        eurc_pool_client
+            .get_current_total_veurc_balance()
+            .to_u128()
+            .unwrap()
+            / WAD_U128
+    );
+    // Intial veurc tokens were 100_000, atlast  5000 were redeemed so final veurc tokens are 95000
+    assert!(
+        eurc_pool_client.get_current_total_veurc_balance()
+            == U256::from_u128(&env, 95000 * WAD_U128)
+    );
 }
 
 #[test]
@@ -949,4 +998,144 @@ fn borrow_shares_conversion_roundtrip() {
     );
     assert!(amt == back);
     assert!(back > U256::from_u32(&env, 0));
+}
+
+#[test]
+fn update_origination_fee_and_get_treasury_behaviour() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let eurc_pool_client = pool_client(&env, &ctx);
+
+    // New origination fee
+    let new_fee = U256::from_u128(&env, 12345);
+
+    // Authenticated admin updates origination fee
+    eurc_pool_client
+        .mock_auths(&[MockAuth {
+            address: &ctx.admin,
+            invoke: &MockAuthInvoke {
+                contract: &eurc_pool_client.address,
+                fn_name: "update_origination_fee",
+                args: (&new_fee,).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .update_origination_fee(&new_fee);
+
+    let stored = eurc_pool_client.get_origination_fee();
+    assert_eq!(stored, new_fee);
+
+    let treasury = eurc_pool_client.get_treasury();
+    assert_eq!(treasury, ctx.treasury);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized function call for address")]
+fn update_origination_fee_panics_for_non_admin() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let eurc_pool_client = pool_client(&env, &ctx);
+
+    let new_fee = U256::from_u128(&env, 999);
+    let random_user = Address::generate(&env);
+
+    eurc_pool_client
+        .mock_auths(&[MockAuth {
+            address: &random_user,
+            invoke: &MockAuthInvoke {
+                contract: &eurc_pool_client.address,
+                fn_name: "update_origination_fee",
+                args: (&new_fee,).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .update_origination_fee(&new_fee);
+}
+
+#[test]
+fn add_lender_unique_and_list_retrieval() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let eurc_pool_client = pool_client(&env, &ctx);
+    env.mock_all_auths();
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
+
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user.clone(), &(100000 * WAD7));
+
+    // Lender deposits twice
+    let amount = U256::from_u128(&env, 1000 * WAD_U128);
+    eurc_pool_client.deposit_eurc(&ctx.user, &amount);
+    eurc_pool_client.deposit_eurc(&ctx.user, &amount);
+
+    let lenders = eurc_pool_client.get_lenders_eurc();
+    assert_eq!(lenders.len(), 1);
+    assert_eq!(lenders.get(0).unwrap(), ctx.user);
+}
+
+#[test]
+fn wad_scaling_roundtrip() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let eurc_pool_client = pool_client(&env, &ctx);
+
+    let x = U256::from_u128(&env, 123456789);
+    let up = eurc_pool_client.up_wad(&x);
+    let down = eurc_pool_client.down_wad(&up);
+    assert_eq!(down, x);
+}
+
+#[test]
+fn get_borrow_balance_returns_correct_value() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let eurc_pool_client = pool_client(&env, &ctx);
+    env.mock_all_auths();
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
+
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user.clone(), &(100000 * WAD7));
+
+    // Lender deposits twice
+    let amount = U256::from_u128(&env, 10000 * WAD_U128);
+    eurc_pool_client.deposit_eurc(&ctx.user, &amount);
+
+    let trader = ctx.smart_account_contract.clone().unwrap();
+    eurc_pool_client.lend_to(&trader, &U256::from_u128(&env, 5_000 * WAD_U128));
+    let bal = eurc_pool_client.get_borrow_balance(&trader);
+    println!("Borrow balance {:?}", bal.to_u128().unwrap());
+    assert!(bal == U256::from_u128(&env, 5_000 * WAD_U128));
+}
+
+#[test]
+fn get_last_updated_time_sets_once() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let eurc_pool_client = pool_client(&env, &ctx);
+
+    let t1 = eurc_pool_client.get_last_updated_time();
+    let t2 = eurc_pool_client.get_last_updated_time();
+    assert_eq!(t1, t2);
+}
+
+#[test]
+fn current_total_veurc_balance_reflects_mint_and_burn() {
+    let env = Env::default();
+    let ctx = test_initiation(&env);
+    let eurc_pool_client = pool_client(&env, &ctx);
+    env.mock_all_auths();
+    eurc_pool_client.initialize_pool_eurc(&ctx.veurc_token_contract);
+
+    let stellar_asset_eurc = StellarAssetClient::new(&env, &ctx.eurc_address);
+    stellar_asset_eurc.mint(&ctx.user, &(100000 * WAD7));
+
+    // Deposit
+    eurc_pool_client.deposit_eurc(&ctx.user, &U256::from_u128(&env, 100_000 * WAD_U128));
+    let total1 = eurc_pool_client.get_current_total_veurc_balance();
+    assert!(total1 > U256::from_u32(&env, 0));
+
+    // Redeem half
+    eurc_pool_client.redeem_veurc(&ctx.user, &U256::from_u128(&env, 50_000 * WAD_U128));
+    let total2 = eurc_pool_client.get_current_total_veurc_balance();
+    assert!(total2 < total1);
 }

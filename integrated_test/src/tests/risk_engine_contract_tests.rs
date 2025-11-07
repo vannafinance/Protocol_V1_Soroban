@@ -20,8 +20,8 @@ use sep_40_oracle::testutils::{self, Asset, MockPriceOracle, MockPriceOracleClie
 // use sep_40_oracle::{Asset as MAsset, PriceData, PriceFeedClient, PriceFeedTrait};
 use rate_model_contract::rate_model::RateModelContract;
 use smart_account_contract::smart_account::{SmartAccountContract, SmartAccountContractClient};
-use soroban_sdk::{Address as Addr, symbol_short};
 use soroban_sdk::token::StellarAssetClient;
+use soroban_sdk::{Address as Addr, symbol_short};
 use soroban_sdk::{String, log, token};
 use veurc_token_contract::v_eurc::{VEURCToken, VEURCTokenClient};
 use vusdc_token_contract::v_usdc::{VUSDCToken, VUSDCTokenClient};
@@ -32,6 +32,8 @@ const SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/release-with-logs/smart_account_contract.wasm");
 
 const LARGE_AMOUNT: i128 = (1000000 * WAD7) as i128;
+const WAD16_U128: u128 = 10000_0000_00000_000; // 1e16
+
 const WAD7: i128 = 10000000;
 const XLM_SYMBOL: Symbol = symbol_short!("XLM");
 const USDC_SYMBOL: Symbol = symbol_short!("USDC");
@@ -59,6 +61,7 @@ pub struct ContractAddresses {
     pub eurc_address: Address,
     pub mock_oracle_address: Address,
     pub user: Address,
+    pub treasury: Address,
 }
 
 pub fn test_initiation(env: &Env) -> ContractAddresses {
@@ -79,6 +82,7 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
     let price_feed_add = Address::generate(&env);
     let smart_account_contract = Address::generate(&env);
     let user = Address::generate(&env);
+    let treasury = Address::generate(&env);
 
     let xlm_token = env.register_stellar_asset_contract_v2(admin.clone());
     let usdc_token = env.register_stellar_asset_contract_v2(admin.clone());
@@ -105,6 +109,7 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
         eurc_address: eurc_token.address(),
         mock_oracle_address: price_feed_add,
         user: user.clone(),
+        treasury: treasury.clone(),
     };
 
     // Deploy account manager contract
@@ -166,6 +171,8 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
             contracts.account_manager_contract.clone(),
             contracts.rate_model_contract.clone(),
             contracts.admin.clone(),
+            contracts.treasury.clone(),
+            U256::from_u128(&env, 1 * WAD16_U128),
         ),
     );
 
@@ -179,6 +186,8 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
             contracts.account_manager_contract.clone(),
             contracts.rate_model_contract.clone(),
             contracts.admin.clone(),
+            contracts.treasury.clone(),
+            U256::from_u128(&env, 1 * WAD16_U128),
         ),
     );
 
@@ -192,6 +201,8 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
             contracts.account_manager_contract.clone(),
             contracts.rate_model_contract.clone(),
             contracts.admin.clone(),
+            contracts.treasury.clone(),
+            U256::from_u128(&env, 1 * WAD16_U128),
         ),
     );
 

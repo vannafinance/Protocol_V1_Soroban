@@ -8,13 +8,16 @@ use registry_contract::registry::{RegistryContract, RegistryContractClient};
 use risk_engine_contract::risk_engine::RiskEngineContract;
 use smart_account_contract::smart_account::{SmartAccountContract, SmartAccountContractClient};
 use soroban_sdk::{
-    Address, Env, IntoVal, Symbol, U256, symbol_short, testutils::{Address as _, Events, MockAuth, MockAuthInvoke}, token::{self, StellarAssetClient}
+    Address, Env, IntoVal, Symbol, U256, symbol_short,
+    testutils::{Address as _, Events, MockAuth, MockAuthInvoke},
+    token::{self, StellarAssetClient},
 };
 const XLM_SYMBOL: Symbol = symbol_short!("XLM");
 const USDC_SYMBOL: Symbol = symbol_short!("USDC");
 const EURC_SYMBOL: Symbol = symbol_short!("EURC");
 
 const WAD7: i128 = 10000000;
+const WAD16_U128: u128 = 10000_0000_00000_000; // 1e16
 
 const SMART_ACCOUNT_WASM: &[u8] =
     include_bytes!("../../../target/wasm32v1-none/release-with-logs/smart_account_contract.wasm");
@@ -38,6 +41,7 @@ pub struct ContractAddresses {
     usdc_address: Address,
     eurc_address: Address,
     mock_oracle_address: Address,
+    treasury: Address,
 }
 
 pub fn test_initiation(env: &Env) -> ContractAddresses {
@@ -56,6 +60,7 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
     let xlm_token = env.register_stellar_asset_contract_v2(admin.clone());
     let usdc_token = env.register_stellar_asset_contract_v2(admin.clone());
     let eurc_token = env.register_stellar_asset_contract_v2(admin.clone());
+    let treasury = Address::generate(&env);
 
     let mut contracts = ContractAddresses {
         admin: admin.clone(),
@@ -73,6 +78,7 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
         usdc_address: usdc_token.address(),
         eurc_address: eurc_token.address(),
         mock_oracle_address: price_feed_add,
+        treasury: treasury.clone(),
     };
 
     // Deploy account manager contract
@@ -105,6 +111,8 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
             contracts.account_manager_contract.clone(),
             contracts.rate_model_contract.clone(),
             contracts.admin.clone(),
+            contracts.treasury.clone(),
+            U256::from_u128(&env, 1 * WAD16_U128),
         ),
     );
     // set oracle contract to something simple (we can reuse a mock)
@@ -344,10 +352,7 @@ fn collateral_balance_transfer_success() {
 
     as_auth(&env, &manager, || {
         sa.add_collateral_token(&XLM_SYMBOL);
-        sa.set_collateral_token_balance(
-            &XLM_SYMBOL,
-            &U256::from_u128(&env, 5000 * WAD_U128),
-        );
+        sa.set_collateral_token_balance(&XLM_SYMBOL, &U256::from_u128(&env, 5000 * WAD_U128));
         let balance = sa.get_collateral_token_balance(&XLM_SYMBOL);
         println!("Balance is {:?}", balance.to_u128());
     });
@@ -359,11 +364,7 @@ fn collateral_balance_transfer_success() {
     env.set_auths(&[]);
 
     as_auth(&env, &manager, || {
-        sa.remove_collateral_token_balance(
-            &user.clone(),
-            &XLM_SYMBOL,
-            &(1000 * WAD_U128),
-        );
+        sa.remove_collateral_token_balance(&user.clone(), &XLM_SYMBOL, &(1000 * WAD_U128));
         let balance_after = sa.get_collateral_token_balance(&XLM_SYMBOL);
         println!("Balance after is {:?}", balance_after.to_u128());
     });
@@ -432,7 +433,9 @@ fn borrowed_token_auth_and_debt_flag_success() {
     let user = Address::generate(&env);
     let sa = new_smart_account(&env, &manager, &cc.registry_contract, &user);
 
-    as_auth(&env, &cc.account_manager_contract, || sa.set_has_debt(&true));
+    as_auth(&env, &cc.account_manager_contract, || {
+        sa.set_has_debt(&true)
+    });
     assert!(sa.has_debt());
 
     as_auth(&env, &cc.account_manager_contract, || {
@@ -456,7 +459,7 @@ fn security_check_unsupported_symbol_failure() {
     let user = Address::generate(&env);
     let sa = new_smart_account(&env, &manager, &cc.registry_contract, &user);
 
-    as_auth(&env, &cc.liquidity_pool_xlm, ||{
+    as_auth(&env, &cc.liquidity_pool_xlm, || {
         sa.set_has_debt(&true);
     });
 }
@@ -489,18 +492,9 @@ fn sweep_to_transfers_all_collateral_balances() {
         sa.add_collateral_token(&USDC_SYMBOL);
         sa.add_collateral_token(&EURC_SYMBOL);
 
-        sa.set_collateral_token_balance(
-            &XLM_SYMBOL,
-            &U256::from_u128(&env, 1000 * WAD_U128),
-        );
-        sa.set_collateral_token_balance(
-            &USDC_SYMBOL,
-            &U256::from_u128(&env, 2000 * WAD_U128),
-        );
-        sa.set_collateral_token_balance(
-            &EURC_SYMBOL,
-            &U256::from_u128(&env, 3000 * WAD_U128),
-        );
+        sa.set_collateral_token_balance(&XLM_SYMBOL, &U256::from_u128(&env, 1000 * WAD_U128));
+        sa.set_collateral_token_balance(&USDC_SYMBOL, &U256::from_u128(&env, 2000 * WAD_U128));
+        sa.set_collateral_token_balance(&EURC_SYMBOL, &U256::from_u128(&env, 3000 * WAD_U128));
     });
 
     // Perform sweep
@@ -582,10 +576,7 @@ fn sweep_to_integer_conversion_error_panics() {
     as_auth(&env, &manager, || {
         sa.add_collateral_token(&XLM_SYMBOL);
         let huge = U256::from_u128(&env, u128::MAX);
-        sa.set_collateral_token_balance(
-            &XLM_SYMBOL,
-            &huge.add(&U256::from_u128(&env, 10)),
-        );
+        sa.set_collateral_token_balance(&XLM_SYMBOL, &huge.add(&U256::from_u128(&env, 10)));
     });
 
     // When calling sweep_to, should panic with IntegerConversionError

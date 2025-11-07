@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    Address, BytesN, Env, IntoVal, Symbol, Vec, testutils::{Address as _, BytesN as _, MockAuth, MockAuthInvoke}
+    Address, BytesN, Env, IntoVal, Symbol, Vec,
+    testutils::{Address as _, BytesN as _, MockAuth, MockAuthInvoke},
 };
 
 use registry_contract::registry::{RegistryContract, RegistryContractClient};

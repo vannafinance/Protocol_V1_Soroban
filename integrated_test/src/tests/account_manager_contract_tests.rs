@@ -29,6 +29,7 @@ const WAD7: i128 = 10000000;
 const XLM_SYMBOL: Symbol = symbol_short!("XLM");
 const USDC_SYMBOL: Symbol = symbol_short!("USDC");
 const EURC_SYMBOL: Symbol = symbol_short!("EURC");
+const WAD16_U128: u128 = 10000_0000_00000_000; // 1e16
 
 pub struct ContractAddresses {
     admin: Addr,
@@ -46,6 +47,7 @@ pub struct ContractAddresses {
     usdc_address: Addr,
     eurc_address: Addr,
     mock_oracle_address: Addr,
+    treasury: Addr,
 }
 
 pub fn test_initiation(env: &Env) -> ContractAddresses {
@@ -61,6 +63,7 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
     let risk_engine_contract_id = Addr::generate(&env);
     let vxlm_token_contract_id = Addr::generate(&env);
     let price_feed_add = Addr::generate(&env);
+    let treasury = Addr::generate(&env);
     let xlm_token = env.register_stellar_asset_contract_v2(admin.clone());
     let usdc_token = env.register_stellar_asset_contract_v2(admin.clone());
     let eurc_token = env.register_stellar_asset_contract_v2(admin.clone());
@@ -81,6 +84,7 @@ pub fn test_initiation(env: &Env) -> ContractAddresses {
         usdc_address: usdc_token.address(),
         eurc_address: eurc_token.address(),
         mock_oracle_address: price_feed_add,
+        treasury: treasury.clone(),
     };
 
     // Deploy account manager contract
@@ -158,6 +162,8 @@ fn liquidity_pool_lenders_initialise(env: &Env, contracts: &ContractAddresses) {
             contracts.account_manager_contract.clone(),
             contracts.rate_model_contract.clone(),
             contracts.admin.clone(),
+            contracts.treasury.clone(),
+            U256::from_u128(&env, 1 * WAD16_U128),
         ),
     );
 
@@ -285,6 +291,8 @@ fn all_integrated_tests_start() {
             contracts.account_manager_contract.clone(),
             contracts.rate_model_contract,
             contracts.admin.clone(),
+            contracts.treasury.clone(),
+            U256::from_u128(&env, 1 * WAD16_U128),
         ),
     );
 
@@ -922,11 +930,7 @@ fn borrow_xlm_failure() {
     );
 
     // Now attempt to borrow XLM (risk engine consults oracle + collateral)
-    account_manager_client.borrow(
-        &smart_acc,
-        &U256::from_u128(&env, 0),
-        &XLM_SYMBOL,
-    );
+    account_manager_client.borrow(&smart_acc, &U256::from_u128(&env, 0), &XLM_SYMBOL);
 }
 
 #[test]
@@ -981,11 +985,7 @@ fn repay_xlm_failure() {
     assert!(bal > 0);
 
     // Now repay partial amount (repay 5 XLM)
-    account_manager_client.repay(
-        &U256::from_u128(&env, 0),
-        &XLM_SYMBOL,
-        &smart_acc,
-    );
+    account_manager_client.repay(&U256::from_u128(&env, 0), &XLM_SYMBOL, &smart_acc);
 
     // After repay, borrow shares/debt reduced — check that collect_from executed without panic.
 }
@@ -1091,11 +1091,7 @@ fn delete_account_with_debt() {
     );
 
     // borrow some XLM -> smart account will have debt
-    account_manager_client.borrow(
-        &smart_acc,
-        &U256::from_u128(&env, 10),
-        &XLM_SYMBOL,
-    );
+    account_manager_client.borrow(&smart_acc, &U256::from_u128(&env, 10), &XLM_SYMBOL);
 
     // now attempt to delete account -> should panic because smart_account.has_debt() == true
     account_manager_client.close_account(&smart_acc);
@@ -1126,11 +1122,7 @@ fn settle_account_invokes_repay_for_all_borrows() {
     );
 
     // Borrow & then settle: settle_account calls repay for each borrowed token
-    account_manager_client.borrow(
-        &smart_acc,
-        &U256::from_u128(&env, 5),
-        &XLM_SYMBOL,
-    );
+    account_manager_client.borrow(&smart_acc, &U256::from_u128(&env, 5), &XLM_SYMBOL);
 
     // Call settle_account (should call repay internally for outstanding tokens)
     let res = account_manager_client.settle_account(&smart_acc);
@@ -1173,11 +1165,7 @@ fn close_account_and_activate_again() {
     );
 
     // Borrow & then settle: settle_account calls repay for each borrowed token
-    account_manager_client.borrow(
-        &smart_acc,
-        &U256::from_u128(&env, 5),
-        &XLM_SYMBOL,
-    );
+    account_manager_client.borrow(&smart_acc, &U256::from_u128(&env, 5), &XLM_SYMBOL);
 
     // Call settle_account (should call repay internally for outstanding tokens)
     let res = account_manager_client.settle_account(&smart_acc);
@@ -1239,11 +1227,7 @@ fn liquidate_account_test_failure() {
     );
 
     // Borrow & then settle: settle_account calls repay for each borrowed token
-    account_manager_client.borrow(
-        &smart_acc,
-        &U256::from_u128(&env, 5),
-        &XLM_SYMBOL,
-    );
+    account_manager_client.borrow(&smart_acc, &U256::from_u128(&env, 5), &XLM_SYMBOL);
 
     // Call settle_account (should call repay internally for outstanding tokens)
     // let res = account_manager_client.settle_account(&smart_acc);

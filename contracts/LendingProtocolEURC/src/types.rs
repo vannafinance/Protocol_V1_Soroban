@@ -4,7 +4,6 @@ use soroban_sdk::{Address, String, Symbol, contracttype};
 #[contracttype]
 pub enum PoolDataKey {
     Admin,
-
     Initialised,                  // Whether the pool has been Initialised
     Lenders(Symbol),              // List of all lenders for particular asset symbol
     PoolAddress(Symbol),          // Pool Address for each token
@@ -36,4 +35,5 @@ pub enum ContractDetails {
     RateModel,
     AccountManager,
     Treasury,
+    OriginationFee,
 }

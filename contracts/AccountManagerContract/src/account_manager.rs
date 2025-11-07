@@ -188,9 +188,7 @@ impl AccountManagerContract {
             smart_account_client.add_collateral_token(&token_symbol.clone());
         }
 
-        let amount_wad_u128: u128 = token_amount_wad.to_u128().unwrap_or_else(|| {
-            panic_with_error!(&env, AccountManagerError::IntegerConversionError)
-        });
+        let amount_wad_u128: u128 = Self::convert_u256_to_u128(&env, &token_amount_wad);
 
         let registry_address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
@@ -251,9 +249,7 @@ impl AccountManagerContract {
             panic!("Account is unhealthy! withdraw is not allowed");
         }
 
-        let amount_u128: u128 = token_amount_wad.to_u128().unwrap_or_else(|| {
-            panic_with_error!(&env, AccountManagerError::IntegerConversionError)
-        });
+        let amount_u128: u128 = Self::convert_u256_to_u128(&env, &token_amount_wad);
 
         smart_account_client.remove_collateral_token_balance(
             &trader_address,
@@ -361,9 +357,7 @@ impl AccountManagerContract {
             panic!("User doen't have debt in the token symbol passed");
         }
 
-        let amount_wad_u128: u128 = repay_amount_wad.to_u128().unwrap_or_else(|| {
-            panic_with_error!(&env, AccountManagerError::IntegerConversionError)
-        });
+        let amount_wad_u128: u128 = Self::convert_u256_to_u128(&env, &repay_amount_wad);
 
         let _debt = smart_account_client.get_borrowed_token_debt(&token_symbol.clone());
         // !! Should we check if the repay amount is greater than the debt amount?
@@ -436,9 +430,7 @@ impl AccountManagerContract {
                 let xlm_client: lending_protocol_xlm::Client<'_> =
                     lending_protocol_xlm::Client::new(&env, &pool_xlm_contract);
                 let liquidate_amount = xlm_client.get_borrow_balance(&smart_account);
-                let amount_wad_u128: u128 = liquidate_amount.to_u128().unwrap_or_else(|| {
-                    panic_with_error!(&env, AccountManagerError::IntegerConversionError)
-                });
+                let amount_wad_u128: u128 = Self::convert_u256_to_u128(&env, &liquidate_amount);
                 let bool = xlm_client.collect_from(&liquidate_amount, &smart_account);
                 smart_account_client.remove_borrowed_token_balance(&XLM_SYMBOL, &amount_wad_u128);
                 if bool {
@@ -450,9 +442,8 @@ impl AccountManagerContract {
                     lending_protocol_usdc::Client::new(&env, &pool_usdc_contract);
                 let liquidate_amount = usdc_client.get_borrow_balance(&smart_account);
 
-                let amount_wad_u128: u128 = liquidate_amount.to_u128().unwrap_or_else(|| {
-                    panic_with_error!(&env, AccountManagerError::IntegerConversionError)
-                });
+                let amount_wad_u128: u128 = Self::convert_u256_to_u128(&env, &liquidate_amount);
+
                 let bool = usdc_client.collect_from(&liquidate_amount, &smart_account);
                 smart_account_client.remove_borrowed_token_balance(&USDC_SYMBOL, &amount_wad_u128);
                 if bool {
@@ -464,9 +455,8 @@ impl AccountManagerContract {
                     lending_protocol_eurc::Client::new(&env, &pool_eurc_contract);
                 let liquidate_amount = eurc_client.get_borrow_balance(&smart_account);
 
-                let amount_wad_u128: u128 = liquidate_amount.to_u128().unwrap_or_else(|| {
-                    panic_with_error!(&env, AccountManagerError::IntegerConversionError)
-                });
+                let amount_wad_u128: u128 = Self::convert_u256_to_u128(&env, &liquidate_amount);
+
                 let bool = eurc_client.collect_from(&liquidate_amount, &smart_account);
                 smart_account_client.remove_borrowed_token_balance(&EURC_SYMBOL, &amount_wad_u128);
                 if bool {
@@ -623,6 +613,11 @@ impl AccountManagerContract {
         let keyx = AccountManagerKey::InactiveAccountOf(trader_address);
         env.storage().persistent().set(&keyx, &inactive_accounts);
         Self::extend_ttl_account_manager(env, keyx);
+    }
+
+    fn convert_u256_to_u128(env: &Env, x: &U256) -> u128 {
+        x.to_u128()
+            .unwrap_or_else(|| panic_with_error!(&env, AccountManagerError::IntegerConversionError))
     }
 
     fn create_smart_account(

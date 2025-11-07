@@ -55,6 +55,8 @@ impl LiquidityPoolEURC {
         account_manager: Address,
         rate_model: Address,
         token_issuer: Address,
+        treasury: Address,
+        origination_fee: U256,
     ) {
         let key = PoolDataKey::Admin;
 
@@ -83,6 +85,20 @@ impl LiquidityPoolEURC {
         Self::extend_ttl_contractdatakey(&env, ContractDetails::RateModel);
         env.events()
             .publish(("constructor", "rate_model_set"), &rate_model);
+
+        env.storage()
+            .persistent()
+            .set(&ContractDetails::Treasury, &treasury);
+        Self::extend_ttl_contractdatakey(&env, ContractDetails::Treasury);
+        env.events()
+            .publish(("constructor", "treasury_set"), &treasury);
+
+        env.storage()
+            .persistent()
+            .set(&ContractDetails::OriginationFee, &origination_fee);
+        Self::extend_ttl_contractdatakey(&env, ContractDetails::OriginationFee);
+        env.events()
+            .publish(("constructor", "origination_fee_set"), &origination_fee);
 
         env.storage()
             .persistent()
@@ -152,10 +168,7 @@ impl LiquidityPoolEURC {
         // Check if pool is initialised
         Self::is_eurc_pool_initialised(&env);
         Self::before_deposit(&env);
-
-        let amount_wad_u128: u128 = amount_wad
-            .to_u128()
-            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+        let amount_wad_u128 = Self::convert_u256_to_u128(&env, &amount_wad);
 
         // Getting the amount of tokens to be minted for Asset deposited
         let vtokens_to_be_minted_wad = Self::convert_eurc_to_vtoken(&env, amount_wad.clone());
@@ -234,9 +247,7 @@ impl LiquidityPoolEURC {
             panic_with_error!(&env, LendingError::InsufficientPoolBalance);
         }
 
-        let amount_wad_u128: u128 = eurc_value_to_transfer_wad
-            .to_u128()
-            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+        let amount_wad_u128: u128 = Self::convert_u256_to_u128(&env, &eurc_value_to_transfer_wad);
 
         let amount_scaled = Self::scale_for_operation(amount_wad_u128, eurc_token.decimals());
 
@@ -299,21 +310,28 @@ impl LiquidityPoolEURC {
         // Now transfer amount to trader's smart account address
         let native_token_address: Address = Self::get_native_eurc_client_address(&env);
         let eurc_token = token::Client::new(&env, &native_token_address);
-        let amount_wad_u128: u128 = amount_wad
-            .to_u128()
-            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
-
+        let amount_wad_u128 = Self::convert_u256_to_u128(env, &amount_wad);
         let amount_scaled = Self::scale_for_operation(amount_wad_u128, eurc_token.decimals());
+
+        let origination_fee_wad = Self::get_origination_fee(env);
+        let origination_fee_mul_wad = Self::mul_wad_down(&env, &amount_wad, &origination_fee_wad);
+        let ori_fee_mul_wad_u128 = Self::convert_u256_to_u128(env, &origination_fee_mul_wad);
+        let ori_fee_scaled = Self::scale_for_operation(ori_fee_mul_wad_u128, eurc_token.decimals());
+
+        let treasury = Self::get_treasury(env);
+
+        log!(&env, "Sending to treasury", ori_fee_scaled, amount_scaled);
+
+        // Transfering origination fee to treasury
+        eurc_token.transfer(&env.current_contract_address(), &treasury, &ori_fee_scaled);
+
+        log!(&env, "Lending to user account");
 
         eurc_token.transfer(
             &env.current_contract_address(), // from
             &smart_account,                  // to
             &amount_scaled,
         );
-
-        // let smart_account_client = smart_account_contract::Client::new(&env, &smart_account);
-        // smart_account_client.add_borrowed_token(&EURC_SYMBOL);
-        // smart_account_client.set_has_debt(&true, &EURC_SYMBOL);
 
         Ok(is_first_borrow)
     }
@@ -342,10 +360,6 @@ impl LiquidityPoolEURC {
             .get(&key_c)
             .unwrap_or_else(|| U256::from_u128(&env, 0));
 
-        let amount_wad_u128: u128 = amount_wad
-            .to_u128()
-            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
-
         // let smart_account_client = smart_account_contract::Client::new(&env, &trader_smart_account);
         // smart_account_client.remove_borrowed_token_balance(&EURC_SYMBOL, &amount_wad_u128);
 
@@ -372,9 +386,7 @@ impl LiquidityPoolEURC {
     }
 
     fn mint_veurc_tokens(env: &Env, lender: Address, tokens_to_mint_wad: U256) {
-        let tokens_to_mint_wad_u128: u128 = tokens_to_mint_wad
-            .to_u128()
-            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+        let tokens_to_mint_wad_u128: u128 = Self::convert_u256_to_u128(&env, &tokens_to_mint_wad);
 
         let veurc_token_contract_address: Address = Self::get_vtoken_contract_address(env);
 
@@ -406,9 +418,7 @@ impl LiquidityPoolEURC {
     }
 
     fn burn_veurc_tokens(env: &Env, lender: Address, tokens_to_burn_wad: U256) {
-        let tokens_to_burn_wad_u128: u128 = tokens_to_burn_wad
-            .to_u128()
-            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError));
+        let tokens_to_burn_wad_u128: u128 = Self::convert_u256_to_u128(&env, &tokens_to_burn_wad);
 
         let veurc_token_contract_address: Address = Self::get_vtoken_contract_address(env);
 
@@ -746,6 +756,34 @@ impl LiquidityPoolEURC {
         log!(&env, "resx_wad", resx_wad);
 
         resx_wad
+    }
+
+    pub fn update_origination_fee(env: &Env, origination_fee: U256) {
+        let admin: Address = Self::get_admin(&env).unwrap();
+        admin.require_auth();
+        env.storage()
+            .persistent()
+            .set(&ContractDetails::OriginationFee, &origination_fee);
+        Self::extend_ttl_contractdatakey(&env, ContractDetails::OriginationFee);
+    }
+
+    pub fn get_origination_fee(env: &Env) -> U256 {
+        env.storage()
+            .persistent()
+            .get(&ContractDetails::OriginationFee)
+            .unwrap_or_else(|| panic!("Origination fee not initialised"))
+    }
+
+    pub fn get_treasury(env: &Env) -> Address {
+        env.storage()
+            .persistent()
+            .get(&ContractDetails::Treasury)
+            .unwrap_or_else(|| panic!("Treasury address not set"))
+    }
+
+    fn convert_u256_to_u128(env: &Env, x: &U256) -> u128 {
+        x.to_u128()
+            .unwrap_or_else(|| panic_with_error!(&env, LendingError::IntegerConversionError))
     }
 
     fn get_registry_address(env: &Env) -> Address {
