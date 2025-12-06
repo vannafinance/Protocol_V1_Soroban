@@ -1,0 +1,79 @@
+hemanth_vanna : GAWABSAXWZ3RJEPHNPN6E7T4APEVI4TKP67QXSIEAB2CRNG5CZYCEZZN
+
+stellar contract deploy   --wasm target/wasm32v1-none/release-with-logs/deployer_contract.wasm   --source hemanth_vanna   --network testnet   --alias deployer_apple   -- --admin GAWABSAXWZ3RJEPHNPN6E7T4APEVI4TKP67QXSIEAB2CRNG5CZYCEZZN 
+⚠️  A new release of Stellar CLI is available: 23.1.3 -> 23.3.0
+ℹ️  Simulating install transaction…
+ℹ️  Signing transaction: 1cc393a3dec0250f8397733bdad0359f9f6d8a645d812fafe0d5aaca5965310c
+🌎 Submitting install transaction…
+ℹ️  Using wasm hash 78c814962406aa83f10716c75be45d580f3a7816f8d2a0f26a381679761543ed
+ℹ️  Simulating deploy transaction…
+ℹ️  Transaction hash is 762c7a4febc8b90e8c6e6676871633142523cbaf80b9187298e8a8af05ae9398
+🔗 https://stellar.expert/explorer/testnet/tx/762c7a4febc8b90e8c6e6676871633142523cbaf80b9187298e8a8af05ae9398
+ℹ️  Signing transaction: 762c7a4febc8b90e8c6e6676871633142523cbaf80b9187298e8a8af05ae9398
+🌎 Submitting deploy transaction…
+🔗 https://stellar.expert/explorer/testnet/contract/CDM533YEXV2HT6JMBNPFVC54B2XRDKH5OSZGHKUANY6AQXWESYMK223B
+✅ Deployed!
+⚠️  Overwriting existing alias "deployer_apple" that currently links to contract ID: CCTVJKAAUMKFK5M3FNWCNKNHBDQDIGZQ4L3HNS26YX26CYQE7Z6MIBCE
+CDM533YEXV2HT6JMBNPFVC54B2XRDKH5OSZGHKUANY6AQXWESYMK223B
+
+
+stellar contract invoke \
+  --id CDM533YEXV2HT6JMBNPFVC54B2XRDKH5OSZGHKUANY6AQXWESYMK223B \
+  --source-account hemanth_vanna \
+  --network testnet \
+  -- \
+  deploy_all \
+  --registry_contract_wasm_hash bf49636d3b1d1c59d33a8a488d099610224bb64f3aab5f82ced1351f72378060 \
+  --risk_engine_wasm_hash 231665f2b53c082fc0a174cf2f82c97da6274da6413f60c4e9fe0dc230bcc7b5 \
+  --rate_model_wasm_hash bfb7e31e29c3146e0a217e737d0946e59f58edf796f94752d7d9e520d7697ba2 \
+  --oracle_wasm_hash 48a61a303cc923d79899a08d90e6872dc122d919246a710e65c8e24d5f46149d \
+  --account_manager_wasm_hash 962298ef485f017f1a0284976ce21704e452ae95a37d2c62a082d472353fe7e7 \
+  --smart_account_hash b14dc8adacce9dd615d440bb34ecbc2b4a60645b8353efd8ce7e4ec539fa80f6
+
+
+ℹ️  Signing transaction: f5d5b3369b98b8ef0b76e5d539489b79c4999dd2f6415e70eebaf323db7c40e8
+📔 CDM533YEXV2HT6JMBNPFVC54B2XRDKH5OSZGHKUANY6AQXWESYMK223B - Success - Log: {"vec":[{"string":"Deployed registry contract: {}"},{"address":"CDKCNCSQOFFLYH5MLBJG4RTM6GXRFB4LVKGKUCSPGFSLKHQG3FAKTEX5"}]}
+📔 CDM533YEXV2HT6JMBNPFVC54B2XRDKH5OSZGHKUANY6AQXWESYMK223B - Success - Log: {"vec":[{"string":"Deployed rate model contract: {}"},{"address":"CCDTHTQWGES2R7HGESM7PSQREMP3TFOIISYZ6Q5XCND5Q3EBDVA5UE3F"}]}
+📔 CDM533YEXV2HT6JMBNPFVC54B2XRDKH5OSZGHKUANY6AQXWESYMK223B - Success - Log: {"vec":[{"string":"Deployed risk engine contract: {}"},{"address":"CAKHSQMHLBP4VHP72RMF7KLDE5RIQGDLVWB3ETF7EIYHESVCAKEHM2RP"}]}
+📔 CDM533YEXV2HT6JMBNPFVC54B2XRDKH5OSZGHKUANY6AQXWESYMK223B - Success - Log: {"vec":[{"string":"Deployed oracle contract: {}"},{"address":"CDX6CFFXN5E7PRLWSSU6QGWWWCFL4555LAYPLELWA3VFUELROCQHUQ4J"}]}
+📔 CDM533YEXV2HT6JMBNPFVC54B2XRDKH5OSZGHKUANY6AQXWESYMK223B - Success - Log: {"vec":[{"string":"Deployed account manager contract: {}"},{"address":"CCGWMELBH736ORPBL4A3R355GL4OYI36WJ3ORS2VLPWGEN2TYKBGLJMS"}]}
+["CDKCNCSQOFFLYH5MLBJG4RTM6GXRFB4LVKGKUCSPGFSLKHQG3FAKTEX5","CCDTHTQWGES2R7HGESM7PSQREMP3TFOIISYZ6Q5XCND5Q3EBDVA5UE3F","CAKHSQMHLBP4VHP72RMF7KLDE5RIQGDLVWB3ETF7EIYHESVCAKEHM2RP","CDX6CFFXN5E7PRLWSSU6QGWWWCFL4555LAYPLELWA3VFUELROCQHUQ4J","CCGWMELBH736ORPBL4A3R355GL4OYI36WJ3ORS2VLPWGEN2TYKBGLJMS"]
+
+
+{"vec":[{"string":"Deployed registry contract: {}"},{"address":"CDKCNCSQOFFLYH5MLBJG4RTM6GXRFB4LVKGKUCSPGFSLKHQG3FAKTEX5"}]}
+{"vec":[{"string":"Deployed rate model contract: {}"},{"address":"CCDTHTQWGES2R7HGESM7PSQREMP3TFOIISYZ6Q5XCND5Q3EBDVA5UE3F"}]}
+{"vec":[{"string":"Deployed risk engine contract: {}"},{"address":"CAKHSQMHLBP4VHP72RMF7KLDE5RIQGDLVWB3ETF7EIYHESVCAKEHM2RP"}]}
+{"vec":[{"string":"Deployed oracle contract: {}"},{"address":"CDX6CFFXN5E7PRLWSSU6QGWWWCFL4555LAYPLELWA3VFUELROCQHUQ4J"}]}
+{"vec":[{"string":"Deployed account manager contract: {}"},{"address":"CCGWMELBH736ORPBL4A3R355GL4OYI36WJ3ORS2VLPWGEN2TYKBGLJMS"}]}
+
+
+ stellar contract deploy   --wasm target/wasm32v1-none/release-with-logs/pool_deployer_contract.wasm   --source hemanth_vanna   --network testnet   --alias deployer_mango   -- --admin GAWABSAXWZ3RJEPHNPN6E7T4APEVI4TKP67QXSIEAB2CRNG5CZYCEZZN 
+
+ stellar contract deploy   --wasm target/wasm32v1-none/release-with-logs/pool_deployer_contract.wasm   --source hemanth_vanna   --network testnet   --alias deployer_mango   -- --admin GAWABSAXWZ3RJEPHNPN6E7T4APEVI4TKP67QXSIEAB2CRNG5CZYCEZZN 
+⚠️  A new release of Stellar CLI is available: 23.1.3 -> 23.3.0
+ℹ️  Skipping install because wasm already installed
+ℹ️  Using wasm hash 98f37a64f9e51fb0773ea43338e98c19bb7c4dbbef3369b85d78a6a8ef12d28f
+ℹ️  Simulating deploy transaction…
+ℹ️  Transaction hash is 53dd17ab984813051e092db1233007bfc7caa8716c30bb43340341f99b6c5a0d
+🔗 https://stellar.expert/explorer/testnet/tx/53dd17ab984813051e092db1233007bfc7caa8716c30bb43340341f99b6c5a0d
+ℹ️  Signing transaction: 53dd17ab984813051e092db1233007bfc7caa8716c30bb43340341f99b6c5a0d
+🌎 Submitting deploy transaction…
+🔗 https://stellar.expert/explorer/testnet/contract/CAIDDT4S3F7KOJJSDP6DAKFVZH552QSW532EYI4F6ZVBL6E4WSXFOWEG
+✅ Deployed!
+⚠️  Overwriting existing alias "deployer_mango" that currently links to contract ID: CBQ6MUUON6NSK7SDTOPDGKUYCXJF5E3PL367WZOQR6VHNUAHHARYPVIU
+CAIDDT4S3F7KOJJSDP6DAKFVZH552QSW532EYI4F6ZVBL6E4WSXFOWEG
+
+
+stellar contract invoke \
+  --id CAIDDT4S3F7KOJJSDP6DAKFVZH552QSW532EYI4F6ZVBL6E4WSXFOWEG \
+  --source-account hemanth_vanna \
+  --network testnet \
+  -- \
+  deploy_lps_and_token_contracts \
+    --registry_address CDKCNCSQOFFLYH5MLBJG4RTM6GXRFB4LVKGKUCSPGFSLKHQG3FAKTEX5 \
+    --account_manager CCGWMELBH736ORPBL4A3R355GL4OYI36WJ3ORS2VLPWGEN2TYKBGLJMS \
+    --rate_model CCDTHTQWGES2R7HGESM7PSQREMP3TFOIISYZ6Q5XCND5Q3EBDVA5UE3F \
+    --lending_pool_xlm_hash 15a76878e3df4ac6eb96cdefd02af60f20fee9ec3b704560cb250d9ff7f93401 \
+    --vxlm_contract_hash 0b2764bc7cfe428782b0a43c2b37f71c8e6f749de7f19fbc37e2da8dd28cc8eb \
+    --vusdc_contract_hash a7b2dd889661ebf42f3e7c7388031ce2e03a964062a493777beecde22fc00c5d \
+    --veurc_contract_hash b9d8215e3a2922488a89b32b766e7d9a9739e04405492b662b3f3f779aee2396

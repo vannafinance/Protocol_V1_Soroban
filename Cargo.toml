@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
-members = [ 
-  "contracts/*", "integrated_test",
-]
+members = ["contracts/*", "integrated_test"]
 
 [workspace.dependencies]
-soroban-sdk = "22.0.8"
+soroban-sdk = "23.0.3"
+blend-contract-sdk = "2.22.0"
+
 
 [profile.release]
 opt-level = "z"

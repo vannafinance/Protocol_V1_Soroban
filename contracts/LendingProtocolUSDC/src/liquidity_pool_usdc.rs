@@ -22,12 +22,6 @@ pub mod registry_contract {
     );
 }
 
-pub mod smart_account_contract {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/smart_account_contract.wasm"
-    );
-}
-
 pub mod vusdc_token_contract {
     soroban_sdk::contractimport!(
         file = "../../target/wasm32v1-none/release/vusdc_token_contract.wasm"

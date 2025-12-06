@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 
-
 [lib]
 crate-type = ["lib", "cdylib"]
 doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
+blend-contract-sdk = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

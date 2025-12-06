@@ -4,6 +4,8 @@ use soroban_sdk::{
     Address, Bytes, BytesN, Env, Symbol, U256, Vec, contract, contractimpl, log, panic_with_error,
     symbol_short, token, xdr::ToXdr,
 };
+// use blend_contract_sdk::pool::Client as BlendPoolClient;
+use blend_contract_sdk::pool::Client as BlendPoolClient;
 
 use crate::types::{
     AccountCreationEvent, AccountDeletionEvent, AccountManagerError, AccountManagerKey,
@@ -676,7 +678,70 @@ impl AccountManagerContract {
     /// To be implemented
     pub fn approve() {}
 
-    pub fn execute() {}
+    pub fn execute(env_x: &Env, smart_account: Address, extern_proto_call: Bytes) {
+        // let trader_address = Self::get_trader_address(&env_x, &smart_account);
+        // trader_address.require_auth();
+
+        // let call: ExternalProtocolCall = data.deserialize(&env).expect("deserialize failed");
+
+        // let registry_address: Address = Self::get_registry_address(&env_x);
+        // let registry_client = registry_contract::Client::new(&env_x, &registry_address);
+        // let pool_address = registry_client.get_blend_pool_address();
+
+        // if (call.protocol_address.to_string().eq(blend_pool_address)) {
+        //     panic!("Protocol address cannot be empty");
+        // }
+        // match call.protocol_address {
+        //     bl => {
+        //         log!(&env_x, "External Protocol Blend called");
+        //     }
+        //     _ => {
+        //         panic!("No external protocol mapped for the given address");
+        //     }
+        // }
+
+        // match call.type_action {
+        //     ExternalAction::Deposit => {
+        //         log!(&env_x, "External Protocol Deposit action called");
+        //     }
+        //     ExternalAction::Swap => {
+        //         log!(&env_x, "External Protocol Swap action called");
+        //     }
+        //     ExternalAction::Withdraw => {
+        //         log!(&env_x, "External Protocol Withdraw action called");
+        //     }
+        // }
+
+        // if extern_protocols == 1 {
+        //     let registry_address: Address = Self::get_registry_address(&env_x);
+        //     let registry_client = registry_contract::Client::new(&env_x, &registry_address);
+        //     let pool_address = registry_client.get_blend_pool_address();
+        //     let blend_pool_client = BlendPoolClient::new(env_x, &pool_address);
+
+        //     for token in tokens.iter() {
+        //         log!(&env_x, "Token symbol passed: {}", token);
+        //         if token == XLM_SYMBOL {
+        //             let native_xlm_address = registry_client.get_xlm_contract_adddress();
+        //             let resv = blend_pool_client.get_reserve(&native_xlm_address);
+        //             blend_pool_client.submit(&smart_account, &trader_address, &resv.asset, requests)
+        //         } else if token == USDC_SYMBOL {
+        //             let usdc_contract_address = registry_client.get_usdc_contract_address();
+        //             blend_pool_client.get_reserve(&usdc_contract_address);
+        //         } else if token == EURC_SYMBOL {
+        //             let eurc_contract_address = registry_client.get_eurc_contract_address();
+        //             blend_pool_client.get_reserve(&eurc_contract_address);
+        //         } else {
+        //             panic!("No external protocol mapped for the given token symbol");
+        //         }
+        //     }
+        // } else {
+        //     panic!("No external protocol mapped for the given id");
+        // }
+    }
+
+    pub fn can_call(env: &Env, protocol_addr: Address, smart_account: Address, call_data: Bytes) -> bool{
+        true
+    }
 
     pub fn sweepto() {}
 }

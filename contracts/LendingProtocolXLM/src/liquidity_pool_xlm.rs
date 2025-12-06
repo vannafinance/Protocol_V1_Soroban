@@ -22,12 +22,6 @@ pub mod registry_contract {
     );
 }
 
-pub mod smart_account_contract {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/smart_account_contract.wasm"
-    );
-}
-
 pub mod vxlm_token_contract {
     soroban_sdk::contractimport!(
         file = "../../target/wasm32v1-none/release/vxlm_token_contract.wasm"
@@ -359,9 +353,6 @@ impl LiquidityPoolXLM {
             .persistent()
             .get(&key_c)
             .unwrap_or_else(|| U256::from_u128(&env, 0));
-
-        // let smart_account_client = smart_account_contract::Client::new(&env, &trader_smart_account);
-        // smart_account_client.remove_borrowed_token_balance(&XLM_SYMBOL, &amount_wad_u128);
 
         log!(&env, "reached3344", user_borrow_shares_wad, borrows_wad);
         let res1 = user_borrow_shares_wad.sub(&borrow_shares_wad);

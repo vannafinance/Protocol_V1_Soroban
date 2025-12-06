@@ -186,6 +186,21 @@ impl RegistryContract {
         Ok(())
     }
 
+    pub fn set_blend_pool_address(
+        env: &Env,
+        blend_pool_address: Address,
+    ) -> Result<(), RegistryContractError> {
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
+        admin.require_auth();
+
+        env.storage()
+            .persistent()
+            .set(&RegistryKey::BlendPoolContract, &blend_pool_address);
+        Self::extend_ttl_registry(env, RegistryKey::BlendPoolContract);
+
+        Ok(())
+    }
+
     pub fn get_lendingpool_xlm(env: &Env) -> Result<Address, RegistryContractError> {
         let res: Address = env
             .storage()
@@ -276,6 +291,15 @@ impl RegistryContract {
             .expect("Failed to fetch token contract address for USDC");
 
         Ok(token_contract_address)
+    }
+
+    pub fn get_blend_pool_address(env: &Env) -> Result<Address, RegistryContractError> {
+        let res: Address = env
+            .storage()
+            .persistent()
+            .get(&RegistryKey::BlendPoolContract)
+            .unwrap_or_else(|| panic!("Failed to get blend_pool contract address"));
+        Ok(res)
     }
 
     pub fn get_eurc_contract_address(env: &Env) -> Result<Address, RegistryContractError> {

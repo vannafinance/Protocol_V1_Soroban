@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Symbol, U256, contracterror, contracttype};
+use soroban_sdk::{Address, Symbol, U256, Vec, contracterror, contracttype};
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[contracttype]
@@ -74,4 +74,26 @@ pub struct TraderLiquidateEvent {
 pub struct TraderSettleAccountEvent {
     pub smart_account: Address,
     pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExternalAction {
+    Deposit,
+    Swap,
+    Withdraw,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternalProtocolCall {
+    pub protocol_address: Address,
+    pub type_action: ExternalAction,
+    pub tokens_out: Vec<Symbol>,
+    pub tokens_in: Vec<Symbol>,
+    pub amount_out: U256,
+    pub amount_in: U256,
+    pub is_token_pair: bool,
+    pub token_pair_ratio: u64,
+    pub margin_account: Address,
 }
