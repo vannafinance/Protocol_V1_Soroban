@@ -9,15 +9,20 @@ lending_protocol_xlm = { path = "../contracts/LendingProtocolXLM" }
 lending_protocol_usdc = { path = "../contracts/LendingProtocolUSDC" }
 lending_protocol_eurc = { path = "../contracts/LendingProtocolEURC" }
 account_manager_contract = { path = "../contracts/AccountManagerContract" }
+blend-contract-sdk = { workspace = true }
 oracle_contract = { path = "../contracts/OracleContract" }
 rate_model_contract = { path = "../contracts/RateModelContract" }
 registry_contract = { path = "../contracts/RegistryContract" }
 risk_engine_contract = { path = "../contracts/RiskEngineContract" }
 smart_account_contract = { path = "../contracts/SmartAccountContract" }
+tracking_token_contract = { path = "../contracts/TrackingTokenContract" }
 vxlm_token_contract = { path = "../contracts/VXLMTokenContract"}
 vusdc_token_contract = { path = "../contracts/VUSDCTokenContract"}
 veurc_token_contract = { path = "../contracts/VEURCTokenContract"}
-sep-40-oracle = { version = "1.2.2",  features = ["testutils"] }
+sep-40-oracle = { version = "1.2.2", features = ["testutils"], optional = true }
+
+[features]
+sep40-oracle-tests = ["sep-40-oracle"]
 
 
 

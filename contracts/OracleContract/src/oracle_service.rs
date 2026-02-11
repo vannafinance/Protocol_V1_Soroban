@@ -88,7 +88,7 @@ impl OracleContract {
             }
 
             let price = recent.unwrap().price as u128;
-            let decimals = reflector_client.decimals();
+            let decimals = test_client.decimals();
             log!(
                 &env,
                 "Price for symbol",
