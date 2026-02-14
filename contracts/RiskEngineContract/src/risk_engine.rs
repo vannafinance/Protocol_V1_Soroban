@@ -168,25 +168,24 @@ impl RiskEngineContract {
 
         let mut total_account_balance_usd_wad: U256 = U256::from_u128(&env, 0);
         for token in collateral_token_symbols.iter() {
-            let (token_balance_wad, price_symbol) =
-                if Self::is_blend_tracking_symbol(&env, &token) {
-                    let (underlying_symbol, underlying_address, underlying_decimals) =
-                        Self::blend_underlying_info(&env, &registry_client, &token);
-                    let b_token_balance =
-                        tracking_token_client.balance(&margin_account, &token.clone());
-                    let reserve = blend_pool_client.get_reserve(&underlying_address);
-                    let b_rate = reserve.data.b_rate;
-                    let underlying_amount =
-                        Self::b_tokens_to_underlying(&env, b_token_balance, b_rate);
-                    let underlying_wad =
-                        Self::scale_to_wad(&env, underlying_amount, underlying_decimals);
-                    (underlying_wad, underlying_symbol)
-                } else {
-                    (
-                        smart_account_contract_client.get_collateral_token_balance(&token.clone()),
-                        token.clone(),
-                    )
-                };
+            let (token_balance_wad, price_symbol) = if Self::is_blend_tracking_symbol(&env, &token)
+            {
+                let (underlying_symbol, underlying_address, underlying_decimals) =
+                    Self::blend_underlying_info(&env, &registry_client, &token);
+                let b_token_balance =
+                    tracking_token_client.balance(&margin_account, &token.clone());
+                let reserve = blend_pool_client.get_reserve(&underlying_address);
+                let b_rate = reserve.data.b_rate;
+                let underlying_amount = Self::b_tokens_to_underlying(&env, b_token_balance, b_rate);
+                let underlying_wad =
+                    Self::scale_to_wad(&env, underlying_amount, underlying_decimals);
+                (underlying_wad, underlying_symbol)
+            } else {
+                (
+                    smart_account_contract_client.get_collateral_token_balance(&token.clone()),
+                    token.clone(),
+                )
+            };
 
             let oracle_price_wad_usd =
                 Self::get_oracle_price_wad(&env, &oracle_client, &price_symbol);
@@ -295,8 +294,7 @@ impl RiskEngineContract {
         }
         let b_tokens_u128 = b_tokens as u128;
         let b_rate_u128 = b_rate as u128;
-        let numerator =
-            U256::from_u128(env, b_tokens_u128).mul(&U256::from_u128(env, b_rate_u128));
+        let numerator = U256::from_u128(env, b_tokens_u128).mul(&U256::from_u128(env, b_rate_u128));
         numerator.div(&U256::from_u128(env, SCALAR_12_U128))
     }
 

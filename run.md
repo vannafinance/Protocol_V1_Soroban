@@ -77,3 +77,25 @@ stellar contract deploy \
   --source hemanth \
   --network testnet \
   --alias vanna_finance_test
+
+
+cargo build -p smart_account_contract --target wasm32v1-none --profile release-with-logs
+ 
+stellar contract build --package rate_model_contract
+stellar contract build --package vusdc_token_contract
+stellar contract build --package vxlm_token_contract
+stellar contract build --package veurc_token_contract
+stellar contract build --package registry_contract
+stellar contract build --package oracle_contract
+stellar contract build --package lending_protocol_usdc
+stellar contract build --package lending_protocol_eurc
+stellar contract build --package lending_protocol_xlm
+stellar contract build --package tracking_token_contract
+stellar contract build --package smart_account_contract
+stellar contract build --package risk_engine_contract
+stellar contract build 
+
+
+cargo build -p smart_account_contract --target wasm32v1-none --profile release-with-logs
+cargo test -p integrated_test tests::external_protocol_integration_tests
+

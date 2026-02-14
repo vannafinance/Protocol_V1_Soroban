@@ -5,14 +5,14 @@ use account_manager_contract::account_manager::{
     smart_account_contract::SmartAccExternalAction,
 };
 use account_manager_contract::types::ExternalProtocolCall;
-use blend_contract_sdk::pool::{PoolConfig, Positions, Request, Reserve, ReserveConfig, ReserveData};
+use blend_contract_sdk::pool::{
+    PoolConfig, Positions, Request, Reserve, ReserveConfig, ReserveData,
+};
 use registry_contract::registry::{RegistryContract, RegistryContractClient};
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{
-    contract, contractimpl, contracttype, Address, Bytes, Env, Map, String, Symbol,
-    U256, Vec, symbol_short,
-    testutils::Address as _,
-    token::StellarAssetClient,
+    Address, Bytes, Env, Map, String, Symbol, U256, Vec, contract, contractimpl, contracttype,
+    symbol_short, testutils::Address as _, token::StellarAssetClient,
 };
 use tracking_token_contract::tracking_token::{TrackingToken, TrackingTokenClient};
 
@@ -59,11 +59,7 @@ impl MockBlendPool {
     }
 
     pub fn get_config(env: Env) -> PoolConfig {
-        let admin: Address = env
-            .storage()
-            .persistent()
-            .get(&MockPoolKey::Admin)
-            .unwrap();
+        let admin: Address = env.storage().persistent().get(&MockPoolKey::Admin).unwrap();
         PoolConfig {
             oracle: admin,
             min_collateral: 0,
@@ -152,7 +148,11 @@ impl MockBlendPool {
             if req.request_type == 0 {
                 supply.set(index, current + req.amount);
             } else if req.request_type == 1 {
-                let burn = if req.amount > current { current } else { req.amount };
+                let burn = if req.amount > current {
+                    current
+                } else {
+                    req.amount
+                };
                 let new_bal = current - burn;
                 if new_bal == 0 {
                     supply.remove(index);
@@ -407,5 +407,4 @@ fn execute_deposit_and_withdraw_xlm_tracks_supply_position() {
         tracking_client.balance(&smart_account, &tracking_symbol),
         expected_minted - expected_burn
     );
-
 }

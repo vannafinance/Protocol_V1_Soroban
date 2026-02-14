@@ -318,9 +318,7 @@ impl RegistryContract {
         Ok(res)
     }
 
-    pub fn get_tracking_token_contract_addr(
-        env: &Env,
-    ) -> Result<Address, RegistryContractError> {
+    pub fn get_tracking_token_contract_addr(env: &Env) -> Result<Address, RegistryContractError> {
         let res: Address = env
             .storage()
             .persistent()
