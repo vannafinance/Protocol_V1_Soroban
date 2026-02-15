@@ -24,6 +24,7 @@ const EURC_SYMBOL: Symbol = symbol_short!("EURC");
 const BLEND_XLM: &str = "BLEND_XLM";
 const BLEND_USDC: &str = "BLEND_USDC";
 const BLEND_EURC: &str = "BLEND_EURC";
+const AQUARIUS_XLM_USDC: &str = "AQ_XLM_U"; // Aquarius XLM-USDC LP token tracking
 
 pub mod smart_account_contract {
     soroban_sdk::contractimport!(
@@ -700,7 +701,6 @@ impl AccountManagerContract {
 
         let registry_address: Address = Self::get_registry_address(&env_x);
         let registry_client = registry_contract::Client::new(&env_x, &registry_address);
-        let blend_pool_address = registry_client.get_blend_pool_address();
 
         let mut tokens_amount_wad = Vec::new(env_x);
 
@@ -710,7 +710,7 @@ impl AccountManagerContract {
 
         let smart_acc_client = smart_account_contract::Client::new(env_x, &smart_account);
 
-        let (_ok, btoken_delta) = smart_acc_client.execute(
+        let (_ok, token_delta) = smart_acc_client.execute(
             &call.protocol_address,
             &call.type_action,
             &trader_address,
@@ -718,27 +718,79 @@ impl AccountManagerContract {
             &tokens_amount_wad,
         );
 
-        if call.tokens_out.len() != 1 {
-            panic!("Tracking token mint/burn supports exactly one token per call");
-        }
+        // Handle tracking token minting/burning
+        let tracking_token_address = registry_client.get_tracking_token_contract_addr();
+        let tracking_client =
+            tracking_token_contract::Client::new(env_x, &tracking_token_address);
 
-        if btoken_delta != 0 {
-            let token_symbol = call.tokens_out.get(0).unwrap();
-            let tracking_symbol = Self::tracking_symbol_for(env_x, &token_symbol);
+        // Check if this is a Blend protocol operation
+        if registry_client.has_blend_pool_address() {
+            let blend_pool_address = registry_client.get_blend_pool_address();
+            if call.protocol_address == blend_pool_address {
+                if call.tokens_out.len() != 1 {
+                    panic!("Blend operations support exactly one token per call");
+                }
 
-            let tracking_token_address = registry_client.get_tracking_token_contract_addr();
-            let tracking_client =
-                tracking_token_contract::Client::new(env_x, &tracking_token_address);
+                if token_delta != 0 {
+                    let token_symbol = call.tokens_out.get(0).unwrap();
+                    let tracking_symbol = Self::tracking_symbol_for_blend(env_x, &token_symbol);
 
-            if btoken_delta > 0 {
-                tracking_client.mint(&tracking_symbol, &smart_account, &btoken_delta);
-            } else {
-                tracking_client.burn(&tracking_symbol, &smart_account, &(-btoken_delta));
+                    if token_delta > 0 {
+                        tracking_client.mint(&tracking_symbol, &smart_account, &token_delta);
+                    } else {
+                        tracking_client.burn(&tracking_symbol, &smart_account, &(-token_delta));
+                    }
+
+                    let tracking_balance = tracking_client.balance(&smart_account, &tracking_symbol);
+                    if tracking_balance > 0 {
+                        smart_acc_client.add_collateral_token(&tracking_symbol);
+                    }
+                }
+                return;
             }
+        }
+        
+        // Handle Aquarius protocol operations
+        if registry_client.has_aquarius_router_address() {
+            let aquarius_router_address = registry_client.get_aquarius_router_address();
+            if call.protocol_address == aquarius_router_address {
+                match call.type_action {
+                    SmartAccExternalAction::AddLiquidity => {
+                        // Mint LP tracking tokens for liquidity provision
+                        if token_delta > 0 {
+                            let tracking_symbol = Self::tracking_symbol_for_aquarius_lp(
+                                env_x,
+                                &call.tokens_out.get(0).unwrap(),
+                                &call.tokens_out.get(1).unwrap(),
+                            );
 
-            let tracking_balance = tracking_client.balance(&smart_account, &tracking_symbol);
-            if tracking_balance > 0 {
-                smart_acc_client.add_collateral_token(&tracking_symbol);
+                            tracking_client.mint(&tracking_symbol, &smart_account, &token_delta);
+
+                            let tracking_balance =
+                                tracking_client.balance(&smart_account, &tracking_symbol);
+                            if tracking_balance > 0 {
+                                smart_acc_client.add_collateral_token(&tracking_symbol);
+                            }
+                        }
+                    }
+                    SmartAccExternalAction::RemoveLiquidity => {
+                        // Burn LP tracking tokens for liquidity removal
+                        if token_delta < 0 {
+                            let tracking_symbol = Self::tracking_symbol_for_aquarius_lp(
+                                env_x,
+                                &call.tokens_out.get(0).unwrap(),
+                                &call.tokens_out.get(1).unwrap(),
+                            );
+
+                            tracking_client.burn(&tracking_symbol, &smart_account, &(-token_delta));
+                        }
+                    }
+                    SmartAccExternalAction::Swap => {
+                        // Swaps don't affect LP token tracking
+                    }
+                    _ => {}
+                }
+                return;
             }
         }
     }
@@ -758,7 +810,7 @@ impl AccountManagerContract {
 
     pub fn sweepto() {}
 
-    fn tracking_symbol_for(env: &Env, token_symbol: &Symbol) -> Symbol {
+    fn tracking_symbol_for_blend(env: &Env, token_symbol: &Symbol) -> Symbol {
         if *token_symbol == XLM_SYMBOL {
             Symbol::new(env, BLEND_XLM)
         } else if *token_symbol == USDC_SYMBOL {
@@ -767,6 +819,21 @@ impl AccountManagerContract {
             Symbol::new(env, BLEND_EURC)
         } else {
             panic!("Tracking token not configured for given token symbol");
+        }
+    }
+
+    fn tracking_symbol_for_aquarius_lp(
+        env: &Env,
+        token0: &Symbol,
+        token1: &Symbol,
+    ) -> Symbol {
+        // For XLM-USDC pool
+        if (*token0 == XLM_SYMBOL && *token1 == USDC_SYMBOL)
+            || (*token0 == USDC_SYMBOL && *token1 == XLM_SYMBOL)
+        {
+            Symbol::new(env, AQUARIUS_XLM_USDC)
+        } else {
+            panic!("Aquarius LP tracking not configured for this token pair");
         }
     }
 }
