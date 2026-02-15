@@ -53,7 +53,6 @@ impl RateModelContract {
         borrows_wad: U256,
     ) -> Result<U256, InterestRateError> {
         let util = Self::get_utilisation_ratio(&env, liquidity_wad, borrows_wad)?;
-        log!(&env, "util (WAD)", util);
 
         let c1 = u256(&env, C1_U128);
         let c2 = u256(&env, C2_U128);
@@ -63,21 +62,19 @@ impl RateModelContract {
         // util*c1
         let term1 = mul_wad_down(&env, &util, &c1);
 
-        // util^32 * c1
+        // util^32 * c1 (optimized: reuse calculations)
         let u32w = rpow_wad(&env, &util, 32);
         let term2 = mul_wad_down(&env, &u32w, &c1);
 
-        // util^64 * c2
-        let u64w = rpow_wad(&env, &util, 64);
+        // util^64 * c2 (optimized: u32^2 instead of util^64)
+        let u64w = mul_wad_down(&env, &u32w, &u32w);
         let term3 = mul_wad_down(&env, &u64w, &c2);
 
-        let sum = term1.add(&term2).add(&term3); // WAD
+        let sum = term1.add(&term2).add(&term3);
 
         // c3.mulDivDown(sum, secsPerYear)
-        let numerator = c3.mul(&sum); // WAD * WAD = WAD^2
-        let rate = numerator.div(&secs_per_year); // (WAD^2) / WAD = WAD
+        let rate = c3.mul(&sum).div(&secs_per_year);
 
-        log!(&env, "borrow_rate_per_sec (WAD)", rate);
         Ok(rate)
     }
 
@@ -87,25 +84,11 @@ impl RateModelContract {
         liquidity_wad: U256,
         borrows_wad: U256,
     ) -> Result<U256, InterestRateError> {
-        log!(
-            &env,
-            "liquidity_wad, borrows_wad in util",
-            liquidity_wad,
-            borrows_wad
-        );
         let total_assets_wad = liquidity_wad.add(&borrows_wad);
         if is_zero(env, &total_assets_wad) {
             return Ok(U256::from_u32(env, 0));
         }
-        log!(
-            &env,
-            "Borrows wad, total assets _wad",
-            borrows_wad,
-            total_assets_wad
-        );
-        let util = div_wad_down(&env, &borrows_wad, &total_assets_wad);
-        log!(&env, "returning util", util);
-        Ok(util)
+        Ok(div_wad_down(&env, &borrows_wad, &total_assets_wad))
     }
 
     fn extend_ttl(env: &Env, key: RateModelKey) {

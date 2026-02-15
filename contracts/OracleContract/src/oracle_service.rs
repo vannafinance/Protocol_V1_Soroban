@@ -33,10 +33,6 @@ impl OracleContract {
     pub fn get_price_latest(env: &Env, symbol: Symbol) -> (u128, u32) {
         #[cfg(not(feature = "testutils"))]
         {
-            use soroban_sdk::log;
-
-            log!(&env, "Entered NON TEST mode!!!");
-
             let reflector_address: Address = env
                 .storage()
                 .persistent()
@@ -44,9 +40,7 @@ impl OracleContract {
                 .unwrap();
 
             let reflector_client = ReflectorClient::new(&env, &reflector_address);
-
-            let ticker = ReflectorAsset::Other(symbol.clone());
-
+            let ticker = ReflectorAsset::Other(symbol);
             let recent = reflector_client.lastprice(&ticker);
 
             if recent.is_none() {
@@ -55,15 +49,6 @@ impl OracleContract {
 
             let price = recent.unwrap().price as u128;
             let decimals = reflector_client.decimals();
-            log!(
-                &env,
-                "Price for symbol NON TEST ",
-                symbol,
-                "is",
-                price,
-                "decimals",
-                decimals
-            );
             (price, decimals)
         }
 
@@ -71,9 +56,7 @@ impl OracleContract {
         {
             use sep_40_oracle::testutils::Asset;
             use sep_40_oracle::testutils::MockPriceOracleClient;
-            use soroban_sdk::log;
 
-            log!(&env, "Entered test mode!!!");
             let reflector_address: Address = env
                 .storage()
                 .persistent()
@@ -88,16 +71,7 @@ impl OracleContract {
             }
 
             let price = recent.unwrap().price as u128;
-            let decimals = reflector_client.decimals();
-            log!(
-                &env,
-                "Price for symbol",
-                symbol,
-                "is",
-                price,
-                "decimals",
-                decimals
-            );
+            let decimals = test_client.decimals();
             (price, decimals)
         }
     }

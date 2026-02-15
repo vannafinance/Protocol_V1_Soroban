@@ -343,27 +343,20 @@ impl SmartAccountContract {
         let registry_client = registry_contract::Client::new(&env, &registry_address);
         let this_account = env.current_contract_address();
 
-        if token_symbol == XLM_SYMBOL {
-            let pool_xlm_address = registry_client.get_lendingpool_xlm();
-            let xlm_pool_client = lending_protocol_xlm::Client::new(&env, &pool_xlm_address);
-
-            let xlm_debt = xlm_pool_client.get_borrow_balance(&this_account);
-            return Ok(xlm_debt);
+        let debt = if token_symbol == XLM_SYMBOL {
+            lending_protocol_xlm::Client::new(&env, &registry_client.get_lendingpool_xlm())
+                .get_borrow_balance(&this_account)
         } else if token_symbol == USDC_SYMBOL {
-            let pool_usdc_address = registry_client.get_lendingpool_usdc();
-            let usdc_pool_client = lending_protocol_usdc::Client::new(&env, &pool_usdc_address);
-
-            let usdc_debt = usdc_pool_client.get_borrow_balance(&this_account);
-            return Ok(usdc_debt);
+            lending_protocol_usdc::Client::new(&env, &registry_client.get_lendingpool_usdc())
+                .get_borrow_balance(&this_account)
         } else if token_symbol == EURC_SYMBOL {
-            let pool_eurc_address = registry_client.get_lendingpool_eurc();
-            let eurc_pool_client = lending_protocol_eurc::Client::new(&env, &pool_eurc_address);
-
-            let eurc_debt = eurc_pool_client.get_borrow_balance(&this_account);
-            return Ok(eurc_debt);
+            lending_protocol_eurc::Client::new(&env, &registry_client.get_lendingpool_eurc())
+                .get_borrow_balance(&this_account)
         } else {
-            panic!("User doen't have a borrows in the given token");
-        }
+            panic!("User doesn't have borrows in the given token");
+        };
+
+        Ok(debt)
     }
 
     pub fn is_account_active(env: &Env) -> bool {
