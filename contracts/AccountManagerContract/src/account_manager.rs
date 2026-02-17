@@ -24,7 +24,7 @@ const EURC_SYMBOL: Symbol = symbol_short!("EURC");
 const BLEND_XLM: &str = "BLEND_XLM";
 const BLEND_USDC: &str = "BLEND_USDC";
 const BLEND_EURC: &str = "BLEND_EURC";
-const AQUARIUS_XLM_USDC: &str = "AQ_XLM_U"; // Aquarius XLM-USDC LP token tracking
+const AQUARIUS_XLM_USDC: &str = "AQ_XLM_USDC"; // Aquarius XLM-USDC LP token tracking
 
 pub mod smart_account_contract {
     soroban_sdk::contractimport!(

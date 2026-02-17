@@ -415,7 +415,7 @@ fn execute_deposit_and_withdraw_xlm_tracks_supply_position() {
 // Aquarius Protocol Integration Tests
 // ============================================================================
 
-const AQUARIUS_XLM_USDC: &str = "AQ_XLM_U";
+const AQUARIUS_XLM_USDC: &str = "AQ_XLM_USDC";
 
 #[derive(Clone)]
 #[contracttype]
