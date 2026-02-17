@@ -840,3 +840,67 @@ fn test_aquarius_full_flow_add_swap_remove() {
     let lp_final = tracking_client.balance(&smart_account, &lp_tracking_symbol);
     assert_eq!(lp_final, 0);
 }
+
+#[test]
+fn test_aquarius_single_token_to_liquidity_flow() {
+    let ctx = setup_aquarius();
+
+    let account_manager_client =
+        AccountManagerContractClient::new(&ctx.env, &ctx.account_manager);
+    let smart_account = account_manager_client.create_account(&ctx.user);
+
+    // User starts with only XLM (realistic scenario)
+    let initial_xlm_wad = 10000u128 * WAD_U128;
+
+    // Step 1: User swaps half of their XLM to get USDC
+    let xlm_to_swap_wad = initial_xlm_wad / 2; // Swap 50% of XLM
+    let swap_call = build_aquarius_swap_call(
+        &ctx.env,
+        ctx.aquarius_router.clone(),
+        XLM_SYMBOL,
+        USDC_SYMBOL,
+        xlm_to_swap_wad,
+        smart_account.clone(),
+    );
+
+    account_manager_client.execute(&smart_account, &swap_call);
+
+    // Step 2: Now user has both XLM and USDC, add liquidity
+    let remaining_xlm_wad = initial_xlm_wad - xlm_to_swap_wad;
+    // Assuming 1:1 swap ratio for simplicity (in real scenario would query pool)
+    let received_usdc_wad = xlm_to_swap_wad;
+
+    let add_liquidity_call = build_aquarius_add_liquidity_call(
+        &ctx.env,
+        ctx.aquarius_router.clone(),
+        XLM_SYMBOL,
+        USDC_SYMBOL,
+        remaining_xlm_wad,
+        received_usdc_wad,
+        smart_account.clone(),
+    );
+
+    account_manager_client.execute(&smart_account, &add_liquidity_call);
+
+    // Verify LP tokens were minted and tracked
+    let tracking_client = TrackingTokenClient::new(&ctx.env, &ctx.tracking_token);
+    let lp_tracking_symbol = Symbol::new(&ctx.env, AQUARIUS_XLM_USDC);
+    let lp_balance = tracking_client.balance(&smart_account, &lp_tracking_symbol);
+
+    assert!(lp_balance > 0, "LP tracking tokens should be minted");
+
+    // Step 3: Remove liquidity to complete the flow
+    let remove_call = build_aquarius_remove_liquidity_call(
+        &ctx.env,
+        ctx.aquarius_router.clone(),
+        XLM_SYMBOL,
+        USDC_SYMBOL,
+        lp_balance as u128,
+        smart_account.clone(),
+    );
+
+    account_manager_client.execute(&smart_account, &remove_call);
+
+    let final_lp_balance = tracking_client.balance(&smart_account, &lp_tracking_symbol);
+    assert_eq!(final_lp_balance, 0, "All LP tokens should be burned");
+}
