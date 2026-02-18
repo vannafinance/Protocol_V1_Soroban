@@ -20,9 +20,11 @@ pub enum SmartAccountDataKey {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub enum SmartAccExternalAction {
-    Deposit,
-    Swap,
-    Withdraw,
+    Deposit,        // Blend: Deposit to lending pool
+    Swap,           // Aquarius: Swap tokens
+    Withdraw,       // Blend: Withdraw from lending pool
+    AddLiquidity,   // Aquarius: Add liquidity to pool
+    RemoveLiquidity, // Aquarius: Remove liquidity from pool
 }
 
 #[contracterror]
