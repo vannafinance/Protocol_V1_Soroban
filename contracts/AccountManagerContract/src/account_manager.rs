@@ -192,44 +192,43 @@ impl AccountManagerContract {
         }
 
         let smart_account_client = smart_account_contract::Client::new(&env, &smart_account);
+        let collateral_tokens = smart_account_client.get_all_collateral_tokens();
 
-        let collateral_tokens_list = smart_account_client.get_all_collateral_tokens();
-
-        if U256::from_u32(&env, collateral_tokens_list.len()) >= Self::get_max_asset_cap(&env) {
+        if U256::from_u32(&env, collateral_tokens.len()) >= Self::get_max_asset_cap(&env) {
             panic!("Max asset cap crossed!");
-        };
-
-        if !collateral_tokens_list.contains(token_symbol.clone()) {
-            smart_account_client.add_collateral_token(&token_symbol.clone());
         }
 
-        let amount_wad_u128: u128 = Self::convert_u256_to_u128(&env, &token_amount_wad);
+        if !collateral_tokens.contains(token_symbol.clone()) {
+            smart_account_client.add_collateral_token(&token_symbol);
+        }
 
+        let amount_wad_u128 = Self::convert_u256_to_u128(&env, &token_amount_wad);
         let registry_address = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
 
+        // Transfer tokens based on type
         if token_symbol == XLM_SYMBOL {
-            let native_xlm_address = registry_client.get_xlm_contract_adddress();
-            let xlm_token = token::Client::new(&env, &native_xlm_address);
-            let amount_scaled = Self::scale_for_operation(amount_wad_u128, xlm_token.decimals());
-            xlm_token.transfer(&trader_address, &smart_account, &amount_scaled);
+            let token_client = token::Client::new(&env, &registry_client.get_xlm_contract_adddress());
+            let amount_scaled = Self::scale_for_operation(amount_wad_u128, token_client.decimals());
+            token_client.transfer(&trader_address, &smart_account, &amount_scaled);
         } else if token_symbol == USDC_SYMBOL {
-            let usdc_contract_address = registry_client.get_usdc_contract_address();
-            let usdc_token = token::Client::new(&env, &usdc_contract_address);
-            let amount_scaled = Self::scale_for_operation(amount_wad_u128, usdc_token.decimals());
-            usdc_token.transfer(&trader_address, &smart_account, &amount_scaled);
+            let token_client = token::Client::new(&env, &registry_client.get_usdc_contract_address());
+            let amount_scaled = Self::scale_for_operation(amount_wad_u128, token_client.decimals());
+            token_client.transfer(&trader_address, &smart_account, &amount_scaled);
         } else if token_symbol == EURC_SYMBOL {
-            let eurc_contract_address = registry_client.get_eurc_contract_address();
-            let eurc_token = token::Client::new(&env, &eurc_contract_address);
-            let amount_scaled = Self::scale_for_operation(amount_wad_u128, eurc_token.decimals());
-            eurc_token.transfer(&trader_address, &smart_account, &amount_scaled);
+            let token_client = token::Client::new(&env, &registry_client.get_eurc_contract_address());
+            let amount_scaled = Self::scale_for_operation(amount_wad_u128, token_client.decimals());
+            token_client.transfer(&trader_address, &smart_account, &amount_scaled);
         } else {
             panic!("Collateral not allowed for this token symbol");
         }
 
-        let existing_bal_wad = smart_account_client.get_collateral_token_balance(&token_symbol);
-        let final_bal_wad = existing_bal_wad.add(&token_amount_wad);
-        smart_account_client.set_collateral_token_balance(&token_symbol, &final_bal_wad);
+        // Update balance
+        let existing_bal = smart_account_client.get_collateral_token_balance(&token_symbol);
+        smart_account_client.set_collateral_token_balance(
+            &token_symbol, 
+            &existing_bal.add(&token_amount_wad)
+        );
 
         Ok(())
     }
@@ -290,11 +289,12 @@ impl AccountManagerContract {
 
         let registry_address = Self::get_registry_address(env);
         let registry_client = registry_contract::Client::new(&env, &registry_address);
-        let risk_engine_client =
-            risk_engine_contract::Client::new(&env, &registry_client.get_risk_engine_address());
+        let risk_engine_address = registry_client.get_risk_engine_address();
+        let risk_engine_client = risk_engine_contract::Client::new(&env, &risk_engine_address);
 
+        // Check borrow allowance
         if !risk_engine_client.is_borrow_allowed(
-            &token_symbol.clone(),
+            &token_symbol,
             &borrow_amount_wad,
             &smart_account,
         ) {
@@ -303,46 +303,33 @@ impl AccountManagerContract {
 
         let smart_account_client = smart_account_contract::Client::new(&env, &smart_account);
 
+        // Execute lending based on token type
         if token_symbol == XLM_SYMBOL {
-            let pool_xlm_contract = registry_client.get_lendingpool_xlm();
-            let xlm_client: lending_protocol_xlm::Client<'_> =
-                lending_protocol_xlm::Client::new(&env, &pool_xlm_contract);
-
-            xlm_client.lend_to(&smart_account, &borrow_amount_wad);
+            let pool_xlm = registry_client.get_lendingpool_xlm();
+            lending_protocol_xlm::Client::new(&env, &pool_xlm)
+                .lend_to(&smart_account, &borrow_amount_wad);
             smart_account_client.add_borrowed_token(&XLM_SYMBOL);
             smart_account_client.set_has_debt(&true);
         } else if token_symbol == USDC_SYMBOL {
-            let pool_usdc_contract = registry_client.get_lendingpool_usdc();
-
-            let usdc_client: lending_protocol_usdc::Client<'_> =
-                lending_protocol_usdc::Client::new(&env, &pool_usdc_contract);
-            usdc_client.lend_to(&smart_account, &borrow_amount_wad);
+            let pool_usdc = registry_client.get_lendingpool_usdc();
+            lending_protocol_usdc::Client::new(&env, &pool_usdc)
+                .lend_to(&smart_account, &borrow_amount_wad);
             smart_account_client.add_borrowed_token(&USDC_SYMBOL);
             smart_account_client.set_has_debt(&true);
         } else if token_symbol == EURC_SYMBOL {
-            let pool_eurc_contract = registry_client.get_lendingpool_eurc();
-
-            let eurc_client: lending_protocol_eurc::Client<'_> =
-                lending_protocol_eurc::Client::new(&env, &pool_eurc_contract);
-            eurc_client.lend_to(&smart_account, &borrow_amount_wad);
+            let pool_eurc = registry_client.get_lendingpool_eurc();
+            lending_protocol_eurc::Client::new(&env, &pool_eurc)
+                .lend_to(&smart_account, &borrow_amount_wad);
             smart_account_client.add_borrowed_token(&EURC_SYMBOL);
             smart_account_client.set_has_debt(&true);
         } else {
             panic!("No lending pool available for given token_symbol");
         }
 
+        // Publish simplified event
         env.events().publish(
-            (
-                Symbol::new(&env, "Trader_Borrow_Event"),
-                smart_account.clone(),
-            ),
-            TraderBorrowEvent {
-                smart_account: smart_account,
-                token_amount: borrow_amount_wad,
-                timestamp: env.ledger().timestamp(),
-                token_symbol,
-                token_value: U256::from_u128(&env, 0),
-            },
+            (Symbol::new(&env, "Trader_Borrow"), smart_account.clone()),
+            token_symbol,
         );
 
         Ok(())

@@ -44,31 +44,24 @@ impl RiskEngineContract {
     ) -> Result<bool, RiskEngineError> {
         let registry_addr = Self::get_registry_address(&env);
         let registry_client = registry_contract::Client::new(&env, &registry_addr);
-        let oracle_contract_addr = registry_client.get_oracle_contract_address();
-        let oracle_client = oracle_contract::Client::new(env, &oracle_contract_addr);
+        let oracle_client = oracle_contract::Client::new(
+            env, 
+            &registry_client.get_oracle_contract_address()
+        );
 
         let (price, decimals) = oracle_client.get_price_latest(&symbol);
         let wad_scale = WAD_U128 / (10_u32.pow(decimals) as u128);
-        let price_wad = price * wad_scale;
-
-        let oracle_price_wad = U256::from_u128(&env, price_wad);
+        let oracle_price_wad = U256::from_u128(&env, price * wad_scale);
         let borrow_value_wad = Self::mul_wad_down(&env, borrow_amount_wad, oracle_price_wad);
 
         let current_balance_wad = Self::get_current_total_balance(&env, margin_account.clone())?;
         let current_debt_wad = Self::get_current_total_borrows(&env, margin_account.clone())?;
 
-        log!(
-            &env,
-            "Current balance and debt before {}",
-            current_balance_wad,
-            current_debt_wad
-        );
-        let res = Self::is_account_healthy(
+        Self::is_account_healthy(
             env,
             current_balance_wad.add(&borrow_value_wad),
             current_debt_wad.add(&borrow_value_wad),
-        )?;
-        Ok(res)
+        )
     }
 
     pub fn is_withdraw_allowed(
@@ -77,45 +70,35 @@ impl RiskEngineContract {
         withdraw_amount_wad: U256,
         margin_account: Address,
     ) -> Result<bool, RiskEngineError> {
-        let registry_contract: Address = Self::get_registry_address(&env);
-        let registry_client = registry_contract::Client::new(&env, &registry_contract);
-
-        // check has debt
-        let smart_account_contract_client =
-            smart_account_contract::Client::new(&env, &margin_account.clone());
-        if !smart_account_contract_client.has_debt() {
-            log!(&env, "Returning, since account has no debt");
+        let smart_account_client = smart_account_contract::Client::new(&env, &margin_account);
+        if !smart_account_client.has_debt() {
             return Ok(true);
         }
 
-        let oracle_contract_address: Address = registry_client.get_oracle_contract_address();
+        let registry_addr = Self::get_registry_address(&env);
+        let registry_client = registry_contract::Client::new(&env, &registry_addr);
+        let oracle_client = oracle_contract::Client::new(
+            &env, 
+            &registry_client.get_oracle_contract_address()
+        );
 
-        let oracle_client = oracle_contract::Client::new(&env, &oracle_contract_address);
         let (price, decimals) = oracle_client.get_price_latest(&symbol);
         let wad_scale = WAD_U128 / (10_u32.pow(decimals) as u128);
-        let price_wad = price * wad_scale;
-        let oracle_price_wad = U256::from_u128(&env, price_wad);
+        let oracle_price_wad = U256::from_u128(&env, price * wad_scale);
+        let withdraw_value_wad = Self::mul_wad_down(&env, withdraw_amount_wad.clone(), oracle_price_wad);
 
-        let withdraw_value_wad =
-            Self::mul_wad_down(&env, withdraw_amount_wad.clone(), oracle_price_wad);
+        let current_balance_wad = Self::get_current_total_balance(&env, margin_account.clone())?;
+        let current_debt_wad = Self::get_current_total_borrows(&env, margin_account)?;
 
-        let current_account_balance_wad =
-            Self::get_current_total_balance(&env, margin_account.clone()).unwrap();
-        let current_account_debt_wad =
-            Self::get_current_total_borrows(&env, margin_account.clone()).unwrap();
-
-        if withdraw_amount_wad > current_account_balance_wad {
+        if withdraw_amount_wad > current_balance_wad {
             panic!("Cannot withdraw more value than the current collateral value")
         }
 
-        let res = Self::is_account_healthy(
+        Self::is_account_healthy(
             env,
-            current_account_balance_wad.sub(&withdraw_value_wad),
-            current_account_debt_wad,
+            current_balance_wad.sub(&withdraw_value_wad),
+            current_debt_wad,
         )
-        .unwrap();
-
-        Ok(res)
     }
 
     pub fn is_account_healthy(
@@ -123,22 +106,13 @@ impl RiskEngineContract {
         total_account_balance_wad: U256,
         total_account_debt_wad: U256,
     ) -> Result<bool, RiskEngineError> {
-        log!(
-            &env,
-            "Total account balance, debt",
-            total_account_balance_wad,
-            total_account_debt_wad
-        );
         if total_account_debt_wad == U256::from_u128(&env, 0) {
-            log!(&env, "Yes account is HEALTHY!");
             return Ok(true);
-        } else {
-            let res = (total_account_balance_wad.mul(&U256::from_u128(&env, WAD_U128)))
-                .div(&total_account_debt_wad)
-                > U256::from_u128(&env, BALANCE_TO_BORROW_THRESHOLD);
-            log!(&env, "Is Account is healthy : ", res);
-            return Ok(res);
         }
+        let res = (total_account_balance_wad.mul(&U256::from_u128(&env, WAD_U128)))
+            .div(&total_account_debt_wad)
+            > U256::from_u128(&env, BALANCE_TO_BORROW_THRESHOLD);
+        Ok(res)
     }
 
     pub fn get_current_total_balance(
@@ -193,60 +167,40 @@ impl RiskEngineContract {
             let balance_wad = Self::mul_wad_down(
                 &env,
                 token_balance_wad,
-                U256::from_u128(&env, oracle_price_wad_usd),
+                U256::from_u128(&env, oracle_price_wad),
             );
-
-            total_account_balance_usd_wad = total_account_balance_usd_wad.add(&balance_wad);
+            total_balance_usd_wad = total_balance_usd_wad.add(&balance_wad);
         }
-        Ok(total_account_balance_usd_wad)
+        Ok(total_balance_usd_wad)
     }
 
     pub fn get_current_total_borrows(
         env: &Env,
         margin_account: Address,
     ) -> Result<U256, RiskEngineError> {
-        let registry_address: Address = Self::get_registry_address(env);
-        let registry_client = registry_contract::Client::new(&env, &registry_address);
-        let oracle_contract_address: Address = registry_client.get_oracle_contract_address();
-        let oracle_client = oracle_contract::Client::new(env, &oracle_contract_address);
+        let registry_addr = Self::get_registry_address(env);
+        let registry_client = registry_contract::Client::new(&env, &registry_addr);
+        let oracle_client = oracle_contract::Client::new(
+            env, 
+            &registry_client.get_oracle_contract_address()
+        );
 
-        let smart_account_contract_client =
-            smart_account_contract::Client::new(&env, &margin_account.clone());
+        let smart_account_client = smart_account_contract::Client::new(&env, &margin_account);
+        let borrowed_tokens = smart_account_client.get_all_borrowed_tokens();
 
-        let borrowed_token_symbols = smart_account_contract_client.get_all_borrowed_tokens();
+        let mut total_debt_usd_wad = U256::from_u128(&env, 0);
 
-        let mut total_account_debt_usd_wad: U256 = U256::from_u128(&env, 0);
-
-        for tokenx in borrowed_token_symbols.iter() {
-            let token_balance_wad =
-                smart_account_contract_client.get_borrowed_token_debt(&tokenx.clone());
-
-            let oracle_price_wad_usd = Self::get_oracle_price_wad(&env, &oracle_client, &tokenx);
-
-            log!(
+        for token in borrowed_tokens.iter() {
+            let token_debt_wad = smart_account_client.get_borrowed_token_debt(&token);
+            let oracle_price_wad = Self::get_oracle_price_wad(&env, &oracle_client, &token);
+            let debt_value_wad = Self::mul_wad_down(
                 &env,
-                "oracle_price_wad_usd is ",
-                oracle_price_wad_usd,
-                tokenx
+                token_debt_wad,
+                U256::from_u128(&env, oracle_price_wad),
             );
-
-            // Mutliply balance with oracle price
-            let balance_wad = Self::mul_wad_down(
-                &env,
-                token_balance_wad,
-                U256::from_u128(&env, oracle_price_wad_usd),
-            );
-            log!(&env, "balance_wad is ", balance_wad, tokenx);
-
-            total_account_debt_usd_wad = total_account_debt_usd_wad.add(&balance_wad);
-            log!(
-                &env,
-                "total_account_debt_usd_wad is ",
-                total_account_debt_usd_wad,
-                tokenx
-            );
+            total_debt_usd_wad = total_debt_usd_wad.add(&debt_value_wad);
         }
-        Ok(total_account_debt_usd_wad)
+        Ok(total_debt_usd_wad)
     }
 
     fn get_oracle_price_wad(
