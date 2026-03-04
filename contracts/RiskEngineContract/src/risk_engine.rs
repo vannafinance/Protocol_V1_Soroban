@@ -167,11 +167,11 @@ impl RiskEngineContract {
             let balance_wad = Self::mul_wad_down(
                 &env,
                 token_balance_wad,
-                U256::from_u128(&env, oracle_price_wad),
+                U256::from_u128(&env, oracle_price_wad_usd),
             );
-            total_balance_usd_wad = total_balance_usd_wad.add(&balance_wad);
+            total_account_balance_usd_wad = total_account_balance_usd_wad.add(&balance_wad);
         }
-        Ok(total_balance_usd_wad)
+        Ok(total_account_balance_usd_wad)
     }
 
     pub fn get_current_total_borrows(
