@@ -2,15 +2,18 @@ use core::panic;
 
 use soroban_sdk::{
     Address, Bytes, BytesN, Env, Symbol, U256, Vec, contract, contractimpl, log, panic_with_error,
-    symbol_short, token, xdr::ToXdr,
+    symbol_short, token,
+    xdr::{FromXdr, ToXdr},
 };
 // use blend_contract_sdk::pool::Client as BlendPoolClient;
-use blend_contract_sdk::pool::Client as BlendPoolClient;
 
 use crate::types::{
     AccountCreationEvent, AccountDeletionEvent, AccountManagerError, AccountManagerKey,
-    TraderBorrowEvent, TraderLiquidateEvent, TraderRepayEvent, TraderSettleAccountEvent,
+    ExternalProtocolCall, TraderBorrowEvent, TraderLiquidateEvent, TraderRepayEvent,
+    TraderSettleAccountEvent,
 };
+
+use smart_account_contract::SmartAccExternalAction;
 
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
@@ -18,6 +21,9 @@ pub const WAD_U128: u128 = 10000_0000_00000_00000; // 1e18
 const XLM_SYMBOL: Symbol = symbol_short!("XLM");
 const USDC_SYMBOL: Symbol = symbol_short!("USDC");
 const EURC_SYMBOL: Symbol = symbol_short!("EURC");
+const BLEND_XLM: &str = "BLEND_XLM";
+const BLEND_USDC: &str = "BLEND_USDC";
+const BLEND_EURC: &str = "BLEND_EURC";
 
 pub mod smart_account_contract {
     soroban_sdk::contractimport!(
@@ -52,6 +58,12 @@ pub mod lending_protocol_usdc {
 pub mod lending_protocol_eurc {
     soroban_sdk::contractimport!(
         file = "../../target/wasm32v1-none/release/lending_protocol_eurc.wasm"
+    );
+}
+
+pub mod tracking_token_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/tracking_token_contract.wasm"
     );
 }
 
@@ -665,70 +677,83 @@ impl AccountManagerContract {
     /// To be implemented
     pub fn approve() {}
 
-    pub fn execute(env_x: &Env, smart_account: Address, extern_proto_call: Bytes) {
-        // let trader_address = Self::get_trader_address(&env_x, &smart_account);
-        // trader_address.require_auth();
+    pub fn execute(env_x: &Env, smart_account: Address, extern_proto_call_bytes: Bytes) {
+        let trader_address = Self::get_trader_address(&env_x, &smart_account);
+        trader_address.require_auth();
 
-        // let call: ExternalProtocolCall = data.deserialize(&env).expect("deserialize failed");
+        let call: ExternalProtocolCall =
+            ExternalProtocolCall::from_xdr(env_x, &extern_proto_call_bytes)
+                .expect("deserialize failed");
 
-        // let registry_address: Address = Self::get_registry_address(&env_x);
-        // let registry_client = registry_contract::Client::new(&env_x, &registry_address);
-        // let pool_address = registry_client.get_blend_pool_address();
+        let registry_address: Address = Self::get_registry_address(&env_x);
+        let registry_client = registry_contract::Client::new(&env_x, &registry_address);
+        let blend_pool_address = registry_client.get_blend_pool_address();
 
-        // if (call.protocol_address.to_string().eq(blend_pool_address)) {
-        //     panic!("Protocol address cannot be empty");
-        // }
-        // match call.protocol_address {
-        //     bl => {
-        //         log!(&env_x, "External Protocol Blend called");
-        //     }
-        //     _ => {
-        //         panic!("No external protocol mapped for the given address");
-        //     }
-        // }
+        let mut tokens_amount_wad = Vec::new(env_x);
 
-        // match call.type_action {
-        //     ExternalAction::Deposit => {
-        //         log!(&env_x, "External Protocol Deposit action called");
-        //     }
-        //     ExternalAction::Swap => {
-        //         log!(&env_x, "External Protocol Swap action called");
-        //     }
-        //     ExternalAction::Withdraw => {
-        //         log!(&env_x, "External Protocol Withdraw action called");
-        //     }
-        // }
+        call.amount_out
+            .iter()
+            .for_each(|x| tokens_amount_wad.push_back(x.to_u128().unwrap()));
 
-        // if extern_protocols == 1 {
-        //     let registry_address: Address = Self::get_registry_address(&env_x);
-        //     let registry_client = registry_contract::Client::new(&env_x, &registry_address);
-        //     let pool_address = registry_client.get_blend_pool_address();
-        //     let blend_pool_client = BlendPoolClient::new(env_x, &pool_address);
+        let smart_acc_client = smart_account_contract::Client::new(env_x, &smart_account);
 
-        //     for token in tokens.iter() {
-        //         log!(&env_x, "Token symbol passed: {}", token);
-        //         if token == XLM_SYMBOL {
-        //             let native_xlm_address = registry_client.get_xlm_contract_adddress();
-        //             let resv = blend_pool_client.get_reserve(&native_xlm_address);
-        //             blend_pool_client.submit(&smart_account, &trader_address, &resv.asset, requests)
-        //         } else if token == USDC_SYMBOL {
-        //             let usdc_contract_address = registry_client.get_usdc_contract_address();
-        //             blend_pool_client.get_reserve(&usdc_contract_address);
-        //         } else if token == EURC_SYMBOL {
-        //             let eurc_contract_address = registry_client.get_eurc_contract_address();
-        //             blend_pool_client.get_reserve(&eurc_contract_address);
-        //         } else {
-        //             panic!("No external protocol mapped for the given token symbol");
-        //         }
-        //     }
-        // } else {
-        //     panic!("No external protocol mapped for the given id");
-        // }
+        let (_ok, btoken_delta) = smart_acc_client.execute(
+            &call.protocol_address,
+            &call.type_action,
+            &trader_address,
+            &call.tokens_out,
+            &tokens_amount_wad,
+        );
+
+        if call.tokens_out.len() != 1 {
+            panic!("Tracking token mint/burn supports exactly one token per call");
+        }
+
+        if btoken_delta != 0 {
+            let token_symbol = call.tokens_out.get(0).unwrap();
+            let tracking_symbol = Self::tracking_symbol_for(env_x, &token_symbol);
+
+            let tracking_token_address = registry_client.get_tracking_token_contract_addr();
+            let tracking_client =
+                tracking_token_contract::Client::new(env_x, &tracking_token_address);
+
+            if btoken_delta > 0 {
+                tracking_client.mint(&tracking_symbol, &smart_account, &btoken_delta);
+            } else {
+                tracking_client.burn(&tracking_symbol, &smart_account, &(-btoken_delta));
+            }
+
+            let tracking_balance = tracking_client.balance(&smart_account, &tracking_symbol);
+            if tracking_balance > 0 {
+                smart_acc_client.add_collateral_token(&tracking_symbol);
+            }
+        }
     }
 
-    pub fn can_call(env: &Env, protocol_addr: Address, smart_account: Address, call_data: Bytes) -> bool{
-        true
+    pub fn can_call(
+        env: &Env,
+        protocol_addr: Address,
+        smart_account: Address,
+        call_data: Bytes,
+    ) -> (bool, Address, Address) {
+        (
+            true,
+            Address::from_str(env, "strkey"),
+            Address::from_str(env, "strkey"),
+        )
     }
 
     pub fn sweepto() {}
+
+    fn tracking_symbol_for(env: &Env, token_symbol: &Symbol) -> Symbol {
+        if *token_symbol == XLM_SYMBOL {
+            Symbol::new(env, BLEND_XLM)
+        } else if *token_symbol == USDC_SYMBOL {
+            Symbol::new(env, BLEND_USDC)
+        } else if *token_symbol == EURC_SYMBOL {
+            Symbol::new(env, BLEND_EURC)
+        } else {
+            panic!("Tracking token not configured for given token symbol");
+        }
+    }
 }

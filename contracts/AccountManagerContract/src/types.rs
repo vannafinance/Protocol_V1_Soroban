@@ -1,3 +1,4 @@
+use crate::account_manager::smart_account_contract::SmartAccExternalAction;
 use soroban_sdk::{Address, Symbol, U256, Vec, contracterror, contracttype};
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -78,21 +79,13 @@ pub struct TraderSettleAccountEvent {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ExternalAction {
-    Deposit,
-    Swap,
-    Withdraw,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalProtocolCall {
     pub protocol_address: Address,
-    pub type_action: ExternalAction,
+    pub type_action: SmartAccExternalAction,
     pub tokens_out: Vec<Symbol>,
     pub tokens_in: Vec<Symbol>,
-    pub amount_out: U256,
-    pub amount_in: U256,
+    pub amount_out: Vec<U256>,
+    pub amount_in: Vec<U256>,
     pub is_token_pair: bool,
     pub token_pair_ratio: u64,
     pub margin_account: Address,

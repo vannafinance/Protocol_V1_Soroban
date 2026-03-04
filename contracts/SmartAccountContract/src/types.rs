@@ -17,6 +17,14 @@ pub enum SmartAccountDataKey {
     OwnerAddress,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub enum SmartAccExternalAction {
+    Deposit,
+    Swap,
+    Withdraw,
+}
+
 #[contracterror]
 #[derive(Copy, Clone, Debug)]
 pub enum SmartAccountError {

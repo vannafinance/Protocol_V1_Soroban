@@ -201,6 +201,22 @@ impl RegistryContract {
         Ok(())
     }
 
+    pub fn set_tracking_token_contract_addr(
+        env: &Env,
+        tracking_token_contract_addr: Address,
+    ) -> Result<(), RegistryContractError> {
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
+        admin.require_auth();
+
+        env.storage().persistent().set(
+            &RegistryKey::TrackingTokenContract,
+            &tracking_token_contract_addr,
+        );
+        Self::extend_ttl_registry(env, RegistryKey::TrackingTokenContract);
+
+        Ok(())
+    }
+
     pub fn get_lendingpool_xlm(env: &Env) -> Result<Address, RegistryContractError> {
         let res: Address = env
             .storage()
@@ -299,6 +315,15 @@ impl RegistryContract {
             .persistent()
             .get(&RegistryKey::BlendPoolContract)
             .unwrap_or_else(|| panic!("Failed to get blend_pool contract address"));
+        Ok(res)
+    }
+
+    pub fn get_tracking_token_contract_addr(env: &Env) -> Result<Address, RegistryContractError> {
+        let res: Address = env
+            .storage()
+            .persistent()
+            .get(&RegistryKey::TrackingTokenContract)
+            .unwrap_or_else(|| panic!("Failed to get tracking_token contract address"));
         Ok(res)
     }
 

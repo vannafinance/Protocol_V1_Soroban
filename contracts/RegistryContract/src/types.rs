@@ -28,6 +28,7 @@ pub enum RegistryKey {
     //SmartAccountAddress(Address), // Traders's smart account address
     OwnerAddress(Address), // Traders address for respective margin account
     BlendPoolContract,     // Blend Pool Contract Address
+    TrackingTokenContract, // Tracking token contract address
     SoroswapContract,
     AquariusContract,
 }

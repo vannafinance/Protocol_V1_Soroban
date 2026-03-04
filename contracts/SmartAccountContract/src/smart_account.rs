@@ -6,9 +6,14 @@ use soroban_sdk::{
 };
 
 use crate::types::{
-    SmartAccountActivationEvent, SmartAccountDataKey, SmartAccountDeactivationEvent,
-    SmartAccountError,
+    SmartAccExternalAction, SmartAccountActivationEvent, SmartAccountDataKey,
+    SmartAccountDeactivationEvent, SmartAccountError,
 };
+
+use blend_contract_sdk::pool::{self, Positions, Reserve};
+use blend_contract_sdk::pool::{PoolConfig, ReserveConfig, ReserveData};
+
+use blend_contract_sdk::pool::{Client as BlendPoolClient, Request};
 
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
@@ -263,6 +268,158 @@ impl SmartAccountContract {
         Ok(())
     }
 
+    pub fn execute(
+        env: &Env,
+        target_protocol: Address,
+        action: SmartAccExternalAction,
+        trader_address: Address,
+        tokens: Vec<Symbol>,
+        tokens_amount_wad: Vec<u128>,
+    ) -> Result<(bool, i128), SmartAccountError> {
+        let account_manager: Address = Self::get_account_manager(&env);
+        account_manager.require_auth();
+
+        let registry_address = Self::get_registry_address(&env);
+
+        let registry_client = registry_contract::Client::new(env, &registry_address);
+        let blend_pool_address = registry_client.get_blend_pool_address();
+        let smart_account = env.current_contract_address();
+
+        let mut request_type: u32 = 0;
+
+        match action {
+            SmartAccExternalAction::Deposit => request_type = 0,
+            SmartAccExternalAction::Withdraw => request_type = 1,
+            SmartAccExternalAction::Swap => request_type = 10,
+        }
+
+        if target_protocol == blend_pool_address {
+            let pool_address = registry_client.get_blend_pool_address();
+            let blend_pool_client = BlendPoolClient::new(env, &pool_address);
+
+            for (token, amt_wad) in tokens.iter().zip(tokens_amount_wad) {
+                log!(&env, "Token symbol passed: {}", token);
+                if token == XLM_SYMBOL {
+                    let native_xlm_address = registry_client.get_xlm_contract_adddress();
+                    let xlm_token = token::Client::new(&env, &native_xlm_address);
+                    let amt = Self::scale_from_wad(amt_wad, xlm_token.decimals());
+                    let resv: Reserve = blend_pool_client.get_reserve(&native_xlm_address);
+                    let pool_config: pool::PoolConfig = blend_pool_client.get_config();
+                    blend_pool_client.get_config().oracle;
+                    let positions_before = blend_pool_client.get_positions(&smart_account);
+                    let b_tokens_before =
+                        positions_before.supply.get(resv.config.index).unwrap_or(0);
+
+                    let b_rate = resv.data.b_rate;
+                    let request = Request {
+                        address: native_xlm_address,
+                        amount: amt,
+                        request_type,
+                    };
+                    let mut requests = Vec::new(env);
+                    requests.push_back(request);
+
+                    let positions = blend_pool_client.submit(
+                        &smart_account,
+                        &smart_account,
+                        &resv.asset,
+                        &requests,
+                    );
+                    if request_type == 0 {
+                        log!(&env, "Blend Pool Deposit b_rate {}, amount {}", b_rate, amt);
+                        let b_tokens_minted =
+                            positions.supply.get_unchecked(resv.config.index) - b_tokens_before;
+                        return Ok((true, b_tokens_minted));
+                    } else if request_type == 1 {
+                        let b_tokens_burned =
+                            b_tokens_before - positions.supply.get_unchecked(resv.config.index);
+                        return Ok((true, -b_tokens_burned));
+                    } else {
+                        panic!("Unsupported request type for XLM in Blend Pool");
+                    }
+                } else if token == USDC_SYMBOL {
+                    let usdc_contract_address = registry_client.get_usdc_contract_address();
+                    let usdc_token = token::Client::new(&env, &usdc_contract_address);
+                    let amt = Self::scale_from_wad(amt_wad, usdc_token.decimals());
+                    let resv = blend_pool_client.get_reserve(&usdc_contract_address);
+                    let b_rate = resv.data.b_rate;
+                    let positions_before = blend_pool_client.get_positions(&smart_account);
+                    let b_tokens_before =
+                        positions_before.supply.get(resv.config.index).unwrap_or(0);
+
+                    let request = Request {
+                        address: usdc_contract_address,
+                        amount: amt,
+                        request_type,
+                    };
+                    let mut requests = Vec::new(env);
+                    requests.push_back(request);
+
+                    let positions = blend_pool_client.submit(
+                        &smart_account,
+                        &smart_account,
+                        &resv.asset,
+                        &requests,
+                    );
+                    if request_type == 0 {
+                        log!(&env, "Blend Pool Deposit b_rate {}, amount {}", b_rate, amt);
+                        let b_tokens_minted =
+                            positions.supply.get_unchecked(resv.config.index) - b_tokens_before;
+                        return Ok((true, b_tokens_minted));
+                    } else if request_type == 1 {
+                        let b_tokens_burned =
+                            b_tokens_before - positions.supply.get_unchecked(resv.config.index);
+                        return Ok((true, -b_tokens_burned));
+                    } else {
+                        panic!("Unsupported request type for XLM in Blend Pool");
+                    }
+                } else if token == EURC_SYMBOL {
+                    let eurc_contract_address = registry_client.get_eurc_contract_address();
+                    let eurc_token = token::Client::new(&env, &eurc_contract_address);
+                    let amt = Self::scale_from_wad(amt_wad, eurc_token.decimals());
+                    let resv = blend_pool_client.get_reserve(&eurc_contract_address);
+                    let b_rate = resv.data.b_rate;
+                    let positions_before = blend_pool_client.get_positions(&smart_account);
+                    let b_tokens_before =
+                        positions_before.supply.get(resv.config.index).unwrap_or(0);
+
+                    let request = Request {
+                        address: eurc_contract_address,
+                        amount: amt,
+                        request_type,
+                    };
+                    let mut requests = Vec::new(env);
+                    requests.push_back(request);
+
+                    let positions = blend_pool_client.submit(
+                        &smart_account,
+                        &smart_account,
+                        &resv.asset,
+                        &requests,
+                    );
+                    if request_type == 0 {
+                        log!(&env, "Blend Pool Deposit b_rate {}, amount {}", b_rate, amt);
+                        let b_tokens_minted =
+                            positions.supply.get_unchecked(resv.config.index) - b_tokens_before;
+                        return Ok((true, b_tokens_minted));
+                    } else if request_type == 1 {
+                        let b_tokens_burned =
+                            b_tokens_before - positions.supply.get_unchecked(resv.config.index);
+                        return Ok((true, -b_tokens_burned));
+                    } else {
+                        panic!("Unsupported request type for XLM in Blend Pool");
+                    }
+                } else {
+                    panic!("No external protocol mapped for the given token symbol");
+                }
+            }
+        } else {
+            panic!("No external protocol mapped for the given id");
+        }
+
+        Ok((false, 0))
+    }
+
     fn set_borrowed_token_list(env: &Env, list: Vec<Symbol>) {
         env.storage()
             .persistent()
@@ -366,29 +523,12 @@ impl SmartAccountContract {
             .unwrap_or(false)
     }
 
-    // fn check_auth(env: &Env, token_symbol: Symbol) {
-    //     let registry_address = Self::get_registry_address(&env);
-    //     let registry_client = registry_contract::Client::new(&env, &registry_address);
-
-    //     if token_symbol == XLM_SYMBOL {
-    //         let pool_xlm_address = registry_client.get_lendingpool_xlm();
-    //         // make sure only the lending pool has auth to call this function by adding authorization
-    //         pool_xlm_address.require_auth();
-    //     } else if token_symbol == USDC_SYMBOL {
-    //         let pool_usdc_address = registry_client.get_lendingpool_usdc();
-    //         // make sure only the lending pool has auth to call this function by adding authorization
-    //         pool_usdc_address.require_auth();
-    //     } else if token_symbol == EURC_SYMBOL {
-    //         let pool_eurc_address = registry_client.get_lendingpool_eurc();
-    //         // make sure only the lending pool has auth to call this function by adding authorization
-    //         pool_eurc_address.require_auth();
-    //     } else {
-    //         panic!("Non existent lending pool, Auth failed!!");
-    //     }
-    // }
-
     fn scale_for_operation(amount_wad: u128, xlm_decimals: u32) -> i128 {
         ((amount_wad * 10u128.pow(xlm_decimals)) / WAD_U128) as i128
+    }
+
+    fn scale_from_wad(amount_wad: u128, token_decimals: u32) -> i128 {
+        ((amount_wad * 10u128.pow(token_decimals)) / WAD_U128) as i128
     }
 
     fn extend_ttl_smart_account(env: &Env, key: SmartAccountDataKey) {
@@ -435,5 +575,11 @@ pub mod lending_protocol_eurc {
 pub mod registry_contract {
     soroban_sdk::contractimport!(
         file = "../../target/wasm32v1-none/release/registry_contract.wasm"
+    );
+}
+
+pub mod tracking_token_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/tracking_token_contract.wasm"
     );
 }

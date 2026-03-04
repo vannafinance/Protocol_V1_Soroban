@@ -13,3 +13,7 @@ contracts/VEURCTokenContract/test_snapshots/*
 contracts/VUSDCTokenContract/test_snapshots/*
 contracts/VXLMTokenContract/test_snapshots/*
 integrated_test/test_snapshots/*
+contracts/TrackingTokenContract/test_snapshots/test/tests/test_burn.1.json
+contracts/TrackingTokenContract/test_snapshots/test/tests/test_initialize.1.json
+contracts/TrackingTokenContract/test_snapshots/test/tests/test_mint_and_balance.1.json
+contracts/TrackingTokenContract/test_snapshots/test/tests/test_transfer.1.json
