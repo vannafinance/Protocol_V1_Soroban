@@ -244,7 +244,7 @@ impl RiskEngineContract {
         let oracle_address = registry_client.get_oracle_contract_address();
         let oracle_client = oracle_contract::Client::new(env, &oracle_address);
 
-        let mut total_account_balance_usd_wad: U256 = U256::from_u128(&env, 0);
+        let mut total_balance_usd_wad: U256 = U256::from_u128(&env, 0);
         for token in collateral_token_symbols.iter() {
             let (token_balance_wad, price_symbol) = if Self::is_blend_tracking_symbol(&env, &token)
             {
@@ -270,7 +270,7 @@ impl RiskEngineContract {
                 )
             };
 
-            let oracle_price_wad_usd =
+            let oracle_price_wad =
                 Self::get_oracle_price_wad(&env, &oracle_client, &price_symbol);
             // Multiply balance with oracle price
             let balance_wad = Self::mul_wad_down(
