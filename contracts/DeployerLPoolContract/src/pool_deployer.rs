@@ -1,5 +1,5 @@
 use soroban_sdk::xdr::ToXdr;
-use soroban_sdk::{Address, Env, Symbol, TryIntoVal, Vec, contract, log};
+use soroban_sdk::{Address, Env, Symbol, TryIntoVal, U256, Vec, contract, log};
 
 use soroban_sdk::Bytes;
 use soroban_sdk::{BytesN, contractimpl, symbol_short};
@@ -143,7 +143,7 @@ impl Deployer {
         constructor_args.push_back(rate_model.to_val());
         constructor_args.push_back(token_issuer.to_val());
         constructor_args.push_back(admin.to_val());
-        constructor_args.push_back(1000.try_into_val(env).unwrap());
+        constructor_args.push_back(U256::from_u32(env, 1000).to_val());
 
         // Deploy the contract using the uploaded Wasm with given hash on behalf
         // of the current contract.
