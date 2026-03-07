@@ -80,13 +80,15 @@ pub struct TraderSettleAccountEvent {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalProtocolCall {
-    pub protocol_address: Address,
-    pub type_action: SmartAccExternalAction,
-    pub tokens_out: Vec<Symbol>,
-    pub tokens_in: Vec<Symbol>,
-    pub amount_out: Vec<U256>,
-    pub amount_in: Vec<U256>,
-    pub is_token_pair: bool,
-    pub token_pair_ratio: u64,
-    pub margin_account: Address,
+    pub protocol_address: Address,              // Protocol address (Blend pool or Aquarius router)
+    pub type_action: SmartAccExternalAction,    // Deposit/Withdraw/Swap/AddLiquidity/RemoveLiquidity
+    pub tokens_out: Vec<Symbol>,                // Output tokens
+    pub tokens_in: Vec<Symbol>,                 // Input tokens (for swaps/liquidity)
+    pub amount_out: Vec<U256>,                  // Amounts in WAD
+    pub amount_in: Vec<U256>,                   // Input amounts
+    pub is_token_pair: bool,                    // For liquidity pool operations
+    pub token_pair_ratio: u64,                  // Ratio for token pairs (not used currently)
+    pub margin_account: Address,                // Smart account address
+    pub fee_fraction: u32,                      // Fee for Aquarius pools (e.g., 30 = 0.3%)
+    pub min_liquidity_out: U256,                // Minimum LP tokens to receive (slippage protection)
 }

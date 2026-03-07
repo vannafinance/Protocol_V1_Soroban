@@ -30,5 +30,6 @@ pub enum RegistryKey {
     BlendPoolContract,     // Blend Pool Contract Address
     TrackingTokenContract, // Tracking token contract address
     SoroswapContract,
-    AquariusContract,
+    AquariusRouterContract,     // Aquarius Router Contract Address
+    AquariusPoolIndex,          // Aquarius Pool Index for XLM-USDC
 }

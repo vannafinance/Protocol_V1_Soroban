@@ -217,6 +217,37 @@ impl RegistryContract {
         Ok(())
     }
 
+    pub fn set_aquarius_router_address(
+        env: &Env,
+        aquarius_router_address: Address,
+    ) -> Result<(), RegistryContractError> {
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
+        admin.require_auth();
+
+        env.storage().persistent().set(
+            &RegistryKey::AquariusRouterContract,
+            &aquarius_router_address,
+        );
+        Self::extend_ttl_registry(env, RegistryKey::AquariusRouterContract);
+
+        Ok(())
+    }
+
+    pub fn set_aquarius_pool_index(
+        env: &Env,
+        pool_index: BytesN<32>,
+    ) -> Result<(), RegistryContractError> {
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
+        admin.require_auth();
+
+        env.storage()
+            .persistent()
+            .set(&RegistryKey::AquariusPoolIndex, &pool_index);
+        Self::extend_ttl_registry(env, RegistryKey::AquariusPoolIndex);
+
+        Ok(())
+    }
+
     pub fn get_lendingpool_xlm(env: &Env) -> Result<Address, RegistryContractError> {
         let res: Address = env
             .storage()
@@ -315,6 +346,38 @@ impl RegistryContract {
             .persistent()
             .get(&RegistryKey::BlendPoolContract)
             .unwrap_or_else(|| panic!("Failed to get blend_pool contract address"));
+        Ok(res)
+    }
+    
+    pub fn has_blend_pool_address(env: &Env) -> bool {
+        env
+            .storage()
+            .persistent()
+            .has(&RegistryKey::BlendPoolContract)
+    }
+
+    pub fn get_aquarius_router_address(env: &Env) -> Result<Address, RegistryContractError> {
+        let res: Address = env
+            .storage()
+            .persistent()
+            .get(&RegistryKey::AquariusRouterContract)
+            .unwrap_or_else(|| panic!("Failed to get aquarius_router contract address"));
+        Ok(res)
+    }
+    
+    pub fn has_aquarius_router_address(env: &Env) -> bool {
+        env
+            .storage()
+            .persistent()
+            .has(&RegistryKey::AquariusRouterContract)
+    }
+
+    pub fn get_aquarius_pool_index(env: &Env) -> Result<BytesN<32>, RegistryContractError> {
+        let res: BytesN<32> = env
+            .storage()
+            .persistent()
+            .get(&RegistryKey::AquariusPoolIndex)
+            .unwrap_or_else(|| panic!("Failed to get aquarius pool index"));
         Ok(res)
     }
 

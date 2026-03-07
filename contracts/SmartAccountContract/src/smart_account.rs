@@ -15,12 +15,18 @@ use blend_contract_sdk::pool::{PoolConfig, ReserveConfig, ReserveData};
 
 use blend_contract_sdk::pool::{Client as BlendPoolClient, Request};
 
+// Aquarius liquidity pool router imports
+use soroban_sdk::BytesN;
+
 const TLL_LEDGERS_YEAR: u32 = 6307200;
 const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 const WAD_U128: u128 = 10000_0000_00000_00000; // 10^18 for decimals
 const XLM_SYMBOL: Symbol = symbol_short!("XLM");
 const USDC_SYMBOL: Symbol = symbol_short!("USDC");
 const EURC_SYMBOL: Symbol = symbol_short!("EURC");
+
+// Aquarius pool pair symbol (for XLM-USDC LP tracking)
+const AQUARIUS_XLM_USDC_SYMBOL: Symbol = symbol_short!("AQ_XLM_U");
 
 #[contract]
 pub struct SmartAccountContract;
@@ -280,22 +286,60 @@ impl SmartAccountContract {
         account_manager.require_auth();
 
         let registry_address = Self::get_registry_address(&env);
-
         let registry_client = registry_contract::Client::new(env, &registry_address);
-        let blend_pool_address = registry_client.get_blend_pool_address();
         let smart_account = env.current_contract_address();
 
-        let mut request_type: u32 = 0;
-
-        match action {
-            SmartAccExternalAction::Deposit => request_type = 0,
-            SmartAccExternalAction::Withdraw => request_type = 1,
-            SmartAccExternalAction::Swap => request_type = 10,
+        // Determine which protocol this is
+        // First check if it's an Aquarius-only action (AddLiquidity or RemoveLiquidity)
+        let is_aquarius_action = matches!(action, SmartAccExternalAction::AddLiquidity | SmartAccExternalAction::RemoveLiquidity);
+        
+        if is_aquarius_action {
+            return Self::execute_aquarius(
+                env,
+                &registry_client,
+                action,
+                &trader_address,
+                &smart_account,
+                tokens,
+                tokens_amount_wad,
+            );
         }
 
-        if target_protocol == blend_pool_address {
-            let pool_address = registry_client.get_blend_pool_address();
-            let blend_pool_client = BlendPoolClient::new(env, &pool_address);
+        // For shared actions (Deposit, Withdraw, Swap), check target_protocol address
+        // to determine which protocol to route to
+        // We'll check Aquarius first (supports more actions), then Blend
+        
+        // Check if Aquarius router is configured
+        if registry_client.has_aquarius_router_address() {
+            let aquarius_router_address = registry_client.get_aquarius_router_address();
+            if target_protocol == aquarius_router_address {
+                return Self::execute_aquarius(
+                    env,
+                    &registry_client,
+                    action,
+                    &trader_address,
+                    &smart_account,
+                    tokens,
+                    tokens_amount_wad,
+                );
+            }
+        }
+        
+        // Check if Blend pool is configured
+        if registry_client.has_blend_pool_address() {
+            let blend_pool_address = registry_client.get_blend_pool_address();
+            if target_protocol == blend_pool_address {
+                // Handle Blend protocol operations
+                let mut request_type: u32 = 0;
+
+                match action {
+                    SmartAccExternalAction::Deposit => request_type = 0,
+                    SmartAccExternalAction::Withdraw => request_type = 1,
+                    SmartAccExternalAction::Swap => request_type = 10,
+                    _ => panic!("Invalid action for Blend protocol"),
+                }
+                
+                let blend_pool_client = BlendPoolClient::new(env, &blend_pool_address);
 
             for (token, amt_wad) in tokens.iter().zip(tokens_amount_wad) {
                 log!(&env, "Token symbol passed: {}", token);
@@ -413,11 +457,219 @@ impl SmartAccountContract {
                     panic!("No external protocol mapped for the given token symbol");
                 }
             }
-        } else {
-            panic!("No external protocol mapped for the given id");
+                return Ok((false, 0));
+            }
         }
+        
+        // No matching protocol found
+        panic!("No external protocol mapped for the given protocol address");
+    }
 
-        Ok((false, 0))
+    fn execute_aquarius(
+        env: &Env,
+        registry_client: &registry_contract::Client,
+        action: SmartAccExternalAction,
+        trader_address: &Address,
+        smart_account: &Address,
+        tokens: Vec<Symbol>,
+        tokens_amount_wad: Vec<u128>,
+    ) -> Result<(bool, i128), SmartAccountError> {
+        let router_address = registry_client.get_aquarius_router_address();
+        let router_client = aquarius_router_contract::Client::new(env, &router_address);
+
+        match action {
+            SmartAccExternalAction::AddLiquidity => {
+                // Add liquidity to XLM/USDC pool
+                if tokens.len() != 2 {
+                    panic!("AddLiquidity requires exactly 2 tokens");
+                }
+
+                let token0 = tokens.get(0).unwrap();
+                let token1 = tokens.get(1).unwrap();
+                let amount0_wad = tokens_amount_wad.get(0).unwrap();
+                let amount1_wad = tokens_amount_wad.get(1).unwrap();
+
+                // Get token addresses
+                let token0_address = if token0 == XLM_SYMBOL {
+                    registry_client.get_xlm_contract_adddress()
+                } else if token0 == USDC_SYMBOL {
+                    registry_client.get_usdc_contract_address()
+                } else {
+                    panic!("Unsupported token for Aquarius");
+                };
+
+                let token1_address = if token1 == XLM_SYMBOL {
+                    registry_client.get_xlm_contract_adddress()
+                } else if token1 == USDC_SYMBOL {
+                    registry_client.get_usdc_contract_address()
+                } else {
+                    panic!("Unsupported token for Aquarius");
+                };
+
+                let token0_client = token::Client::new(env, &token0_address);
+                let token1_client = token::Client::new(env, &token1_address);
+
+                // Convert from WAD to token decimals
+                let amount0 = Self::scale_from_wad(amount0_wad, token0_client.decimals());
+                let amount1 = Self::scale_from_wad(amount1_wad, token1_client.decimals());
+
+                // Ensure tokens are sorted (Aquarius requirement)
+                let mut token_vec = soroban_sdk::vec![env, token0_address.clone(), token1_address.clone()];
+                if token0_address > token1_address {
+                    token_vec = soroban_sdk::vec![env, token1_address.clone(), token0_address.clone()];
+                }
+
+                // Init pool (will return existing if already initialized)
+                let fee_fraction = 30u32; // 0.3% fee
+                let (pool_index, _pool_addr) = router_client.init_standard_pool(
+                    smart_account,
+                    &token_vec,
+                    &fee_fraction,
+                );
+
+                // Prepare deposit amounts (must match token order)
+                let desired_amounts = if token0_address < token1_address {
+                    soroban_sdk::vec![env, amount0 as u128, amount1 as u128]
+                } else {
+                    soroban_sdk::vec![env, amount1 as u128, amount0 as u128]
+                };
+
+                // Deposit liquidity
+                let min_shares = 0u128; // Slippage protection can be added
+                let (_deposited_amounts, lp_tokens_received) = router_client.deposit(
+                    smart_account,
+                    &token_vec,
+                    &pool_index,
+                    &desired_amounts,
+                    &min_shares,
+                );
+
+                log!(
+                    env,
+                    "Aquarius AddLiquidity: LP tokens received {}",
+                    lp_tokens_received
+                );
+
+                return Ok((true, lp_tokens_received as i128));
+            }
+
+            SmartAccExternalAction::RemoveLiquidity => {
+                // Remove liquidity from XLM/USDC pool
+                if tokens.len() != 2 {
+                    panic!("RemoveLiquidity requires exactly 2 tokens");
+                }
+
+                let token0 = tokens.get(0).unwrap();
+                let token1 = tokens.get(1).unwrap();
+                let lp_amount = tokens_amount_wad.get(0).unwrap(); // LP token amount in first position
+
+                // Get token addresses
+                let token0_address = if token0 == XLM_SYMBOL {
+                    registry_client.get_xlm_contract_adddress()
+                } else if token0 == USDC_SYMBOL {
+                    registry_client.get_usdc_contract_address()
+                } else {
+                    panic!("Unsupported token for Aquarius");
+                };
+
+                let token1_address = if token1 == XLM_SYMBOL {
+                    registry_client.get_xlm_contract_adddress()
+                } else if token1 == USDC_SYMBOL {
+                    registry_client.get_usdc_contract_address()
+                } else {
+                    panic!("Unsupported token for Aquarius");
+                };
+
+                // Ensure tokens are sorted
+                let mut token_vec = soroban_sdk::vec![env, token0_address.clone(), token1_address.clone()];
+                if token0_address > token1_address {
+                    token_vec = soroban_sdk::vec![env, token1_address.clone(), token0_address.clone()];
+                }
+
+                // Get pool index from registry (assuming it's stored)
+                let pool_index = registry_client.get_aquarius_pool_index();
+
+                // Withdraw liquidity
+                let min_amounts = soroban_sdk::vec![env, 0u128, 0u128]; // Slippage protection
+                let _amounts_out = router_client.withdraw(
+                    smart_account,
+                    &token_vec,
+                    &pool_index,
+                    &lp_amount,
+                    &min_amounts,
+                );
+
+                log!(
+                    env,
+                    "Aquarius RemoveLiquidity: LP tokens burned {}",
+                    lp_amount
+                );
+
+                return Ok((true, -(lp_amount as i128)));
+            }
+
+            SmartAccExternalAction::Swap => {
+                // Swap tokens in Aquarius pool
+                if tokens.len() != 2 {
+                    panic!("Swap requires exactly 2 tokens (in and out)");
+                }
+
+                let token_in = tokens.get(0).unwrap();
+                let token_out = tokens.get(1).unwrap();
+                let amount_in_wad = tokens_amount_wad.get(0).unwrap();
+
+                // Get token addresses
+                let token_in_address = if token_in == XLM_SYMBOL {
+                    registry_client.get_xlm_contract_adddress()
+                } else if token_in == USDC_SYMBOL {
+                    registry_client.get_usdc_contract_address()
+                } else {
+                    panic!("Unsupported token for Aquarius swap");
+                };
+
+                let token_out_address = if token_out == XLM_SYMBOL {
+                    registry_client.get_xlm_contract_adddress()
+                } else if token_out == USDC_SYMBOL {
+                    registry_client.get_usdc_contract_address()
+                } else {
+                    panic!("Unsupported token for Aquarius swap");
+                };
+
+                let token_in_client = token::Client::new(env, &token_in_address);
+                let amount_in = Self::scale_from_wad(amount_in_wad, token_in_client.decimals());
+
+                // Ensure tokens are sorted
+                let mut token_vec = soroban_sdk::vec![env, token_in_address.clone(), token_out_address.clone()];
+                if token_in_address > token_out_address {
+                    token_vec = soroban_sdk::vec![env, token_out_address.clone(), token_in_address.clone()];
+                }
+
+                let pool_index = registry_client.get_aquarius_pool_index();
+                let min_amount_out = 0u128; // Slippage protection
+
+                // Execute swap
+                let amount_out = router_client.swap(
+                    smart_account,
+                    &token_vec,
+                    &token_in_address,
+                    &token_out_address,
+                    &pool_index,
+                    &(amount_in as u128),
+                    &min_amount_out,
+                );
+
+                log!(
+                    env,
+                    "Aquarius Swap: {} -> {} out",
+                    amount_in,
+                    amount_out
+                );
+
+                return Ok((true, 0)); // Swap doesn't affect LP tracking
+            }
+
+            _ => panic!("Invalid action for Aquarius protocol"),
+        }
     }
 
     fn set_borrowed_token_list(env: &Env, list: Vec<Symbol>) {
@@ -583,3 +835,48 @@ pub mod tracking_token_contract {
         file = "../../target/wasm32v1-none/release/tracking_token_contract.wasm"
     );
 }
+
+// Aquarius Router Client trait (will be implemented by actual router contract)
+pub mod aquarius_router_contract {
+    use soroban_sdk::{contractclient, Address, BytesN, Env, Vec};
+    
+    #[contractclient(name = "Client")]
+    pub trait AquariusRouterTrait {
+        fn init_standard_pool(
+            env: Env,
+            sender: Address,
+            tokens: Vec<Address>,
+            fee_fraction: u32,
+        ) -> (BytesN<32>, Address);
+        
+        fn deposit(
+            env: Env,
+            sender: Address,
+            tokens: Vec<Address>,
+            pool_id: BytesN<32>,
+            desired_amounts: Vec<u128>,
+            min_shares: u128,
+        ) -> (Vec<u128>, u128);
+        
+        fn withdraw(
+            env: Env,
+            sender: Address,
+            tokens: Vec<Address>,
+            pool_id: BytesN<32>,
+            share_amount: u128,
+            min_amounts: Vec<u128>,
+        ) -> Vec<u128>;
+        
+        fn swap(
+            env: Env,
+            sender: Address,
+            tokens: Vec<Address>,
+            token_in: Address,
+            token_out: Address,
+            pool_id: BytesN<32>,
+            amount_in: u128,
+            min_amount_out: u128,
+        ) -> u128;
+    }
+}
+
