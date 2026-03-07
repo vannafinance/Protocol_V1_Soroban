@@ -904,3 +904,237 @@ fn test_aquarius_single_token_to_liquidity_flow() {
     let final_lp_balance = tracking_client.balance(&smart_account, &lp_tracking_symbol);
     assert_eq!(final_lp_balance, 0, "All LP tokens should be burned");
 }
+
+// ============================================================================
+// Full Cycle: Create Account → Deposit Collateral → Borrow → Open Aquarius Position
+// ============================================================================
+
+#[derive(Clone)]
+#[contracttype]
+enum MockLendingPoolKey {
+    BorrowBalance(Address),
+}
+
+#[contract]
+pub struct MockLendingPool;
+
+#[contractimpl]
+impl MockLendingPool {
+    pub fn lend_to(env: Env, borrower: Address, amount_wad: U256) -> bool {
+        let current: U256 = env
+            .storage()
+            .persistent()
+            .get(&MockLendingPoolKey::BorrowBalance(borrower.clone()))
+            .unwrap_or(U256::from_u128(&env, 0));
+        env.storage()
+            .persistent()
+            .set(&MockLendingPoolKey::BorrowBalance(borrower), &current.add(&amount_wad));
+        true
+    }
+
+    pub fn get_borrow_balance(env: Env, borrower: Address) -> U256 {
+        env.storage()
+            .persistent()
+            .get(&MockLendingPoolKey::BorrowBalance(borrower))
+            .unwrap_or(U256::from_u128(&env, 0))
+    }
+
+    pub fn get_user_borrow_shares(env: Env, borrower: Address) -> U256 {
+        env.storage()
+            .persistent()
+            .get(&MockLendingPoolKey::BorrowBalance(borrower))
+            .unwrap_or(U256::from_u128(&env, 0))
+    }
+
+    pub fn collect_from(env: Env, amount_wad: U256, borrower: Address) -> bool {
+        let current: U256 = env
+            .storage()
+            .persistent()
+            .get(&MockLendingPoolKey::BorrowBalance(borrower.clone()))
+            .unwrap_or(U256::from_u128(&env, 0));
+        let remaining = if amount_wad >= current {
+            U256::from_u128(&env, 0)
+        } else {
+            current.sub(&amount_wad)
+        };
+        env.storage()
+            .persistent()
+            .set(&MockLendingPoolKey::BorrowBalance(borrower), &remaining);
+        remaining == U256::from_u128(&env, 0)
+    }
+}
+
+#[contract]
+pub struct MockRiskEngine;
+
+#[contractimpl]
+impl MockRiskEngine {
+    pub fn is_borrow_allowed(_env: Env, _symbol: Symbol, _amount: U256, _account: Address) -> bool {
+        true
+    }
+
+    pub fn is_withdraw_allowed(_env: Env, _symbol: Symbol, _amount: U256, _account: Address) -> bool {
+        true
+    }
+}
+
+struct FullCycleTestContext {
+    env: Env,
+    user: Address,
+    account_manager: Address,
+    aquarius_router: Address,
+    tracking_token: Address,
+    xlm: Address,
+    usdc: Address,
+}
+
+fn setup_full_cycle() -> FullCycleTestContext {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let registry = Address::generate(&env);
+    let account_manager = Address::generate(&env);
+
+    env.register_at(&registry, RegistryContract, (admin.clone(),));
+    env.register_at(
+        &account_manager,
+        AccountManagerContract,
+        (admin.clone(), registry.clone()),
+    );
+
+    let xlm_token = env.register_stellar_asset_contract_v2(admin.clone());
+    let usdc_token = env.register_stellar_asset_contract_v2(admin.clone());
+
+    // Mint XLM to user so deposit_collateral_tokens can transfer it (200 XLM, 7 decimals)
+    StellarAssetClient::new(&env, &xlm_token.address()).mint(&user, &2_000_000_000i128);
+
+    // Register Aquarius router and init XLM-USDC pool
+    let aquarius_router = env.register(MockAquariusRouter, ());
+    let aquarius_router_client = MockAquariusRouterClient::new(&env, &aquarius_router);
+    aquarius_router_client.init(&admin);
+    let mut tokens = Vec::new(&env);
+    tokens.push_back(xlm_token.address());
+    tokens.push_back(usdc_token.address());
+    let (pool_index, _) = aquarius_router_client.init_standard_pool(&admin, &tokens, &30u32);
+
+    // Register mock USDC lending pool and mock risk engine
+    let lending_pool_usdc = env.register(MockLendingPool, ());
+    let risk_engine = env.register(MockRiskEngine, ());
+
+    // Register tracking token and initialise AQ_XLM_USDC symbol
+    let tracking_token = env.register(TrackingToken, ());
+    let tracking_client = TrackingTokenClient::new(&env, &tracking_token);
+    tracking_client.initialize(
+        &account_manager,
+        &Symbol::new(&env, AQUARIUS_XLM_USDC),
+        &7u32,
+        &String::from_str(&env, "Aquarius XLM-USDC LP"),
+    );
+
+    // Configure registry
+    let registry_client = RegistryContractClient::new(&env, &registry);
+    let smart_hash = env.deployer().upload_contract_wasm(SMART_ACCOUNT_WASM);
+    registry_client.set_smart_account_hash(&smart_hash);
+    registry_client.set_native_xlm_contract_address(&xlm_token.address());
+    registry_client.set_native_usdc_contract_address(&usdc_token.address());
+    registry_client.set_lendingpool_usdc(&lending_pool_usdc);
+    registry_client.set_risk_engine_address(&risk_engine);
+    registry_client.set_aquarius_router_address(&aquarius_router);
+    registry_client.set_aquarius_pool_index(&pool_index);
+    registry_client.set_tracking_token_contract_addr(&tracking_token);
+    registry_client.set_accountmanager_contract(&account_manager);
+
+    // Allow XLM as collateral and set asset cap on account manager
+    let am_client = AccountManagerContractClient::new(&env, &account_manager);
+    am_client.set_max_asset_cap(&U256::from_u128(&env, 10));
+    am_client.set_iscollateral_allowed(&XLM_SYMBOL);
+
+    FullCycleTestContext {
+        env,
+        user,
+        account_manager,
+        aquarius_router,
+        tracking_token,
+        xlm: xlm_token.address(),
+        usdc: usdc_token.address(),
+    }
+}
+
+#[test]
+fn test_full_cycle_deposit_collateral_borrow_open_aquarius_position() {
+    let ctx = setup_full_cycle();
+    let am_client = AccountManagerContractClient::new(&ctx.env, &ctx.account_manager);
+
+    // Step 1: Create margin account
+    let smart_account = am_client.create_account(&ctx.user);
+
+    // Step 2: Deposit 100 XLM as collateral
+    let collateral_wad = 100u128 * WAD_U128;
+    am_client.deposit_collateral_tokens(
+        &smart_account,
+        &XLM_SYMBOL,
+        &U256::from_u128(&ctx.env, collateral_wad),
+    );
+
+    // Verify collateral is recorded in the smart account (in WAD)
+    let sa_client =
+        account_manager_contract::account_manager::smart_account_contract::Client::new(
+            &ctx.env,
+            &smart_account,
+        );
+    assert_eq!(
+        sa_client.get_collateral_token_balance(&XLM_SYMBOL),
+        U256::from_u128(&ctx.env, collateral_wad),
+        "Collateral balance must be recorded in WAD"
+    );
+
+    // Step 3: Borrow 50 USDC against the XLM collateral
+    let borrow_wad = 50u128 * WAD_U128;
+    am_client.borrow(
+        &smart_account,
+        &U256::from_u128(&ctx.env, borrow_wad),
+        &USDC_SYMBOL,
+    );
+
+    // Verify the smart account now carries debt
+    assert!(sa_client.has_debt(), "Smart account must have debt after borrowing");
+    assert!(
+        sa_client.get_all_borrowed_tokens().contains(USDC_SYMBOL),
+        "USDC must appear in borrowed tokens list"
+    );
+
+    // Step 4: Open Aquarius position — add 40 XLM + 40 USDC liquidity
+    let xlm_lp_wad = 40u128 * WAD_U128;
+    let usdc_lp_wad = 40u128 * WAD_U128;
+    let open_position_call = build_aquarius_add_liquidity_call(
+        &ctx.env,
+        ctx.aquarius_router.clone(),
+        XLM_SYMBOL,
+        USDC_SYMBOL,
+        xlm_lp_wad,
+        usdc_lp_wad,
+        smart_account.clone(),
+    );
+    am_client.execute(&smart_account, &open_position_call);
+
+    // Verify LP tracking tokens were minted
+    // Mock LP formula: (scaled_xlm + scaled_usdc) / 2
+    let xlm_scaled = scale_wad_to_token(xlm_lp_wad, 7);
+    let usdc_scaled = scale_wad_to_token(usdc_lp_wad, 7);
+    let expected_lp = (xlm_scaled + usdc_scaled) / 2;
+
+    let tracking_client = TrackingTokenClient::new(&ctx.env, &ctx.tracking_token);
+    let lp_symbol = Symbol::new(&ctx.env, AQUARIUS_XLM_USDC);
+    let lp_balance = tracking_client.balance(&smart_account, &lp_symbol);
+
+    assert!(lp_balance > 0, "LP tracking tokens must be minted after opening position");
+    assert_eq!(lp_balance, expected_lp, "LP balance must match mock pool formula");
+
+    // Verify the LP symbol is now tracked as collateral in the smart account
+    assert!(
+        sa_client.get_all_collateral_tokens().contains(lp_symbol),
+        "Aquarius LP tracking symbol must be added to smart account collateral"
+    );
+}
