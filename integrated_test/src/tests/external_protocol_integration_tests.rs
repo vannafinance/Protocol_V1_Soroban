@@ -422,6 +422,8 @@ const AQUARIUS_XLM_USDC: &str = "AQ_XLM_USDC";
 enum MockAquariusKey {
     Admin,
     PoolIndex,
+    PoolAddress,
+    ShareTokenAddress,
     LPBalance(Address),
     TokenBalance(Address, Address), // (user, token)
 }
@@ -445,17 +447,44 @@ impl MockAquariusRouter {
         fee_fraction: u32,
     ) -> (soroban_sdk::BytesN<32>, Address) {
         let pool_index = env.crypto().sha256(&tokens.to_xdr(&env));
+        let self_address = env.current_contract_address();
         env.storage()
             .persistent()
             .set(&MockAquariusKey::PoolIndex, &pool_index);
-        (soroban_sdk::BytesN::from_array(&env, &pool_index.to_array()), sender.clone())
+        env.storage()
+            .persistent()
+            .set(&MockAquariusKey::PoolAddress, &self_address);
+        env.storage()
+            .persistent()
+            .set(&MockAquariusKey::ShareTokenAddress, &self_address);
+        (soroban_sdk::BytesN::from_array(&env, &pool_index.to_array()), self_address.clone())
+    }
+
+    pub fn get_pool(
+        env: Env,
+        tokens: Vec<Address>,
+        pool_id: soroban_sdk::BytesN<32>,
+    ) -> Address {
+        env.storage()
+            .persistent()
+            .get(&MockAquariusKey::PoolAddress)
+            .unwrap_or_else(|| panic!("Mock pool address not set"))
+    }
+
+    pub fn share_id(
+        env: Env,
+        tokens: Vec<Address>,
+        pool_id: soroban_sdk::BytesN<32>,
+    ) -> Address {
+        env.storage()
+            .persistent()
+            .get(&MockAquariusKey::ShareTokenAddress)
+            .unwrap_or_else(|| panic!("Mock share token address not set"))
     }
 
     pub fn deposit(
         env: Env,
-        sender: Address,
-        tokens: Vec<Address>,
-        pool_id: soroban_sdk::BytesN<32>,
+        user: Address,
         desired_amounts: Vec<u128>,
         min_shares: u128,
     ) -> (Vec<u128>, u128) {
@@ -467,28 +496,26 @@ impl MockAquariusRouter {
         let current_lp = env
             .storage()
             .persistent()
-            .get(&MockAquariusKey::LPBalance(sender.clone()))
+            .get(&MockAquariusKey::LPBalance(user.clone()))
             .unwrap_or(0u128);
 
         env.storage()
             .persistent()
-            .set(&MockAquariusKey::LPBalance(sender), &(current_lp + lp_tokens));
+            .set(&MockAquariusKey::LPBalance(user), &(current_lp + lp_tokens));
 
         (desired_amounts, lp_tokens)
     }
 
     pub fn withdraw(
         env: Env,
-        sender: Address,
-        tokens: Vec<Address>,
-        pool_id: soroban_sdk::BytesN<32>,
+        user: Address,
         share_amount: u128,
         min_amounts: Vec<u128>,
     ) -> Vec<u128> {
         let current_lp = env
             .storage()
             .persistent()
-            .get(&MockAquariusKey::LPBalance(sender.clone()))
+            .get(&MockAquariusKey::LPBalance(user.clone()))
             .unwrap_or(0u128);
 
         if share_amount > current_lp {
@@ -498,7 +525,7 @@ impl MockAquariusRouter {
         env.storage()
             .persistent()
             .set(
-                &MockAquariusKey::LPBalance(sender),
+                &MockAquariusKey::LPBalance(user),
                 &(current_lp - share_amount),
             );
 
@@ -1136,5 +1163,554 @@ fn test_full_cycle_deposit_collateral_borrow_open_aquarius_position() {
     assert!(
         sa_client.get_all_collateral_tokens().contains(lp_symbol),
         "Aquarius LP tracking symbol must be added to smart account collateral"
+    );
+}
+
+// ============================================================================
+// Soroswap Protocol Integration Tests
+// ============================================================================
+
+const SOROSWAP_XLM_USDC: &str = "SS_XLM_USDC";
+
+// ---------------------------------------------------------------------------
+// Mock Soroswap Router
+// A self-contained mock that tracks LP balances internally.
+// Uses mock_all_auths() so no actual token transfers occur.
+// ---------------------------------------------------------------------------
+
+#[derive(Clone)]
+#[contracttype]
+enum MockSoroswapKey {
+    Admin,
+    PairAddress,
+    LPBalance(Address),
+}
+
+#[contract]
+pub struct MockSoroswapRouter;
+
+#[contractimpl]
+impl MockSoroswapRouter {
+    /// Initialise the mock router with an admin and a dummy pair address.
+    pub fn init(env: Env, admin: Address, pair_address: Address) {
+        admin.require_auth();
+        env.storage()
+            .persistent()
+            .set(&MockSoroswapKey::Admin, &admin);
+        env.storage()
+            .persistent()
+            .set(&MockSoroswapKey::PairAddress, &pair_address);
+    }
+
+    /// Add liquidity: LP = (amount_a + amount_b) / 2 for simplicity.
+    pub fn add_liquidity(
+        env: Env,
+        _token_a: Address,
+        _token_b: Address,
+        amount_a_desired: i128,
+        amount_b_desired: i128,
+        _amount_a_min: i128,
+        _amount_b_min: i128,
+        to: Address,
+        _deadline: u64,
+    ) -> (i128, i128, i128) {
+        let lp = (amount_a_desired + amount_b_desired) / 2;
+        let current: i128 = env
+            .storage()
+            .persistent()
+            .get(&MockSoroswapKey::LPBalance(to.clone()))
+            .unwrap_or(0i128);
+        env.storage()
+            .persistent()
+            .set(&MockSoroswapKey::LPBalance(to), &(current + lp));
+        (amount_a_desired, amount_b_desired, lp)
+    }
+
+    /// Remove liquidity: burns LP tokens and returns equal token amounts.
+    pub fn remove_liquidity(
+        env: Env,
+        _token_a: Address,
+        _token_b: Address,
+        liquidity: i128,
+        _amount_a_min: i128,
+        _amount_b_min: i128,
+        to: Address,
+        _deadline: u64,
+    ) -> (i128, i128) {
+        let current: i128 = env
+            .storage()
+            .persistent()
+            .get(&MockSoroswapKey::LPBalance(to.clone()))
+            .unwrap_or(0i128);
+        if liquidity > current {
+            panic!("Insufficient LP tokens in mock");
+        }
+        env.storage()
+            .persistent()
+            .set(&MockSoroswapKey::LPBalance(to), &(current - liquidity));
+        (liquidity / 2, liquidity / 2)
+    }
+
+    /// Swap: mock 0.3% fee, returns [amount_in, amount_out].
+    pub fn swap_exact_tokens_for_tokens(
+        env: Env,
+        amount_in: i128,
+        _amount_out_min: i128,
+        _path: Vec<Address>,
+        _to: Address,
+        _deadline: u64,
+    ) -> Vec<i128> {
+        let amount_out = (amount_in * 997) / 1000;
+        soroban_sdk::vec![&env, amount_in, amount_out]
+    }
+
+    /// Returns the stored admin address as a stand-in for the factory.
+    pub fn get_factory(env: Env) -> Address {
+        env.storage()
+            .persistent()
+            .get(&MockSoroswapKey::Admin)
+            .unwrap()
+    }
+
+    /// Returns the stored pair address deterministically.
+    pub fn router_pair_for(env: Env, _token_a: Address, _token_b: Address) -> Address {
+        env.storage()
+            .persistent()
+            .get(&MockSoroswapKey::PairAddress)
+            .unwrap_or_else(|| panic!("Mock pair address not set"))
+    }
+
+    /// Helper for tests: query a user's internal LP balance.
+    pub fn get_lp_balance(env: Env, user: Address) -> i128 {
+        env.storage()
+            .persistent()
+            .get(&MockSoroswapKey::LPBalance(user))
+            .unwrap_or(0i128)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Soroswap test helpers
+// ---------------------------------------------------------------------------
+
+fn build_soroswap_add_liquidity_call(
+    env: &Env,
+    router: Address,
+    token0: Symbol,
+    token1: Symbol,
+    amount0_wad: u128,
+    amount1_wad: u128,
+    smart_account: Address,
+) -> Bytes {
+    let mut tokens_out = Vec::new(env);
+    tokens_out.push_back(token0);
+    tokens_out.push_back(token1);
+
+    let mut amount_out = Vec::new(env);
+    amount_out.push_back(U256::from_u128(env, amount0_wad));
+    amount_out.push_back(U256::from_u128(env, amount1_wad));
+
+    let call = ExternalProtocolCall {
+        protocol_address: router,
+        type_action: SmartAccExternalAction::AddLiquidity,
+        tokens_out,
+        tokens_in: Vec::new(env),
+        amount_out,
+        amount_in: Vec::new(env),
+        is_token_pair: true,
+        token_pair_ratio: 0,
+        margin_account: smart_account,
+        fee_fraction: 30u32,
+        min_liquidity_out: U256::from_u128(env, 0),
+    };
+
+    call.to_xdr(env)
+}
+
+fn build_soroswap_remove_liquidity_call(
+    env: &Env,
+    router: Address,
+    token0: Symbol,
+    token1: Symbol,
+    lp_amount: u128,
+    smart_account: Address,
+) -> Bytes {
+    let mut tokens_out = Vec::new(env);
+    tokens_out.push_back(token0);
+    tokens_out.push_back(token1);
+
+    let mut amount_out = Vec::new(env);
+    amount_out.push_back(U256::from_u128(env, lp_amount));
+
+    let call = ExternalProtocolCall {
+        protocol_address: router,
+        type_action: SmartAccExternalAction::RemoveLiquidity,
+        tokens_out,
+        tokens_in: Vec::new(env),
+        amount_out,
+        amount_in: Vec::new(env),
+        is_token_pair: true,
+        token_pair_ratio: 0,
+        margin_account: smart_account,
+        fee_fraction: 30u32,
+        min_liquidity_out: U256::from_u128(env, 0),
+    };
+
+    call.to_xdr(env)
+}
+
+fn build_soroswap_swap_call(
+    env: &Env,
+    router: Address,
+    token_in: Symbol,
+    token_out: Symbol,
+    amount_in_wad: u128,
+    smart_account: Address,
+) -> Bytes {
+    let mut tokens_out = Vec::new(env);
+    tokens_out.push_back(token_in);
+    tokens_out.push_back(token_out);
+
+    let mut amount_out = Vec::new(env);
+    amount_out.push_back(U256::from_u128(env, amount_in_wad));
+
+    let call = ExternalProtocolCall {
+        protocol_address: router,
+        type_action: SmartAccExternalAction::Swap,
+        tokens_out,
+        tokens_in: Vec::new(env),
+        amount_out,
+        amount_in: Vec::new(env),
+        is_token_pair: false,
+        token_pair_ratio: 0,
+        margin_account: smart_account,
+        fee_fraction: 30u32,
+        min_liquidity_out: U256::from_u128(env, 0),
+    };
+
+    call.to_xdr(env)
+}
+
+// ---------------------------------------------------------------------------
+// Soroswap test context and setup
+// ---------------------------------------------------------------------------
+
+struct SoroswapTestContext {
+    env: Env,
+    admin: Address,
+    user: Address,
+    account_manager: Address,
+    soroswap_router: Address,
+    tracking_token: Address,
+    xlm: Address,
+    usdc: Address,
+}
+
+fn setup_soroswap() -> SoroswapTestContext {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let registry = Address::generate(&env);
+    let account_manager = Address::generate(&env);
+    // Dummy pair address returned by router_pair_for
+    let pair_address = Address::generate(&env);
+
+    env.register_at(&registry, RegistryContract, (admin.clone(),));
+    env.register_at(
+        &account_manager,
+        AccountManagerContract,
+        (admin.clone(), registry.clone()),
+    );
+
+    let xlm_token = env.register_stellar_asset_contract_v2(admin.clone());
+    let usdc_token = env.register_stellar_asset_contract_v2(admin.clone());
+
+    let soroswap_router = env.register(MockSoroswapRouter, ());
+    let soroswap_router_client = MockSoroswapRouterClient::new(&env, &soroswap_router);
+    soroswap_router_client.init(&admin, &pair_address);
+
+    let tracking_token = env.register(TrackingToken, ());
+    let tracking_client = TrackingTokenClient::new(&env, &tracking_token);
+    tracking_client.initialize(
+        &account_manager,
+        &Symbol::new(&env, SOROSWAP_XLM_USDC),
+        &7u32,
+        &String::from_str(&env, "Soroswap XLM-USDC LP"),
+    );
+
+    let registry_client = RegistryContractClient::new(&env, &registry);
+    let smart_hash = env.deployer().upload_contract_wasm(SMART_ACCOUNT_WASM);
+    registry_client.set_smart_account_hash(&smart_hash);
+    registry_client.set_native_xlm_contract_address(&xlm_token.address());
+    registry_client.set_native_usdc_contract_address(&usdc_token.address());
+    registry_client.set_soroswap_router_address(&soroswap_router);
+    registry_client.set_tracking_token_contract_addr(&tracking_token);
+    registry_client.set_accountmanager_contract(&account_manager);
+
+    SoroswapTestContext {
+        env,
+        admin,
+        user,
+        account_manager,
+        soroswap_router,
+        tracking_token,
+        xlm: xlm_token.address(),
+        usdc: usdc_token.address(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Soroswap tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_soroswap_add_liquidity_mints_lp_tracking_tokens() {
+    let ctx = setup_soroswap();
+    let am_client = AccountManagerContractClient::new(&ctx.env, &ctx.account_manager);
+    let smart_account = am_client.create_account(&ctx.user);
+
+    // Add 1000 XLM + 1000 USDC liquidity
+    let xlm_wad = 1000u128 * WAD_U128;
+    let usdc_wad = 1000u128 * WAD_U128;
+
+    let call_bytes = build_soroswap_add_liquidity_call(
+        &ctx.env,
+        ctx.soroswap_router.clone(),
+        XLM_SYMBOL,
+        USDC_SYMBOL,
+        xlm_wad,
+        usdc_wad,
+        smart_account.clone(),
+    );
+    am_client.execute(&smart_account, &call_bytes);
+
+    // Mock LP = (scaled_xlm + scaled_usdc) / 2 = (1000*10^7 + 1000*10^7) / 2 = 10^10
+    let xlm_scaled = scale_wad_to_token(xlm_wad, 7);
+    let usdc_scaled = scale_wad_to_token(usdc_wad, 7);
+    let expected_lp = (xlm_scaled + usdc_scaled) / 2;
+
+    let tracking_client = TrackingTokenClient::new(&ctx.env, &ctx.tracking_token);
+    let lp_symbol = Symbol::new(&ctx.env, SOROSWAP_XLM_USDC);
+    let lp_balance = tracking_client.balance(&smart_account, &lp_symbol);
+
+    assert!(lp_balance > 0, "LP tracking tokens must be minted");
+    assert_eq!(lp_balance, expected_lp, "LP balance must match mock formula");
+}
+
+#[test]
+fn test_soroswap_remove_liquidity_burns_lp_tracking_tokens() {
+    let ctx = setup_soroswap();
+    let am_client = AccountManagerContractClient::new(&ctx.env, &ctx.account_manager);
+    let smart_account = am_client.create_account(&ctx.user);
+
+    // First add liquidity
+    let xlm_wad = 2000u128 * WAD_U128;
+    let usdc_wad = 2000u128 * WAD_U128;
+
+    let add_call = build_soroswap_add_liquidity_call(
+        &ctx.env,
+        ctx.soroswap_router.clone(),
+        XLM_SYMBOL,
+        USDC_SYMBOL,
+        xlm_wad,
+        usdc_wad,
+        smart_account.clone(),
+    );
+    am_client.execute(&smart_account, &add_call);
+
+    let tracking_client = TrackingTokenClient::new(&ctx.env, &ctx.tracking_token);
+    let lp_symbol = Symbol::new(&ctx.env, SOROSWAP_XLM_USDC);
+    let initial_lp = tracking_client.balance(&smart_account, &lp_symbol);
+    assert!(initial_lp > 0);
+
+    // Remove half the LP tokens
+    let remove_amount = (initial_lp / 2) as u128;
+    let remove_call = build_soroswap_remove_liquidity_call(
+        &ctx.env,
+        ctx.soroswap_router.clone(),
+        XLM_SYMBOL,
+        USDC_SYMBOL,
+        remove_amount,
+        smart_account.clone(),
+    );
+    am_client.execute(&smart_account, &remove_call);
+
+    let final_lp = tracking_client.balance(&smart_account, &lp_symbol);
+    assert_eq!(
+        final_lp,
+        initial_lp - remove_amount as i128,
+        "LP tracking tokens must be burned correctly"
+    );
+}
+
+#[test]
+fn test_soroswap_swap_does_not_change_lp_tracking() {
+    let ctx = setup_soroswap();
+    let am_client = AccountManagerContractClient::new(&ctx.env, &ctx.account_manager);
+    let smart_account = am_client.create_account(&ctx.user);
+
+    // Add liquidity first
+    let add_call = build_soroswap_add_liquidity_call(
+        &ctx.env,
+        ctx.soroswap_router.clone(),
+        XLM_SYMBOL,
+        USDC_SYMBOL,
+        500u128 * WAD_U128,
+        500u128 * WAD_U128,
+        smart_account.clone(),
+    );
+    am_client.execute(&smart_account, &add_call);
+
+    let tracking_client = TrackingTokenClient::new(&ctx.env, &ctx.tracking_token);
+    let lp_symbol = Symbol::new(&ctx.env, SOROSWAP_XLM_USDC);
+    let lp_before_swap = tracking_client.balance(&smart_account, &lp_symbol);
+
+    // Execute a swap
+    let swap_call = build_soroswap_swap_call(
+        &ctx.env,
+        ctx.soroswap_router.clone(),
+        XLM_SYMBOL,
+        USDC_SYMBOL,
+        100u128 * WAD_U128,
+        smart_account.clone(),
+    );
+    am_client.execute(&smart_account, &swap_call);
+
+    let lp_after_swap = tracking_client.balance(&smart_account, &lp_symbol);
+    assert_eq!(
+        lp_after_swap, lp_before_swap,
+        "Swap must not change LP tracking token balance"
+    );
+}
+
+#[test]
+fn test_soroswap_full_flow_add_swap_remove() {
+    let ctx = setup_soroswap();
+    let am_client = AccountManagerContractClient::new(&ctx.env, &ctx.account_manager);
+    let smart_account = am_client.create_account(&ctx.user);
+
+    let tracking_client = TrackingTokenClient::new(&ctx.env, &ctx.tracking_token);
+    let lp_symbol = Symbol::new(&ctx.env, SOROSWAP_XLM_USDC);
+
+    // Step 1: Add liquidity with 3000 XLM + 3000 USDC
+    let add_call = build_soroswap_add_liquidity_call(
+        &ctx.env,
+        ctx.soroswap_router.clone(),
+        XLM_SYMBOL,
+        USDC_SYMBOL,
+        3000u128 * WAD_U128,
+        3000u128 * WAD_U128,
+        smart_account.clone(),
+    );
+    am_client.execute(&smart_account, &add_call);
+    let lp_after_add = tracking_client.balance(&smart_account, &lp_symbol);
+    assert!(lp_after_add > 0, "LP tokens must be minted after adding liquidity");
+
+    // Step 2: Swap — LP balance must remain unchanged
+    let swap_call = build_soroswap_swap_call(
+        &ctx.env,
+        ctx.soroswap_router.clone(),
+        XLM_SYMBOL,
+        USDC_SYMBOL,
+        500u128 * WAD_U128,
+        smart_account.clone(),
+    );
+    am_client.execute(&smart_account, &swap_call);
+    assert_eq!(
+        tracking_client.balance(&smart_account, &lp_symbol),
+        lp_after_add,
+        "Swap must not affect LP balance"
+    );
+
+    // Step 3: Remove all LP — balance must drop to zero
+    let remove_call = build_soroswap_remove_liquidity_call(
+        &ctx.env,
+        ctx.soroswap_router.clone(),
+        XLM_SYMBOL,
+        USDC_SYMBOL,
+        lp_after_add as u128,
+        smart_account.clone(),
+    );
+    am_client.execute(&smart_account, &remove_call);
+    assert_eq!(
+        tracking_client.balance(&smart_account, &lp_symbol),
+        0,
+        "All LP tokens must be burned after full removal"
+    );
+}
+
+#[test]
+fn test_soroswap_lp_symbol_added_to_smart_account_collateral() {
+    let ctx = setup_soroswap();
+    let am_client = AccountManagerContractClient::new(&ctx.env, &ctx.account_manager);
+    let smart_account = am_client.create_account(&ctx.user);
+
+    let add_call = build_soroswap_add_liquidity_call(
+        &ctx.env,
+        ctx.soroswap_router.clone(),
+        XLM_SYMBOL,
+        USDC_SYMBOL,
+        1000u128 * WAD_U128,
+        1000u128 * WAD_U128,
+        smart_account.clone(),
+    );
+    am_client.execute(&smart_account, &add_call);
+
+    let sa_client =
+        account_manager_contract::account_manager::smart_account_contract::Client::new(
+            &ctx.env,
+            &smart_account,
+        );
+    let lp_symbol = Symbol::new(&ctx.env, SOROSWAP_XLM_USDC);
+    assert!(
+        sa_client.get_all_collateral_tokens().contains(lp_symbol),
+        "Soroswap LP tracking symbol must be added to smart account collateral"
+    );
+}
+
+#[test]
+fn test_soroswap_add_liquidity_multiple_times_accumulates_lp() {
+    let ctx = setup_soroswap();
+    let am_client = AccountManagerContractClient::new(&ctx.env, &ctx.account_manager);
+    let smart_account = am_client.create_account(&ctx.user);
+
+    let tracking_client = TrackingTokenClient::new(&ctx.env, &ctx.tracking_token);
+    let lp_symbol = Symbol::new(&ctx.env, SOROSWAP_XLM_USDC);
+
+    // First deposit
+    am_client.execute(
+        &smart_account,
+        &build_soroswap_add_liquidity_call(
+            &ctx.env,
+            ctx.soroswap_router.clone(),
+            XLM_SYMBOL,
+            USDC_SYMBOL,
+            1000u128 * WAD_U128,
+            1000u128 * WAD_U128,
+            smart_account.clone(),
+        ),
+    );
+    let lp_after_first = tracking_client.balance(&smart_account, &lp_symbol);
+
+    // Second deposit
+    am_client.execute(
+        &smart_account,
+        &build_soroswap_add_liquidity_call(
+            &ctx.env,
+            ctx.soroswap_router.clone(),
+            XLM_SYMBOL,
+            USDC_SYMBOL,
+            500u128 * WAD_U128,
+            500u128 * WAD_U128,
+            smart_account.clone(),
+        ),
+    );
+    let lp_after_second = tracking_client.balance(&smart_account, &lp_symbol);
+
+    assert!(
+        lp_after_second > lp_after_first,
+        "LP tracking balance must increase after second deposit"
     );
 }

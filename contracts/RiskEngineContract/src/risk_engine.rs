@@ -15,6 +15,9 @@ const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 const _TLL_LEDGERS_MONTH: u32 = 518400;
 const XLM_SYMBOL: Symbol = symbol_short!("XLM");
 const USDC_SYMBOL: Symbol = symbol_short!("USDC");
+const BLUSDC_SYMBOL: Symbol = symbol_short!("BLUSDC");
+const AQUSDC_SYMBOL: Symbol = symbol_short!("AQUSDC");
+const SOUSDC_SYMBOL: Symbol = symbol_short!("SOUSDC");
 const EURC_SYMBOL: Symbol = symbol_short!("EURC");
 const BLEND_XLM: &str = "BLEND_XLM";
 const BLEND_USDC: &str = "BLEND_USDC";
@@ -51,20 +54,24 @@ impl RiskEngineContract {
         let collateral_tokens = smart_account_client.get_all_collateral_tokens();
         let borrowed_tokens = smart_account_client.get_all_borrowed_tokens();
 
+        let borrow_price_symbol = Self::canonical_price_symbol(env, &symbol);
+
         // Build price cache — fetch each unique symbol from oracle exactly once
         let mut price_cache: Map<Symbol, u128> = Map::new(env);
-        Self::cache_price(env, &oracle_client, &symbol, &mut price_cache);
+        Self::cache_price(env, &oracle_client, &borrow_price_symbol, &mut price_cache);
         for token in collateral_tokens.iter() {
             if !Self::is_blend_tracking_symbol(env, &token) {
-                Self::cache_price(env, &oracle_client, &token, &mut price_cache);
+                let price_symbol = Self::canonical_price_symbol(env, &token);
+                Self::cache_price(env, &oracle_client, &price_symbol, &mut price_cache);
             }
         }
         for token in borrowed_tokens.iter() {
-            Self::cache_price(env, &oracle_client, &token, &mut price_cache);
+            let price_symbol = Self::canonical_price_symbol(env, &token);
+            Self::cache_price(env, &oracle_client, &price_symbol, &mut price_cache);
         }
 
         // Borrow value
-        let borrow_price_wad = price_cache.get(symbol.clone()).unwrap_or(0);
+        let borrow_price_wad = price_cache.get(borrow_price_symbol).unwrap_or(0);
         let borrow_value_wad = Self::mul_wad_down(
             env,
             borrow_amount_wad,
@@ -92,7 +99,7 @@ impl RiskEngineContract {
             } else {
                 (
                     smart_account_client.get_collateral_token_balance(&token.clone()),
-                    token.clone(),
+                    Self::canonical_price_symbol(env, &token),
                 )
             };
             let price_wad = price_cache.get(price_symbol).unwrap_or(0);
@@ -103,11 +110,27 @@ impl RiskEngineContract {
             ));
         }
 
+        // Fallback safety: if collateral list is stale/missing but balance exists for the
+        // queried symbol, include it so borrow checks don't false-reject.
+        if !Self::is_blend_tracking_symbol(env, &symbol) && !collateral_tokens.contains(symbol.clone()) {
+            let direct_bal_wad = smart_account_client.get_collateral_token_balance(&symbol);
+            if direct_bal_wad > U256::from_u128(env, 0) {
+                let price_symbol = Self::canonical_price_symbol(env, &symbol);
+                let price_wad = price_cache.get(price_symbol).unwrap_or(0);
+                total_balance_wad = total_balance_wad.add(&Self::mul_wad_down(
+                    env,
+                    direct_bal_wad,
+                    U256::from_u128(env, price_wad),
+                ));
+            }
+        }
+
         // Total debt value — call LendingPools directly (avoids SmartAccount→Registry→Pool chain)
         let mut total_debt_wad = U256::from_u128(env, 0);
         for token in borrowed_tokens.iter() {
             let token_debt_wad = Self::get_debt_direct(env, &registry_client, &token, &margin_account);
-            let price_wad = price_cache.get(token.clone()).unwrap_or(0);
+            let price_symbol = Self::canonical_price_symbol(env, &token);
+            let price_wad = price_cache.get(price_symbol).unwrap_or(0);
             total_debt_wad = total_debt_wad.add(&Self::mul_wad_down(
                 env,
                 token_debt_wad,
@@ -141,19 +164,23 @@ impl RiskEngineContract {
         let collateral_tokens = smart_account_client.get_all_collateral_tokens();
         let borrowed_tokens = smart_account_client.get_all_borrowed_tokens();
 
+        let withdraw_price_symbol = Self::canonical_price_symbol(env, &symbol);
+
         // Build price cache
         let mut price_cache: Map<Symbol, u128> = Map::new(env);
-        Self::cache_price(env, &oracle_client, &symbol, &mut price_cache);
+        Self::cache_price(env, &oracle_client, &withdraw_price_symbol, &mut price_cache);
         for token in collateral_tokens.iter() {
             if !Self::is_blend_tracking_symbol(env, &token) {
-                Self::cache_price(env, &oracle_client, &token, &mut price_cache);
+                let price_symbol = Self::canonical_price_symbol(env, &token);
+                Self::cache_price(env, &oracle_client, &price_symbol, &mut price_cache);
             }
         }
         for token in borrowed_tokens.iter() {
-            Self::cache_price(env, &oracle_client, &token, &mut price_cache);
+            let price_symbol = Self::canonical_price_symbol(env, &token);
+            Self::cache_price(env, &oracle_client, &price_symbol, &mut price_cache);
         }
 
-        let withdraw_price_wad = price_cache.get(symbol.clone()).unwrap_or(0);
+        let withdraw_price_wad = price_cache.get(withdraw_price_symbol).unwrap_or(0);
         let withdraw_value_wad = Self::mul_wad_down(
             env,
             withdraw_amount_wad.clone(),
@@ -180,7 +207,7 @@ impl RiskEngineContract {
             } else {
                 (
                     smart_account_client.get_collateral_token_balance(&token.clone()),
-                    token.clone(),
+                    Self::canonical_price_symbol(env, &token),
                 )
             };
             let price_wad = price_cache.get(price_symbol).unwrap_or(0);
@@ -191,11 +218,26 @@ impl RiskEngineContract {
             ));
         }
 
+        // Fallback safety for stale collateral list state.
+        if !Self::is_blend_tracking_symbol(env, &symbol) && !collateral_tokens.contains(symbol.clone()) {
+            let direct_bal_wad = smart_account_client.get_collateral_token_balance(&symbol);
+            if direct_bal_wad > U256::from_u128(env, 0) {
+                let price_symbol = Self::canonical_price_symbol(env, &symbol);
+                let price_wad = price_cache.get(price_symbol).unwrap_or(0);
+                total_balance_wad = total_balance_wad.add(&Self::mul_wad_down(
+                    env,
+                    direct_bal_wad,
+                    U256::from_u128(env, price_wad),
+                ));
+            }
+        }
+
         // Total debt value — call LendingPools directly
         let mut total_debt_wad = U256::from_u128(env, 0);
         for token in borrowed_tokens.iter() {
             let token_debt_wad = Self::get_debt_direct(env, &registry_client, &token, &margin_account);
-            let price_wad = price_cache.get(token.clone()).unwrap_or(0);
+            let price_symbol = Self::canonical_price_symbol(env, &token);
+            let price_wad = price_cache.get(price_symbol).unwrap_or(0);
             total_debt_wad = total_debt_wad.add(&Self::mul_wad_down(
                 env,
                 token_debt_wad,
@@ -270,8 +312,9 @@ impl RiskEngineContract {
                 )
             };
 
+            let canonical_price_symbol = Self::canonical_price_symbol(&env, &price_symbol);
             let oracle_price_wad =
-                Self::get_oracle_price_wad(&env, &oracle_client, &price_symbol);
+                Self::get_oracle_price_wad(&env, &oracle_client, &canonical_price_symbol);
             // Multiply balance with oracle price
             let balance_wad = Self::mul_wad_down(
                 &env,
@@ -301,7 +344,8 @@ impl RiskEngineContract {
 
         for token in borrowed_tokens.iter() {
             let token_debt_wad = Self::get_debt_direct(env, &registry_client, &token, &margin_account);
-            let oracle_price_wad = Self::get_oracle_price_wad(&env, &oracle_client, &token);
+            let canonical_price_symbol = Self::canonical_price_symbol(&env, &token);
+            let oracle_price_wad = Self::get_oracle_price_wad(&env, &oracle_client, &canonical_price_symbol);
             let debt_value_wad = Self::mul_wad_down(
                 &env,
                 token_debt_wad,
@@ -312,10 +356,13 @@ impl RiskEngineContract {
         Ok(total_debt_usd_wad)
     }
 
-    /// Get a borrower's debt directly from the LendingPool contract,
+    /// Get a borrower's live debt directly from the LendingPool contract,
     /// bypassing the SmartAccount→Registry→LendingPool indirection.
-    /// Uses raw borrow shares (no interest accrual) to avoid the per-pool
-    /// Registry→RateModel→Token chain that causes budget overruns.
+    ///
+    /// NOTE:
+    /// We must use `get_borrow_balance` here (not borrow shares). Shares are an
+    /// internal accounting unit and can diverge from user-visible debt, which can
+    /// incorrectly make healthy accounts look under-collateralized.
     fn get_debt_direct(
         env: &Env,
         registry_client: &registry_contract::Client,
@@ -324,13 +371,19 @@ impl RiskEngineContract {
     ) -> U256 {
         if token == &XLM_SYMBOL {
             lending_protocol_xlm::Client::new(env, &registry_client.get_lendingpool_xlm())
-                .get_user_borrow_shares(margin_account)
-        } else if token == &USDC_SYMBOL {
+                .get_borrow_balance(margin_account)
+        } else if token == &USDC_SYMBOL || token == &BLUSDC_SYMBOL {
             lending_protocol_usdc::Client::new(env, &registry_client.get_lendingpool_usdc())
-                .get_user_borrow_shares(margin_account)
+                .get_borrow_balance(margin_account)
+        } else if token == &AQUSDC_SYMBOL {
+            lending_protocol_usdc::Client::new(env, &registry_client.get_lendingpool_aquarius_usdc())
+                .get_borrow_balance(margin_account)
+        } else if token == &SOUSDC_SYMBOL {
+            lending_protocol_usdc::Client::new(env, &registry_client.get_lendingpool_soroswap_usdc())
+                .get_borrow_balance(margin_account)
         } else if token == &EURC_SYMBOL {
             lending_protocol_eurc::Client::new(env, &registry_client.get_lendingpool_eurc())
-                .get_user_borrow_shares(margin_account)
+                .get_borrow_balance(margin_account)
         } else {
             U256::from_u128(env, 0)
         }
@@ -358,6 +411,18 @@ impl RiskEngineContract {
             let (price, decimals) = oracle_client.get_price_latest(symbol);
             let wad_scale = WAD_U128 / 10_u128.pow(decimals);
             cache.set(symbol.clone(), price * wad_scale);
+        }
+    }
+
+    fn canonical_price_symbol(env: &Env, symbol: &Symbol) -> Symbol {
+        if symbol == &BLUSDC_SYMBOL || symbol == &AQUSDC_SYMBOL || symbol == &SOUSDC_SYMBOL {
+            USDC_SYMBOL
+        } else if symbol == &Symbol::new(env, "AQUARIUS_USDC")
+            || symbol == &Symbol::new(env, "SOROSWAP_USDC")
+        {
+            USDC_SYMBOL
+        } else {
+            symbol.clone()
         }
     }
 

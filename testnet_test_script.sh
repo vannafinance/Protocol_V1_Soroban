@@ -5,40 +5,76 @@ set -e  # Exit on any error
 # Configuration
 NETWORK="--network testnet"
 WASM_DIR="target/wasm32v1-none/release-with-logs/"
-HEMANTH="hemanth_testnet"
+HEMANTH="vanna_deployer"
 ELEPHANT2="elephant2"
 ELEPHANT4="elephant4"
 ELEPHANT5="elephant5"
-ADMIN="GAUR2W5IOOFNLZYFBXEAJSMQU6XY4H6AUOP4R4FFYNM2RGPP7WFF364C"
+ADMIN="GAUVY7FNDKVWRMW3SYEMX6QMFSWQDKC6XIPJJKAMOEMLZPAI7XZPDV3D"
 LENDER="GAKEPI64RXSQDRGEDBTHJO3JZJ6HERW37AX6PJWQJ6UW7HSI6PSQX2S6"
 USER1="GCVJJEHEEWLA5A6KM26ZEUUXLW33NY353AXMVQ5GIUHEJSZNYVURTK2F"
 USER2="GBBDNBO7KNF4RCHLIRTGL64W4IHPUIMPVVVFZCIFCQD4M6ZU54XUYTP5"
-USDC_ISSUER="GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
+BLUSDC_CONTRACT="CAQCFVLOBK5GIULPNZRGATJJMIZL5BSP7X5YJVMGCPTUEPFM4AVSRCJU"
+
+run_with_retry_capture() {
+  local max_attempts=$1
+  shift
+  local attempt=1
+  local output
+
+  while [ ${attempt} -le ${max_attempts} ]; do
+    output=$("$@" 2>&1)
+    if [ $? -eq 0 ]; then
+      printf '%s\n' "${output}"
+      return 0
+    fi
+
+    if [ ${attempt} -eq ${max_attempts} ]; then
+      printf '%s\n' "${output}"
+      return 1
+    fi
+
+    echo "Retrying command (${attempt}/${max_attempts})..." >&2
+    attempt=$((attempt + 1))
+  done
+}
 
 # Function to install WASM and extract hash
 install_wasm() {
   local name=$1
   local file=$2
-  echo "Installing ${name}..."
-  local output=$(stellar contract install --wasm "${WASM_DIR}${file}.wasm" --source "${HEMANTH}" ${NETWORK} 2>&1)
-  local hash=$(echo "${output}" | grep "Using wasm hash" | sed 's/.*Using wasm hash //')
-  if [ -z "${hash}" ]; then
-    echo "Error: Failed to extract WASM hash for ${name}" >&2
+  echo "Installing ${name}..." >&2
+  local output
+  output=$(run_with_retry_capture 4 stellar contract upload --wasm "${WASM_DIR}${file}.wasm" --source "${HEMANTH}" ${NETWORK})
+  if [ $? -ne 0 ]; then
+    echo "Error: Failed to upload WASM for ${name}" >&2
+    echo "${output}" >&2
     exit 1
   fi
-  echo "${hash}"
+  local hash=$(echo "${output}" | grep -oE '[0-9a-f]{64}' | tail -1)
+  if [ -z "${hash}" ]; then
+    echo "Error: Failed to extract WASM hash for ${name}" >&2
+    echo "${output}" >&2
+    exit 1
+  fi
+  printf '%s\n' "${hash}"
 }
 
 echo "=== Deploying deployer contract (apple) ==="
-stellar contract deploy --wasm "${WASM_DIR}deployer_contract.wasm" --source "${HEMANTH}" ${NETWORK} --alias deployer_apple -- --admin "${ADMIN}"
-DEPLOYER_APPLE_ID=$(stellar contract id deployer_apple ${NETWORK})
+DEPLOYER_APPLE_OUTPUT=$(stellar contract deploy --wasm "${WASM_DIR}deployer_contract.wasm" --source "${HEMANTH}" ${NETWORK} --alias deployer_apple -- --admin "${ADMIN}")
+DEPLOYER_APPLE_ID=$(echo "${DEPLOYER_APPLE_OUTPUT}" | grep -oE 'C[A-Z0-9]{55}' | tail -1)
+echo "${DEPLOYER_APPLE_OUTPUT}"
+
+if [ -z "${DEPLOYER_APPLE_ID}" ]; then
+  echo "❌ Failed to extract deployer_apple contract ID"
+  exit 1
+fi
 
 # Install all supporting contracts and collect WASM hashes
 REGISTRY_WASM_HASH=$(install_wasm "registry_contract" "registry_contract")
 RATE_MODEL_WASM_HASH=$(install_wasm "rate_model_contract" "rate_model_contract")
 RISK_ENGINE_WASM_HASH=$(install_wasm "risk_engine_contract" "risk_engine_contract")
 ORACLE_WASM_HASH=$(install_wasm "oracle_contract" "oracle_contract")
-SMART_ACCOUNT_HASH=$(install_wasm "smart_account_contract" "smart_account")
+SMART_ACCOUNT_HASH=$(install_wasm "smart_account_contract" "smart_account_contract")
 ACCOUNT_MANAGER_WASM_HASH=$(install_wasm "account_manager_contract" "account_manager_contract")
 LENDING_POOL_XLM_HASH=$(install_wasm "lending_protocol_xlm" "lending_protocol_xlm")
 LENDING_POOL_USDC_HASH=$(install_wasm "lending_protocol_usdc" "lending_protocol_usdc")
@@ -63,15 +99,21 @@ output=$(stellar contract invoke \
 
 # Extract deployed IDs from the final JSON array (order: registry, rate_model, risk_engine, oracle, account_manager)
 IDS=$(echo "${output}" | tail -1)
-REGISTRY_ID=$(echo "${IDS}" | jq -r '.[0]')
-RATE_MODEL_ID=$(echo "${IDS}" | jq -r '.[1]')
-RISK_ENGINE_ID=$(echo "${IDS}" | jq -r '.[2]')
-ORACLE_ID=$(echo "${IDS}" | jq -r '.[3]')
-ACCOUNT_MANAGER_ID=$(echo "${IDS}" | jq -r '.[4]')
+REGISTRY_ID=$(node -e "const ids = JSON.parse(process.argv[1]); console.log(ids[0]);" "${IDS}")
+RATE_MODEL_ID=$(node -e "const ids = JSON.parse(process.argv[1]); console.log(ids[1]);" "${IDS}")
+RISK_ENGINE_ID=$(node -e "const ids = JSON.parse(process.argv[1]); console.log(ids[2]);" "${IDS}")
+ORACLE_ID=$(node -e "const ids = JSON.parse(process.argv[1]); console.log(ids[3]);" "${IDS}")
+ACCOUNT_MANAGER_ID=$(node -e "const ids = JSON.parse(process.argv[1]); console.log(ids[4]);" "${IDS}")
 
 echo "=== Deploying pool deployer contract (mango) ==="
-stellar contract deploy --wasm "${WASM_DIR}pool_deployer_contract.wasm" --source "${HEMANTH}" ${NETWORK} --alias deployer_mango -- --admin "${ADMIN}"
-POOL_DEPLOYER_ID=$(stellar contract id deployer_mango ${NETWORK})
+POOL_DEPLOYER_OUTPUT=$(stellar contract deploy --wasm "${WASM_DIR}pool_deployer_contract.wasm" --source "${HEMANTH}" ${NETWORK} --alias deployer_mango -- --admin "${ADMIN}")
+POOL_DEPLOYER_ID=$(echo "${POOL_DEPLOYER_OUTPUT}" | grep -oE 'C[A-Z0-9]{55}' | tail -1)
+echo "${POOL_DEPLOYER_OUTPUT}"
+
+if [ -z "${POOL_DEPLOYER_ID}" ]; then
+  echo "❌ Failed to extract deployer_mango contract ID"
+  exit 1
+fi
 
 echo "=== Deploying XLM pool and VXLM token via deploy_lps_and_token_contracts ==="
 output=$(stellar contract invoke \
@@ -89,9 +131,14 @@ output=$(stellar contract invoke \
     --veurc_contract_hash "${VEURC_TOKEN_HASH}" 2>&1)
 
 # Extract deployed IDs from log addresses (first: xlm_pool, second: vxlm_token)
-addresses=$(echo "${output}" | grep -o '"address":"[^"]*"' | sed 's/"address":"//' | head -2)
-XLM_POOL_ID=$(echo "${addresses}" | head -n1)
-VXLM_TOKEN_ID=$(echo "${addresses}" | tail -n1)
+XLM_POOL_ID=$(echo "${output}" | grep 'Deployed xlm pool contract' | sed -n 's/.*"address":"\([A-Z0-9]\+\)".*/\1/p' | tail -1)
+VXLM_TOKEN_ID=$(echo "${output}" | grep 'Deployed vxlm token contract' | sed -n 's/.*"address":"\([A-Z0-9]\+\)".*/\1/p' | tail -1)
+
+if [ -z "${XLM_POOL_ID}" ] || [ -z "${VXLM_TOKEN_ID}" ]; then
+  echo "❌ Failed to extract XLM pool or VXLM token IDs from deploy logs"
+  echo "${output}"
+  exit 1
+fi
 
 echo "=== Initializing VXLM token contract ==="
 stellar contract invoke \
@@ -122,19 +169,26 @@ stellar contract invoke \
   -- \
   deposit_xlm \
   --lender "${LENDER}" \
-  --amount 11
+  --amount_wad 11000000000000000000 || echo "⚠️ Skipping XLM deposit seed step (funding or account state issue)"
 
 echo "=== Creating margin account for user1 (${USER1}) ==="
+set +e
 output=$(stellar contract invoke \
   --id "${ACCOUNT_MANAGER_ID}" \
   --source-account "${ELEPHANT4}" \
   ${NETWORK} \
   -- \
   create_account \
-  --user_address "${USER1}" \
-  --account_manager "${ACCOUNT_MANAGER_ID}" 2>&1)
-MARGIN1_ID=$(echo "${output}" | tail -1)
-echo "Margin account 1 ID: ${MARGIN1_ID}"
+  --trader_address "${USER1}" 2>&1)
+status=$?
+if [ ${status} -eq 0 ]; then
+  MARGIN1_ID=$(echo "${output}" | tail -1)
+  echo "Margin account 1 ID: ${MARGIN1_ID}"
+else
+  MARGIN1_ID=""
+  echo "⚠️ Skipping margin account 1 seed step"
+  echo "${output}"
+fi
 
 echo "=== Creating margin account for user2 (${USER2}) ==="
 output=$(stellar contract invoke \
@@ -143,10 +197,17 @@ output=$(stellar contract invoke \
   ${NETWORK} \
   -- \
   create_account \
-  --user_address "${USER2}" \
-  --account_manager "${ACCOUNT_MANAGER_ID}" 2>&1)
-MARGIN2_ID=$(echo "${output}" | tail -1)
-echo "Margin account 2 ID: ${MARGIN2_ID}"
+  --trader_address "${USER2}" 2>&1)
+status=$?
+if [ ${status} -eq 0 ]; then
+  MARGIN2_ID=$(echo "${output}" | tail -1)
+  echo "Margin account 2 ID: ${MARGIN2_ID}"
+else
+  MARGIN2_ID=""
+  echo "⚠️ Skipping margin account 2 seed step"
+  echo "${output}"
+fi
+set -e
 
 echo "=== Setting USDC as allowed collateral ==="
 stellar contract invoke \
@@ -155,7 +216,25 @@ stellar contract invoke \
   ${NETWORK} \
   -- \
   set_iscollateral_allowed \
-  --token_symbol USDC
+  --token_symbol BLUSDC
+
+echo "=== Setting AqUSDC as allowed collateral ==="
+stellar contract invoke \
+  --id "${ACCOUNT_MANAGER_ID}" \
+  --source-account "${HEMANTH}" \
+  ${NETWORK} \
+  -- \
+  set_iscollateral_allowed \
+  --token_symbol AQUSDC
+
+echo "=== Setting SoUSDC as allowed collateral ==="
+stellar contract invoke \
+  --id "${ACCOUNT_MANAGER_ID}" \
+  --source-account "${HEMANTH}" \
+  ${NETWORK} \
+  -- \
+  set_iscollateral_allowed \
+  --token_symbol SOUSDC
 
 echo "=== Setting max asset cap (10) ==="
 stellar contract invoke \
@@ -164,7 +243,7 @@ stellar contract invoke \
   ${NETWORK} \
   -- \
   set_max_asset_cap \
-  --cap 10
+  --cap 10000000000000000000
 
 echo "=== Setting USDC issuer on registry ==="
 stellar contract invoke \
@@ -173,18 +252,22 @@ stellar contract invoke \
   ${NETWORK} \
   -- \
   set_native_usdc_contract_address \
-  --usdc_contract_address "${USDC_ISSUER}"
+  --usdc_contract_address "${BLUSDC_CONTRACT}"
 
 echo "=== Depositing USDC collateral (3 units) for user2 ==="
-stellar contract invoke \
-  --id "${ACCOUNT_MANAGER_ID}" \
-  --source-account "${ELEPHANT5}" \
-  ${NETWORK} \
-  -- \
-  deposit_collateral_tokens \
-  --user_address "${USER2}" \
-  --token_symbol USDC \
-  --token_amount 3
+if [ -n "${MARGIN2_ID}" ]; then
+  stellar contract invoke \
+    --id "${ACCOUNT_MANAGER_ID}" \
+    --source-account "${ELEPHANT5}" \
+    ${NETWORK} \
+    -- \
+    deposit_collateral_tokens \
+    --smart_account "${MARGIN2_ID}" \
+    --token_symbol BLUSDC \
+    --token_amount_wad 3000000000000000000 || echo "⚠️ Skipping collateral seed step"
+else
+  echo "⚠️ Skipping collateral seed step because margin account 2 was not created"
+fi
 
 echo "=== Automation complete! Summary of key contract IDs ==="
 echo "Deployer Apple: ${DEPLOYER_APPLE_ID}"

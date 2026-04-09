@@ -461,7 +461,11 @@ impl LiquidityPoolEURC {
 
     pub fn convert_borrow_shares_asset(env: &Env, debt_wad: U256) -> U256 {
         let key_b = PoolDataKey::TotalBorrowSharesWAD;
-        let total_borrow_shares_wad: U256 = env.storage().persistent().get(&key_b).unwrap();
+        let total_borrow_shares_wad: U256 = env
+            .storage()
+            .persistent()
+            .get(&key_b)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
         if total_borrow_shares_wad == U256::from_u32(&env, 0) {
             return debt_wad;
         } else {
@@ -530,7 +534,11 @@ impl LiquidityPoolEURC {
     }
     pub fn get_borrow_balance(env: &Env, trader: Address) -> U256 {
         let key_a = PoolDataKey::UserBorrowSharesWAD(trader.clone());
-        let user_borrow_shares_wad: U256 = env.storage().persistent().get(&key_a).unwrap();
+        let user_borrow_shares_wad: U256 = env
+            .storage()
+            .persistent()
+            .get(&key_a)
+            .unwrap_or_else(|| U256::from_u128(&env, 0));
         let res_wad = Self::convert_borrow_shares_asset(env, user_borrow_shares_wad);
         res_wad
     }
