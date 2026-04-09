@@ -14,6 +14,8 @@ pub enum RegistryContractError {
 pub enum RegistryKey {
     LendingPoolXlm,
     LendingPoolUsdc,
+    LendingPoolAquariusUsdc,
+    LendingPoolSoroswapUsdc,
     LendingPoolEurc,
     RateModelContract,
     OracleContract,
@@ -30,6 +32,8 @@ pub enum RegistryKey {
     BlendPoolContract,     // Blend Pool Contract Address
     TrackingTokenContract, // Tracking token contract address
     SoroswapContract,
+    AquariusUsdcContractAddress, // Aquarius-specific USDC token contract address
+    SoroswapUsdcContractAddress, // Soroswap-specific USDC token contract address
     AquariusRouterContract,     // Aquarius Router Contract Address
     AquariusPoolIndex,          // Aquarius Pool Index for XLM-USDC
 }

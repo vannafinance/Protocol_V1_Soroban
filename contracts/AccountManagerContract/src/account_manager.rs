@@ -20,11 +20,15 @@ const TLL_LEDGERS_10YEAR: u32 = 6307200 * 10;
 pub const WAD_U128: u128 = 10000_0000_00000_00000; // 1e18
 const XLM_SYMBOL: Symbol = symbol_short!("XLM");
 const USDC_SYMBOL: Symbol = symbol_short!("USDC");
+const BLUSDC_SYMBOL: Symbol = symbol_short!("BLUSDC");
+const AQUSDC_SYMBOL: Symbol = symbol_short!("AQUSDC");
+const SOUSDC_SYMBOL: Symbol = symbol_short!("SOUSDC");
 const EURC_SYMBOL: Symbol = symbol_short!("EURC");
 const BLEND_XLM: &str = "BLEND_XLM";
 const BLEND_USDC: &str = "BLEND_USDC";
 const BLEND_EURC: &str = "BLEND_EURC";
 const AQUARIUS_XLM_USDC: &str = "AQ_XLM_USDC"; // Aquarius XLM-USDC LP token tracking
+const SOROSWAP_XLM_USDC: &str = "SS_XLM_USDC"; // Soroswap XLM-USDC LP token tracking
 
 pub mod smart_account_contract {
     soroban_sdk::contractimport!(
@@ -211,8 +215,16 @@ impl AccountManagerContract {
             let token_client = token::Client::new(&env, &registry_client.get_xlm_contract_adddress());
             let amount_scaled = Self::scale_for_operation(amount_wad_u128, token_client.decimals());
             token_client.transfer(&trader_address, &smart_account, &amount_scaled);
-        } else if token_symbol == USDC_SYMBOL {
+        } else if token_symbol == USDC_SYMBOL || token_symbol == BLUSDC_SYMBOL {
             let token_client = token::Client::new(&env, &registry_client.get_usdc_contract_address());
+            let amount_scaled = Self::scale_for_operation(amount_wad_u128, token_client.decimals());
+            token_client.transfer(&trader_address, &smart_account, &amount_scaled);
+        } else if token_symbol == AQUSDC_SYMBOL {
+            let token_client = token::Client::new(&env, &registry_client.get_aquarius_usdc_addr());
+            let amount_scaled = Self::scale_for_operation(amount_wad_u128, token_client.decimals());
+            token_client.transfer(&trader_address, &smart_account, &amount_scaled);
+        } else if token_symbol == SOUSDC_SYMBOL {
+            let token_client = token::Client::new(&env, &registry_client.get_soroswap_usdc_addr());
             let amount_scaled = Self::scale_for_operation(amount_wad_u128, token_client.decimals());
             token_client.transfer(&trader_address, &smart_account, &amount_scaled);
         } else if token_symbol == EURC_SYMBOL {
@@ -310,11 +322,23 @@ impl AccountManagerContract {
                 .lend_to(&smart_account, &borrow_amount_wad);
             smart_account_client.add_borrowed_token(&XLM_SYMBOL);
             smart_account_client.set_has_debt(&true);
-        } else if token_symbol == USDC_SYMBOL {
+        } else if token_symbol == USDC_SYMBOL || token_symbol == BLUSDC_SYMBOL {
             let pool_usdc = registry_client.get_lendingpool_usdc();
             lending_protocol_usdc::Client::new(&env, &pool_usdc)
                 .lend_to(&smart_account, &borrow_amount_wad);
-            smart_account_client.add_borrowed_token(&USDC_SYMBOL);
+            smart_account_client.add_borrowed_token(&BLUSDC_SYMBOL);
+            smart_account_client.set_has_debt(&true);
+        } else if token_symbol == AQUSDC_SYMBOL {
+            let pool_aquarius_usdc = registry_client.get_lendingpool_aquarius_usdc();
+            lending_protocol_usdc::Client::new(&env, &pool_aquarius_usdc)
+                .lend_to(&smart_account, &borrow_amount_wad);
+            smart_account_client.add_borrowed_token(&AQUSDC_SYMBOL);
+            smart_account_client.set_has_debt(&true);
+        } else if token_symbol == SOUSDC_SYMBOL {
+            let pool_soroswap_usdc = registry_client.get_lendingpool_soroswap_usdc();
+            lending_protocol_usdc::Client::new(&env, &pool_soroswap_usdc)
+                .lend_to(&smart_account, &borrow_amount_wad);
+            smart_account_client.add_borrowed_token(&SOUSDC_SYMBOL);
             smart_account_client.set_has_debt(&true);
         } else if token_symbol == EURC_SYMBOL {
             let pool_eurc = registry_client.get_lendingpool_eurc();
@@ -372,13 +396,29 @@ impl AccountManagerContract {
             if bool {
                 smart_account_client.remove_borrowed_token(&XLM_SYMBOL);
             }
-        } else if token_symbol == USDC_SYMBOL {
+        } else if token_symbol == USDC_SYMBOL || token_symbol == BLUSDC_SYMBOL {
             let pool_usdc_contract = registry_client.get_lendingpool_usdc();
             let usdc_client = lending_protocol_usdc::Client::new(&env, &pool_usdc_contract);
             let bool = usdc_client.collect_from(&repay_amount_wad, &smart_account);
-            smart_account_client.remove_borrowed_token_balance(&USDC_SYMBOL, &amount_wad_u128);
+            smart_account_client.remove_borrowed_token_balance(&BLUSDC_SYMBOL, &amount_wad_u128);
             if bool {
-                smart_account_client.remove_borrowed_token(&USDC_SYMBOL);
+                smart_account_client.remove_borrowed_token(&BLUSDC_SYMBOL);
+            }
+        } else if token_symbol == AQUSDC_SYMBOL {
+            let pool_aquarius_usdc_contract = registry_client.get_lendingpool_aquarius_usdc();
+            let usdc_client = lending_protocol_usdc::Client::new(&env, &pool_aquarius_usdc_contract);
+            let bool = usdc_client.collect_from(&repay_amount_wad, &smart_account);
+            smart_account_client.remove_borrowed_token_balance(&AQUSDC_SYMBOL, &amount_wad_u128);
+            if bool {
+                smart_account_client.remove_borrowed_token(&AQUSDC_SYMBOL);
+            }
+        } else if token_symbol == SOUSDC_SYMBOL {
+            let pool_soroswap_usdc_contract = registry_client.get_lendingpool_soroswap_usdc();
+            let usdc_client = lending_protocol_usdc::Client::new(&env, &pool_soroswap_usdc_contract);
+            let bool = usdc_client.collect_from(&repay_amount_wad, &smart_account);
+            smart_account_client.remove_borrowed_token_balance(&SOUSDC_SYMBOL, &amount_wad_u128);
+            if bool {
+                smart_account_client.remove_borrowed_token(&SOUSDC_SYMBOL);
             }
         } else if token_symbol == EURC_SYMBOL {
             let pool_eurc_contract = registry_client.get_lendingpool_eurc();
@@ -438,7 +478,7 @@ impl AccountManagerContract {
                 if bool {
                     smart_account_client.remove_borrowed_token(&XLM_SYMBOL);
                 }
-            } else if tokenx == USDC_SYMBOL {
+            } else if tokenx == USDC_SYMBOL || tokenx == BLUSDC_SYMBOL {
                 let pool_usdc_contract = registry_client.get_lendingpool_usdc();
                 let usdc_client: lending_protocol_usdc::Client<'_> =
                     lending_protocol_usdc::Client::new(&env, &pool_usdc_contract);
@@ -447,9 +487,35 @@ impl AccountManagerContract {
                 let amount_wad_u128: u128 = Self::convert_u256_to_u128(&env, &liquidate_amount);
 
                 let bool = usdc_client.collect_from(&liquidate_amount, &smart_account);
-                smart_account_client.remove_borrowed_token_balance(&USDC_SYMBOL, &amount_wad_u128);
+                smart_account_client.remove_borrowed_token_balance(&BLUSDC_SYMBOL, &amount_wad_u128);
                 if bool {
-                    smart_account_client.remove_borrowed_token(&USDC_SYMBOL);
+                    smart_account_client.remove_borrowed_token(&BLUSDC_SYMBOL);
+                }
+            } else if tokenx == AQUSDC_SYMBOL {
+                let pool_aquarius_usdc_contract = registry_client.get_lendingpool_aquarius_usdc();
+                let usdc_client: lending_protocol_usdc::Client<'_> =
+                    lending_protocol_usdc::Client::new(&env, &pool_aquarius_usdc_contract);
+                let liquidate_amount = usdc_client.get_borrow_balance(&smart_account);
+
+                let amount_wad_u128: u128 = Self::convert_u256_to_u128(&env, &liquidate_amount);
+
+                let bool = usdc_client.collect_from(&liquidate_amount, &smart_account);
+                smart_account_client.remove_borrowed_token_balance(&AQUSDC_SYMBOL, &amount_wad_u128);
+                if bool {
+                    smart_account_client.remove_borrowed_token(&AQUSDC_SYMBOL);
+                }
+            } else if tokenx == SOUSDC_SYMBOL {
+                let pool_soroswap_usdc_contract = registry_client.get_lendingpool_soroswap_usdc();
+                let usdc_client: lending_protocol_usdc::Client<'_> =
+                    lending_protocol_usdc::Client::new(&env, &pool_soroswap_usdc_contract);
+                let liquidate_amount = usdc_client.get_borrow_balance(&smart_account);
+
+                let amount_wad_u128: u128 = Self::convert_u256_to_u128(&env, &liquidate_amount);
+
+                let bool = usdc_client.collect_from(&liquidate_amount, &smart_account);
+                smart_account_client.remove_borrowed_token_balance(&SOUSDC_SYMBOL, &amount_wad_u128);
+                if bool {
+                    smart_account_client.remove_borrowed_token(&SOUSDC_SYMBOL);
                 }
             } else if tokenx == EURC_SYMBOL {
                 let pool_eurc_contract = registry_client.get_lendingpool_eurc();
@@ -705,11 +771,6 @@ impl AccountManagerContract {
             &tokens_amount_wad,
         );
 
-        // Handle tracking token minting/burning
-        let tracking_token_address = registry_client.get_tracking_token_contract_addr();
-        let tracking_client =
-            tracking_token_contract::Client::new(env_x, &tracking_token_address);
-
         // Check if this is a Blend protocol operation
         if registry_client.has_blend_pool_address() {
             let blend_pool_address = registry_client.get_blend_pool_address();
@@ -718,9 +779,13 @@ impl AccountManagerContract {
                     panic!("Blend operations support exactly one token per call");
                 }
 
-                if token_delta != 0 {
+                if token_delta != 0 && registry_client.has_tracking_token_contract_addr() {
                     let token_symbol = call.tokens_out.get(0).unwrap();
                     let tracking_symbol = Self::tracking_symbol_for_blend(env_x, &token_symbol);
+
+                    let tracking_token_address = registry_client.get_tracking_token_contract_addr();
+                    let tracking_client =
+                        tracking_token_contract::Client::new(env_x, &tracking_token_address);
 
                     if token_delta > 0 {
                         tracking_client.mint(&tracking_symbol, &smart_account, &token_delta);
@@ -736,11 +801,15 @@ impl AccountManagerContract {
                 return;
             }
         }
-        
+
         // Handle Aquarius protocol operations
         if registry_client.has_aquarius_router_address() {
             let aquarius_router_address = registry_client.get_aquarius_router_address();
-            if call.protocol_address == aquarius_router_address {
+            if call.protocol_address == aquarius_router_address && registry_client.has_tracking_token_contract_addr() {
+                let tracking_token_address = registry_client.get_tracking_token_contract_addr();
+                let tracking_client =
+                    tracking_token_contract::Client::new(env_x, &tracking_token_address);
+
                 match call.type_action {
                     SmartAccExternalAction::AddLiquidity => {
                         // Mint LP tracking tokens for liquidity provision
@@ -780,6 +849,55 @@ impl AccountManagerContract {
                 return;
             }
         }
+
+        // Handle Soroswap protocol operations
+        if registry_client.has_soroswap_router_address() {
+            let soroswap_router_address = registry_client.get_soroswap_router_address();
+            if call.protocol_address == soroswap_router_address
+                && registry_client.has_tracking_token_contract_addr()
+            {
+                let tracking_token_address = registry_client.get_tracking_token_contract_addr();
+                let tracking_client =
+                    tracking_token_contract::Client::new(env_x, &tracking_token_address);
+
+                match call.type_action {
+                    SmartAccExternalAction::AddLiquidity => {
+                        if token_delta > 0 {
+                            let tracking_symbol = Self::tracking_symbol_for_soroswap_lp(
+                                env_x,
+                                &call.tokens_out.get(0).unwrap(),
+                                &call.tokens_out.get(1).unwrap(),
+                            );
+                            tracking_client.mint(&tracking_symbol, &smart_account, &token_delta);
+                            let tracking_balance =
+                                tracking_client.balance(&smart_account, &tracking_symbol);
+                            if tracking_balance > 0 {
+                                smart_acc_client.add_collateral_token(&tracking_symbol);
+                            }
+                        }
+                    }
+                    SmartAccExternalAction::RemoveLiquidity => {
+                        if token_delta < 0 {
+                            let tracking_symbol = Self::tracking_symbol_for_soroswap_lp(
+                                env_x,
+                                &call.tokens_out.get(0).unwrap(),
+                                &call.tokens_out.get(1).unwrap(),
+                            );
+                            tracking_client.burn(
+                                &tracking_symbol,
+                                &smart_account,
+                                &(-token_delta),
+                            );
+                        }
+                    }
+                    SmartAccExternalAction::Swap => {
+                        // Swaps don't affect LP token tracking
+                    }
+                    _ => {}
+                }
+                return;
+            }
+        }
     }
 
     pub fn can_call(
@@ -800,7 +918,7 @@ impl AccountManagerContract {
     fn tracking_symbol_for_blend(env: &Env, token_symbol: &Symbol) -> Symbol {
         if *token_symbol == XLM_SYMBOL {
             Symbol::new(env, BLEND_XLM)
-        } else if *token_symbol == USDC_SYMBOL {
+        } else if *token_symbol == USDC_SYMBOL || *token_symbol == BLUSDC_SYMBOL {
             Symbol::new(env, BLEND_USDC)
         } else if *token_symbol == EURC_SYMBOL {
             Symbol::new(env, BLEND_EURC)
@@ -814,13 +932,26 @@ impl AccountManagerContract {
         token0: &Symbol,
         token1: &Symbol,
     ) -> Symbol {
-        // For XLM-USDC pool
         if (*token0 == XLM_SYMBOL && *token1 == USDC_SYMBOL)
             || (*token0 == USDC_SYMBOL && *token1 == XLM_SYMBOL)
         {
             Symbol::new(env, AQUARIUS_XLM_USDC)
         } else {
             panic!("Aquarius LP tracking not configured for this token pair");
+        }
+    }
+
+    fn tracking_symbol_for_soroswap_lp(
+        env: &Env,
+        token0: &Symbol,
+        token1: &Symbol,
+    ) -> Symbol {
+        if (*token0 == XLM_SYMBOL && *token1 == USDC_SYMBOL)
+            || (*token0 == USDC_SYMBOL && *token1 == XLM_SYMBOL)
+        {
+            Symbol::new(env, SOROSWAP_XLM_USDC)
+        } else {
+            panic!("Soroswap LP tracking not configured for this token pair");
         }
     }
 }

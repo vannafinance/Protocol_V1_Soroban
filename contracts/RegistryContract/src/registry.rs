@@ -95,6 +95,38 @@ impl RegistryContract {
         Ok(())
     }
 
+    pub fn set_lendingpool_aquarius_usdc(
+        env: &Env,
+        pool_aquarius_usdc_address: Address,
+    ) -> Result<(), RegistryContractError> {
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
+        admin.require_auth();
+
+        env.storage().persistent().set(
+            &RegistryKey::LendingPoolAquariusUsdc,
+            &pool_aquarius_usdc_address,
+        );
+        Self::extend_ttl_registry(env, RegistryKey::LendingPoolAquariusUsdc);
+
+        Ok(())
+    }
+
+    pub fn set_lendingpool_soroswap_usdc(
+        env: &Env,
+        pool_soroswap_usdc_address: Address,
+    ) -> Result<(), RegistryContractError> {
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
+        admin.require_auth();
+
+        env.storage().persistent().set(
+            &RegistryKey::LendingPoolSoroswapUsdc,
+            &pool_soroswap_usdc_address,
+        );
+        Self::extend_ttl_registry(env, RegistryKey::LendingPoolSoroswapUsdc);
+
+        Ok(())
+    }
+
     pub fn set_risk_engine_address(
         env: &Env,
         risk_engine_address: Address,
@@ -293,6 +325,36 @@ impl RegistryContract {
         Ok(res)
     }
 
+    pub fn get_lendingpool_aquarius_usdc(env: &Env) -> Result<Address, RegistryContractError> {
+        let res: Address = env
+            .storage()
+            .persistent()
+            .get(&RegistryKey::LendingPoolAquariusUsdc)
+            .unwrap_or_else(|| panic!("Failed to get lendingpool_aquarius_usdc address"));
+        Ok(res)
+    }
+
+    pub fn has_lendingpool_aquarius_usdc(env: &Env) -> bool {
+        env.storage()
+            .persistent()
+            .has(&RegistryKey::LendingPoolAquariusUsdc)
+    }
+
+    pub fn get_lendingpool_soroswap_usdc(env: &Env) -> Result<Address, RegistryContractError> {
+        let res: Address = env
+            .storage()
+            .persistent()
+            .get(&RegistryKey::LendingPoolSoroswapUsdc)
+            .unwrap_or_else(|| panic!("Failed to get lendingpool_soroswap_usdc address"));
+        Ok(res)
+    }
+
+    pub fn has_lendingpool_soroswap_usdc(env: &Env) -> bool {
+        env.storage()
+            .persistent()
+            .has(&RegistryKey::LendingPoolSoroswapUsdc)
+    }
+
     pub fn get_risk_engine_address(env: &Env) -> Result<Address, RegistryContractError> {
         let res: Address = env
             .storage()
@@ -372,6 +434,94 @@ impl RegistryContract {
             .has(&RegistryKey::AquariusRouterContract)
     }
 
+    pub fn set_soroswap_router_address(
+        env: &Env,
+        soroswap_router_address: Address,
+    ) -> Result<(), RegistryContractError> {
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
+        admin.require_auth();
+
+        env.storage().persistent().set(
+            &RegistryKey::SoroswapContract,
+            &soroswap_router_address,
+        );
+        Self::extend_ttl_registry(env, RegistryKey::SoroswapContract);
+        Ok(())
+    }
+
+    pub fn get_soroswap_router_address(env: &Env) -> Result<Address, RegistryContractError> {
+        let res: Address = env
+            .storage()
+            .persistent()
+            .get(&RegistryKey::SoroswapContract)
+            .unwrap_or_else(|| panic!("Failed to get soroswap_router contract address"));
+        Ok(res)
+    }
+
+    pub fn has_soroswap_router_address(env: &Env) -> bool {
+        env.storage()
+            .persistent()
+            .has(&RegistryKey::SoroswapContract)
+    }
+                                    
+    pub fn set_soroswap_usdc_addr(
+        env: &Env,
+        usdc_contract_address: Address,
+    ) -> Result<(), RegistryContractError> {
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
+        admin.require_auth();
+        env.storage().persistent().set(
+            &RegistryKey::SoroswapUsdcContractAddress,
+            &usdc_contract_address,
+        );
+        Self::extend_ttl_registry(env, RegistryKey::SoroswapUsdcContractAddress);
+        Ok(())
+    }
+
+    pub fn set_aquarius_usdc_addr(
+        env: &Env,
+        usdc_contract_address: Address,
+    ) -> Result<(), RegistryContractError> {
+        let admin: Address = env.storage().persistent().get(&ADMIN).unwrap();
+        admin.require_auth();
+        env.storage().persistent().set(
+            &RegistryKey::AquariusUsdcContractAddress,
+            &usdc_contract_address,
+        );
+        Self::extend_ttl_registry(env, RegistryKey::AquariusUsdcContractAddress);
+        Ok(())
+    }
+
+    pub fn get_aquarius_usdc_addr(env: &Env) -> Result<Address, RegistryContractError> {
+        let res: Address = env
+            .storage()
+            .persistent()
+            .get(&RegistryKey::AquariusUsdcContractAddress)
+            .unwrap_or_else(|| panic!("Aquarius USDC contract address not configured in Registry"));
+        Ok(res)
+    }
+
+    pub fn has_aquarius_usdc_addr(env: &Env) -> bool {
+        env.storage()
+            .persistent()
+            .has(&RegistryKey::AquariusUsdcContractAddress)
+    }
+
+    pub fn get_soroswap_usdc_addr(env: &Env) -> Result<Address, RegistryContractError> {
+        let res: Address = env
+            .storage()
+            .persistent()
+            .get(&RegistryKey::SoroswapUsdcContractAddress)
+            .unwrap_or_else(|| panic!("Soroswap USDC contract address not configured in Registry"));
+        Ok(res)
+    }
+
+    pub fn has_soroswap_usdc_addr(env: &Env) -> bool {
+        env.storage()
+            .persistent()
+            .has(&RegistryKey::SoroswapUsdcContractAddress)
+    }
+
     pub fn get_aquarius_pool_index(env: &Env) -> Result<BytesN<32>, RegistryContractError> {
         let res: BytesN<32> = env
             .storage()
@@ -379,6 +529,12 @@ impl RegistryContract {
             .get(&RegistryKey::AquariusPoolIndex)
             .unwrap_or_else(|| panic!("Failed to get aquarius pool index"));
         Ok(res)
+    }
+
+    pub fn has_tracking_token_contract_addr(env: &Env) -> bool {
+        env.storage()
+            .persistent()
+            .has(&RegistryKey::TrackingTokenContract)
     }
 
     pub fn get_tracking_token_contract_addr(env: &Env) -> Result<Address, RegistryContractError> {
